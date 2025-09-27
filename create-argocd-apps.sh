@@ -11,9 +11,14 @@ kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -
 # Crear aplicaciones de GitOps Tools
 echo "🔧 Creando aplicaciones de GitOps Tools..."
 
-# Kubernetes Dashboard
-echo "  📊 Creando Kubernetes Dashboard..."
-kubectl apply -f ~/dotfiles/argocd-apps/gitops-tools/dashboard/application.yaml
+# Kubernetes Dashboard (instalado directamente para desarrollo local)
+echo "  📊 Instalando Kubernetes Dashboard..."
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml >/dev/null 2>&1
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30081}]' >/dev/null 2>&1
+
+# Esperar Dashboard
+echo "  ⏳ Esperando Dashboard..."
+kubectl wait --for=condition=available --timeout=60s deployment/kubernetes-dashboard -n kubernetes-dashboard 2>/dev/null || echo "  ⚠️  Dashboard aún iniciando..."
 
 # Crear aplicaciones Custom
 echo "🛠️  Creando aplicaciones Custom..."
@@ -36,10 +41,11 @@ kubectl wait --for=condition=available --timeout=300s deployment/hello-world -n 
 echo "✅ Aplicaciones de ArgoCD creadas exitosamente!"
 echo ""
 echo "📋 Estado de las aplicaciones de ArgoCD:"
-kubectl get applications -n argocd
+kubectl get applications -n argocd 2>/dev/null || echo "  No hay aplicaciones de ArgoCD"
 echo ""
 echo "📋 Estado de las aplicaciones Custom (desarrollo local):"
-kubectl get deployments -n hello-world
+echo "  Dashboard: $(kubectl get deployment kubernetes-dashboard -n kubernetes-dashboard -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>/dev/null || echo 'N/A') pods ready"
+echo "  Hello World: $(kubectl get deployment hello-world -n hello-world -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>/dev/null || echo 'N/A') pods ready"
 echo ""
 echo "🔗 URLs de acceso:"
 echo "   ArgoCD: http://localhost:30080 o http://argocd.mini-cluster"
