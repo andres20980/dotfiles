@@ -111,7 +111,8 @@ if [ -n "$KIND_IP" ]; then
     echo "# Kubernetes kind cluster services" | sudo tee -a /etc/hosts > /dev/null
     echo "$KIND_IP argocd.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
     echo "$KIND_IP dashboard.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
-    echo "    ✅ Dominios configurados: argocd.mini-cluster, dashboard.mini-cluster"
+    echo "$KIND_IP hello-world.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
+    echo "    ✅ Dominios configurados: argocd.mini-cluster, dashboard.mini-cluster, hello-world.mini-cluster"
 else
     echo "    ⚠️  No se pudo detectar la IP del contenedor kind. Configura manualmente /etc/hosts"
 fi
