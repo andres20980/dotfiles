@@ -10,7 +10,7 @@ sudo apt-get update
 
 # --- Instalar paquetes esenciales con APT ---
 echo "📦 Instalando paquetes esenciales (jq, pip, zsh, htop...)"
-sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential
+sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential libice6
 
 # --- Instalar Oh My Zsh ---
 if [ -d "$HOME/.oh-my-zsh" ]; then
