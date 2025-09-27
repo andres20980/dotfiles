@@ -94,6 +94,21 @@ kubectl create clusterrolebinding kubernetes-dashboard-permissions --clusterrole
 # 3. Crear el ServiceAccount 'admin-user' para poder hacer login
 echo "    - Creando usuario 'admin-user' para el login del dashboard..."
 cat <<EOF | kubectl apply -f -
+# --- Instalar y configurar ArgoCD ---
+echo "🚢 Instalando y configurando ArgoCD..."
+# 1. Instalar ArgoCD usando el manifiesto oficial
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# 2. Esperar a que los pods estén listos
+echo "    - Esperando a que ArgoCD esté listo..."
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
+echo "    - Configurando ArgoCD sin autenticación..."
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
+# 4. Reiniciar el deployment para aplicar los cambios
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -113,6 +128,21 @@ subjects:
   name: admin-user
   namespace: kubernetes-dashboard
 EOF
+# --- Instalar y configurar ArgoCD ---
+echo "🚢 Instalando y configurando ArgoCD..."
+# 1. Instalar ArgoCD usando el manifiesto oficial
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# 2. Esperar a que los pods estén listos
+echo "    - Esperando a que ArgoCD esté listo..."
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
+echo "    - Configurando ArgoCD sin autenticación..."
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
+# 4. Reiniciar el deployment para aplicar los cambios
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 
 echo "
 ✅ ¡Configuración completada!"

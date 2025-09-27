@@ -1,6 +1,6 @@
 # Mi Configuración de WSL (Dotfiles)
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, el Dashboard de Kubernetes y otros.
+Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, el Dashboard de Kubernetes, ArgoCD y otros.
 
 También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
 
@@ -22,7 +22,7 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine**, **Git Credential Manager** y desplegará el **Dashboard de Kubernetes**.*
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine**, **Git Credential Manager**, desplegará el **Dashboard de Kubernetes** y **ArgoCD**.*
 
 3.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -97,3 +97,43 @@ El script de instalación ya despliega el Dashboard y le da los permisos necesar
 
 3.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
     `http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/`
+
+## 🚀 Acceder a ArgoCD
+
+El script de instalación también despliega ArgoCD (Argo Continuous Delivery) y lo configura para funcionar **sin autenticación** en entornos locales y privados.
+
+### Acceder a ArgoCD:
+
+1. **Inicia el port-forwarding** en una terminal (este comando se queda en ejecución):
+   ```bash
+   kubectl port-forward svc/argocd-server -n argocd 8080:443 --address 0.0.0.0
+   ```
+
+2. **Abre el navegador** en la siguiente URL:
+   `http://localhost:8080` (o la IP de tu máquina en el puerto 8080)
+
+   *Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
+
+### Crear tu primer Application con ArgoCD:
+
+Una vez que tengas repositorios Git con tus manifiestos de Kubernetes, puedes crear aplicaciones en ArgoCD desde la interfaz web o usando la CLI:
+
+```bash
+# Ejemplo de creación de una aplicación
+kubectl apply -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tu-usuario/tu-repo
+    targetRevision: HEAD
+    path: k8s-manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+EOF
+```
