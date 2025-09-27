@@ -82,6 +82,38 @@ curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
 sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
 rm kind
 
+# --- Desplegar y configurar Dashboard de Kubernetes ---
+echo "🚢 Desplegando y configurando el Dashboard de Kubernetes..."
+# 1. Desplegar el manifiesto oficial del dashboard
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+
+# 2. Dar permisos al propio dashboard para que pueda leer los recursos del clúster
+echo "    - Dando permisos al dashboard..."
+kubectl create clusterrolebinding kubernetes-dashboard-permissions --clusterrole=cluster-admin --serviceaccount=kubernetes-dashboard:kubernetes-dashboard
+
+# 3. Crear el ServiceAccount 'admin-user' para poder hacer login
+echo "    - Creando usuario 'admin-user' para el login del dashboard..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
+
 echo "
 ✅ ¡Configuración completada!"
 echo "NOTA: Cierra y vuelve a abrir tu terminal para que todos los cambios surtan efecto."

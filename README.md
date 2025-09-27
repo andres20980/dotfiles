@@ -1,6 +1,6 @@
 # Mi Configuración de WSL (Dotfiles)
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind` y otros.
+Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, el Dashboard de Kubernetes y otros.
 
 También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
 
@@ -22,7 +22,7 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine** y **Git Credential Manager**.*
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine**, **Git Credential Manager** y desplegará el **Dashboard de Kubernetes**.*
 
 3.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -79,3 +79,21 @@ Después de que el script principal termine, se recomienda ejecutar estos dos pa
     echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/service docker start" | sudo tee /etc/sudoers.d/docker-service
     ```
     *Nota: El script que hemos añadido a tu `.zshrc` usará este permiso para iniciar Docker automáticamente en nuevas terminales.*
+
+## 🖥️ Acceder al Dashboard de Kubernetes
+
+El script de instalación ya despliega el Dashboard y le da los permisos necesarios.
+
+1.  **Inicia el proxy de `kubectl`** en una terminal (este comando se queda en ejecución):
+    ```bash
+    kubectl proxy
+    ```
+
+2.  **Obtén el token de login** para el usuario administrador (`admin-user`) que también crea el script:
+    ```bash
+    kubectl -n kubernetes-dashboard create token admin-user
+    ```
+    Copia el token que se mostrará.
+
+3.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
+    `http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/`
