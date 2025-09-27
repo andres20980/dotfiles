@@ -81,6 +81,10 @@ echo "    - Instalando kind..."
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
 sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
 rm kind
+# Crear cluster kind con configuración para acceso desde Windows
+echo "    - Creando cluster kind con configuración especial..."
+kind create cluster --name mini-cluster --config ~/dotfiles/kind-config.yaml
+echo "    ✅ Cluster kind creado y configurado"
 
 # --- Desplegar y configurar Dashboard de Kubernetes ---
 echo "🚢 Desplegando y configurando el Dashboard de Kubernetes..."
