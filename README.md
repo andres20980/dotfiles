@@ -48,3 +48,5 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub a través de tu navegador o con un Token de Acceso Personal (PAT). Solo tendrás que hacerlo una vez.
 
 ¡Y listo! Tu entorno estará replicado.
+
+# Prueba final de GCM
