@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/andres20980/dotfiles.git
     path: argocd-apps/custom-apps/hello-world/manifests
-    targetRevision: HEAD
+    targetRevision: main
   destination:
     server: https://kubernetes.default.svc
     namespace: hello-world

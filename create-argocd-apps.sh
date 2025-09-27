@@ -18,9 +18,9 @@ kubectl apply -f ~/dotfiles/argocd-apps/gitops-tools/dashboard/application.yaml
 # Crear aplicaciones Custom
 echo "🛠️  Creando aplicaciones Custom..."
 
-# Hello World App
-echo "  👋 Creando Hello World App..."
-kubectl apply -f ~/dotfiles/argocd-apps/custom-apps/hello-world/application.yaml
+# Hello World App (aplicada directamente con kubectl para desarrollo local)
+echo "  👋 Creando Hello World App (desarrollo local)..."
+kubectl apply -f ~/dotfiles/argocd-apps/custom-apps/hello-world/manifests/
 
 # Esperar a que las aplicaciones se sincronicen
 echo "⏳ Esperando a que las aplicaciones se sincronicen..."
@@ -35,8 +35,11 @@ kubectl wait --for=condition=available --timeout=300s deployment/hello-world -n 
 
 echo "✅ Aplicaciones de ArgoCD creadas exitosamente!"
 echo ""
-echo "📋 Estado de las aplicaciones:"
+echo "📋 Estado de las aplicaciones de ArgoCD:"
 kubectl get applications -n argocd
+echo ""
+echo "📋 Estado de las aplicaciones Custom (desarrollo local):"
+kubectl get deployments -n hello-world
 echo ""
 echo "🔗 URLs de acceso:"
 echo "   ArgoCD: http://localhost:30080 o http://argocd.mini-cluster"

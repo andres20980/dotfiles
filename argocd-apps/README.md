@@ -25,13 +25,14 @@ Herramientas de infraestructura que se despliegan de forma centralizada. Caracte
 
 ## 🛠️ Custom Apps
 
-Tus aplicaciones personalizadas. Cada aplicación debe tener:
-- `application.yaml`: Definición de la aplicación ArgoCD
+Tus aplicaciones personalizadas. Para desarrollo local se aplican directamente con kubectl, pero pueden migrarse a ArgoCD para producción.
+
 - `manifests/`: Directorio con los manifests de Kubernetes
-- **Estado esperado**: Synced + Healthy
+- Para desarrollo: `kubectl apply -f manifests/`
+- Para producción: crear `application.yaml` con repoURL
 
 ### Aplicaciones actuales:
-- **Hello World**: Ejemplo simple con Nginx (puerto 30082)
+- **Hello World**: Ejemplo simple con Nginx (puerto 30082) - aplicado localmente
 
 ## 🚀 Cómo añadir nuevas aplicaciones
 

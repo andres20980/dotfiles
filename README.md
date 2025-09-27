@@ -122,8 +122,9 @@ El Dashboard de Kubernetes y las aplicaciones custom se instalan y gestionan a t
     `http://localhost:30081` (o `http://dashboard.mini-cluster`)
 
 ### Acceder a la aplicación Hello World:
-La aplicación Hello World es un ejemplo simple que demuestra GitOps. Solo ve a:
-`http://localhost:30082` (o `http://hello-world.mini-cluster`)
+La aplicación Hello World es un ejemplo simple que demuestra GitOps. Está desplegada directamente con kubectl para desarrollo local.
+
+**Estado actual:** ✅ Desplegada y funcionando (accesible via port-forwarding en puerto 30082)
 
 ## 🚀 Acceder a ArgoCD
 
