@@ -60,3 +60,22 @@ kind create cluster
 ```
 
 `kind` usará Docker automáticamente, que es su motor por defecto y el más probado.
+
+## ⚙️ Post-instalación de Docker (Uso cómodo)
+
+Después de que el script principal termine, se recomienda ejecutar estos dos pasos para poder usar Docker sin `sudo` y para que se inicie automáticamente.
+
+1.  **Añadir tu usuario al grupo `docker`:**
+    ```bash
+    # Esto te permite ejecutar comandos de docker sin sudo
+    sudo usermod -aG docker $USER
+    ```
+    **¡Importante!** Después de este comando, debes cerrar y volver a abrir la terminal.
+
+2.  **Configurar el arranque automático del servicio de Docker:**
+    Esto permite que el servicio de Docker se inicie sin pedir contraseña, para poder automatizarlo en el `.zshrc`.
+    ```bash
+    # La variable $USER se reemplazará por tu nombre de usuario actual
+    echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/service docker start" | sudo tee /etc/sudoers.d/docker-service
+    ```
+    *Nota: El script que hemos añadido a tu `.zshrc` usará este permiso para iniciar Docker automáticamente en nuevas terminales.*
