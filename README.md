@@ -1,6 +1,6 @@
 # Mi Configuración de WSL (Dotfiles)
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `podman`, `kubectl`, `kind` y otros.
+Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind` y otros.
 
 También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
 
@@ -22,7 +22,7 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Git Credential Manager** y sus dependencias (`libice6`) para que no tengas que introducir tus credenciales de Git repetidamente.*
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine** y **Git Credential Manager**.*
 
 3.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -42,21 +42,21 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     ```
 
 5.  **Reiniciar la Terminal:**
-    Cierra y vuelve a abrir la terminal para que todos los cambios (`zsh`, `nvm`, etc.) se carguen correctamente.
+    Cierra y vuelve a abrir la terminal para que todos los cambios (`zsh`, `nvm`, `docker`, etc.) se carguen correctamente.
 
 6.  **Autenticar Git con GitHub:**
     La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub. Solo tendrás que hacerlo una vez.
 
 ¡Y listo! Tu entorno estará replicado.
 
-## 🐳 Uso de Kubernetes con kind y Podman
+## 🐳 Uso de Kubernetes con kind y Docker
 
-El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local.
+El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local usando Docker como motor.
 
-Para crear tu primer clúster, usa el siguiente comando:
+Para crear tu primer clúster, simplemente usa:
 
 ```bash
-KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster
+kind create cluster
 ```
 
-Esto le indica a `kind` que use `podman` como su motor de contenedores en lugar de Docker.
+`kind` usará Docker automáticamente, que es su motor por defecto y el más probado.

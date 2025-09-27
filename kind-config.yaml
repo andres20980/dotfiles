@@ -1,0 +1,6 @@
+# kind-config.yaml
+# Configuración para un clúster de kind con un solo nodo
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane

@@ -110,5 +110,11 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
+# Iniciar Docker automáticamente si no está corriendo
+if ! docker info > /dev/null 2>&1; then
+    echo "🚀 Iniciando servicio de Docker..."
+    sudo service docker start
+fi
+
 # Iniciar siempre en la carpeta de proyectos
 cd ~/proyectos

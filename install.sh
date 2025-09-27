@@ -57,15 +57,25 @@ echo "🔧 Configurando Git para usar GCM..."
 git config --global credential.helper manager
 git config --global credential.credentialStore plaintext
 
-# --- Instalar Herramientas Cloud Native (Podman, kubectl, kind) ---
+# --- Instalar Herramientas Cloud Native (Docker, kubectl, kind) ---
 echo "📦 Instalando herramientas Cloud Native..."
-# Instalar Podman
-sudo apt-get install -y podman
+
+# Instalar Docker Engine
+echo "    - Instalando Docker Engine..."
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
 # Instalar kubectl (usando la versión que sabemos es estable)
 echo "    - Instalando kubectl..."
 curl -LO "https://dl.k8s.io/release/v1.34.1/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 rm kubectl
+
 # Instalar kind
 echo "    - Instalando kind..."
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
