@@ -16,7 +16,7 @@ sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential li
 if [ -d "$HOME/.oh-my-zsh" ]; then
     echo "✅ Oh My Zsh ya está instalado."
 else
-    echo "💤 Instalando Oh My Zsh..."
+    echo "셸 Instalando Oh My Zsh..."
     sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
 
@@ -36,6 +36,7 @@ if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" ]; then
 else
     echo "✅ Plugin zsh-autosuggestions ya está instalado."
 fi
+
 
 # --- Instalar NVM ---
 if [ -d "$HOME/.nvm" ]; then
@@ -80,12 +81,54 @@ echo "    - Instalando kind..."
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
 sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
 rm kind
-
 # Crear cluster kind con configuración para acceso desde Windows
 echo "    - Creando cluster kind con configuración especial..."
 kind create cluster --name mini-cluster --config ~/dotfiles/kind-config.yaml
 echo "    ✅ Cluster kind creado y configurado"
 
+echo "🚢 Instalando y configurando ArgoCD..."
+# 1. Instalar ArgoCD usando el manifiesto oficial
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# 2. Esperar a que los pods estén listos
+echo "    - Esperando a que ArgoCD esté listo..."
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
+# 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
+echo "    - Configurando ArgoCD sin autenticación..."
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
+# 4. Reiniciar el deployment para aplicar los cambios
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
+echo "    ✅ ArgoCD instalado y configurado sin autenticación"
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
 # --- Instalar y configurar ArgoCD ---
 echo "🚢 Instalando y configurando ArgoCD..."
 # 1. Instalar ArgoCD usando el manifiesto oficial
@@ -103,7 +146,8 @@ kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -
 # 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
 echo "    - Configurando servicios como NodePort para acceso directo..."
 kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
-echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443)"
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 # 6. Configurar dominios personalizados en /etc/hosts
 echo "    - Configurando dominios personalizados en /etc/hosts..."
 KIND_IP=$(docker inspect mini-cluster-control-plane | grep '"IPAddress":' | grep -v null | head -1 | cut -d'"' -f4)

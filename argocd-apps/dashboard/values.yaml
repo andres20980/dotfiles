@@ -1,0 +1,39 @@
+# Configuración personalizada para Kubernetes Dashboard
+# Este archivo se usa junto con el chart de Helm oficial
+
+# Configuración del servicio
+service:
+  type: NodePort
+  nodePort: 30081
+  annotations: {}
+
+# Configuración de RBAC
+rbac:
+  clusterReadOnlyRole: true
+  clusterAdminRole: false
+
+# Configuración del protocolo
+protocolHttp: true
+
+# Configuración del scraper de métricas
+metricsScraper:
+  enabled: true
+
+# Configuración del ingress (opcional)
+ingress:
+  enabled: false
+
+# Configuración de recursos
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Configuración de toleraciones
+tolerations: []
+
+# Configuración de afinidad
+affinity: {}

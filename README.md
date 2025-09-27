@@ -1,8 +1,6 @@
 # Mi Configuración de WSL (Dotfiles)
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, el Dashboard de Kubernetes, ArgoCD y otros.
-
-También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
+Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, ArgoCD y otros. También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
 
 ## 🚀 Cómo restaurar la configuración en una máquina nueva
 
@@ -22,9 +20,16 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Docker Engine**, **Git Credential Manager**, desplegará el **Dashboard de Kubernetes** y **ArgoCD**.*
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará **Docker Engine**, **Git Credential Manager** y desplegará **ArgoCD** mínimamente.*
 
-3.  **Crear el enlace simbólico:**
+3.  **Crear aplicaciones de ArgoCD:**
+    Después de la instalación, ejecuta el script para crear aplicaciones gestionadas por ArgoCD:
+    ```bash
+    # Crear aplicaciones de ArgoCD (incluyendo el Dashboard)
+    ./create-argocd-apps.sh
+    ```
+
+4.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
     ```bash
     # Borra el .zshrc por defecto si existe
@@ -34,17 +39,17 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     ln -s ~/dotfiles/.zshrc ~/.zshrc
     ```
 
-4.  **Configurar tu identidad de Git:**
+5.  **Configurar tu identidad de Git:**
     El script no configura tus datos personales. Hazlo con los siguientes comandos:
     ```bash
     git config --global user.name "tu-nombre"
     git config --global user.email "tu-email@example.com"
     ```
 
-5.  **Reiniciar la Terminal:**
+6.  **Reiniciar la Terminal:**
     Cierra y vuelve a abrir la terminal para que todos los cambios (`zsh`, `nvm`, `docker`, etc.) se carguen correctamente.
 
-6.  **Autenticar Git con GitHub:**
+7.  **Autenticar Git con GitHub:**
     La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub. Solo tendrás que hacerlo una vez.
 
 ¡Y listo! Tu entorno estará replicado.
@@ -55,9 +60,8 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
 El script configura automáticamente los servicios de **ArgoCD** y **Dashboard de Kubernetes** como **NodePort**, lo que significa que están disponibles directamente en `localhost` sin necesidad de mantener terminales abiertas con port-forwarding.
 
 **URLs de acceso desde Windows:**
-- **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster:30080`)
-- **ArgoCD HTTPS:** `https://localhost:30443` (o `https://argocd.mini-cluster:30443`)
-- **Dashboard Kubernetes:** `https://localhost:30444` (o `https://dashboard.mini-cluster:30444`)
+- **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster`)
+- **Dashboard Kubernetes:** `http://localhost:30081` (o `http://dashboard.mini-cluster`)
 
 Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
 *Nota: Gracias a la configuración especial de kind, ahora puedes acceder directamente desde tu navegador de Windows usando `localhost` sin necesidad de configuración adicional en el hosts de Windows.*/
@@ -95,21 +99,33 @@ Después de que el script principal termine, se recomienda ejecutar estos dos pa
 
 ## 🖥️ Acceder a los servicios (sin port-forwarding necesario)
 
-El script de instalación ya despliega el Dashboard y le da los permisos necesarios.
+El Dashboard de Kubernetes se instala y gestiona a través de ArgoCD usando el script `create-argocd-apps.sh`.
 
-1.  **Inicia el proxy de `kubectl`** en una terminal (este comando se queda en ejecución):
+1.  **Ejecuta el script para crear aplicaciones de ArgoCD:**
     ```bash
-    kubectl proxy
+    cd ~/dotfiles
+    ./create-argocd-apps.sh
     ```
 
-2.  **Obtén el token de login** para el usuario administrador (`admin-user`) que también crea el script:
+2.  **Obtén el token de login** para acceder al Dashboard:
     ```bash
-    kubectl -n kubernetes-dashboard create token admin-user
+    kubectl -n kubernetes-dashboard create token kubernetes-dashboard
     ```
     Copia el token que se mostrará.
 
 3.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
-    `http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/`
+    `http://localhost:30081` (o `http://dashboard.mini-cluster`)
+
+## 🚀 Acceder a ArgoCD
+
+El script de instalación despliega ArgoCD (Argo Continuous Delivery) mínimamente y lo configura para funcionar **sin autenticación** en entornos locales y privados.
+
+### Acceder a ArgoCD:
+
+1. **Abre el navegador** directamente en la siguiente URL (sin necesidad de port-forwarding):
+   `http://localhost:30080` (o `http://argocd.mini-cluster`)
+
+*Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
 
 ## 🚀 Acceder a ArgoCD
 
