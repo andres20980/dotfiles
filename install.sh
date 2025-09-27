@@ -46,6 +46,17 @@ else
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 fi
 
+# --- Instalar Git Credential Manager (GCM) ---
+echo "📦 Instalando Git Credential Manager..."
+# Descargar el paquete
+wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.5.1/gcm-linux_amd64.2.5.1.deb -O /tmp/gcm.deb
+# Instalar el paquete (requiere sudo)
+sudo dpkg -i /tmp/gcm.deb
+# Configurar Git para usar GCM y el almacén de texto plano
+echo "🔧 Configurando Git para usar GCM..."
+git config --global credential.helper manager
+git config --global credential.credentialStore plaintext
+
 echo "
 ✅ ¡Configuración completada!"
 echo "NOTA: Cierra y vuelve a abrir tu terminal para que todos los cambios surtan efecto."
