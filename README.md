@@ -25,9 +25,12 @@ Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (
 3.  **Crear aplicaciones de ArgoCD:**
     Después de la instalación, ejecuta el script para crear aplicaciones gestionadas por ArgoCD:
     ```bash
-    # Crear aplicaciones de ArgoCD (incluyendo el Dashboard)
+    # Crear aplicaciones de ArgoCD (GitOps Tools + Custom Apps)
     ./create-argocd-apps.sh
     ```
+    Este script instala:
+    - **GitOps Tools**: Herramientas como Kubernetes Dashboard (versión ligera, sin autenticación)
+    - **Custom Apps**: Aplicaciones de ejemplo como Hello World para entender GitOps
 
 4.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -62,6 +65,7 @@ El script configura automáticamente los servicios de **ArgoCD** y **Dashboard d
 **URLs de acceso desde Windows:**
 - **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster`)
 - **Dashboard Kubernetes:** `http://localhost:30081` (o `http://dashboard.mini-cluster`)
+- **Hello World App:** `http://localhost:30082` (o `http://hello-world.mini-cluster`)
 
 Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
 *Nota: Gracias a la configuración especial de kind, ahora puedes acceder directamente desde tu navegador de Windows usando `localhost` sin necesidad de configuración adicional en el hosts de Windows.*/
@@ -99,8 +103,9 @@ Después de que el script principal termine, se recomienda ejecutar estos dos pa
 
 ## 🖥️ Acceder a los servicios (sin port-forwarding necesario)
 
-El Dashboard de Kubernetes se instala y gestiona a través de ArgoCD usando el script `create-argocd-apps.sh`.
+El Dashboard de Kubernetes y las aplicaciones custom se instalan y gestionan a través de ArgoCD usando el script `create-argocd-apps.sh`.
 
+### Acceder al Dashboard de Kubernetes:
 1.  **Ejecuta el script para crear aplicaciones de ArgoCD:**
     ```bash
     cd ~/dotfiles
@@ -115,6 +120,10 @@ El Dashboard de Kubernetes se instala y gestiona a través de ArgoCD usando el s
 
 3.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
     `http://localhost:30081` (o `http://dashboard.mini-cluster`)
+
+### Acceder a la aplicación Hello World:
+La aplicación Hello World es un ejemplo simple que demuestra GitOps. Solo ve a:
+`http://localhost:30082` (o `http://hello-world.mini-cluster`)
 
 ## 🚀 Acceder a ArgoCD
 
@@ -146,34 +155,19 @@ El script de instalación también despliega ArgoCD (Argo Continuous Delivery) y
 ### Crear tu primer Application con ArgoCD:
 #### Gestionar herramientas con ArgoCD (GitOps)
 
-**Nota importante:** ArgoCD no muestra automáticamente recursos ya existentes en el cluster. Solo muestra aplicaciones que él mismo gestiona desde repositorios Git. Las herramientas instaladas por el script (`install.sh`) no aparecen automáticamente porque no se gestionan desde Git.
+El script `create-argocd-apps.sh` crea automáticamente dos tipos de aplicaciones:
 
-Para ver y gestionar herramientas en ArgoCD, necesitas crear "Applications" que apunten a repositorios Git con los manifests deseados.
+**🔧 GitOps Tools** (`argocd-apps/gitops-tools/`):
+- Herramientas de infraestructura gestionadas por ArgoCD
+- Versión más ligera posible, sin autenticación cuando sea viable
+- Actualmente incluye: Kubernetes Dashboard
 
+**🛠️ Custom Apps** (`argocd-apps/custom-apps/`):
+- Tus aplicaciones personalizadas
+- Ejemplos para aprender GitOps
+- Actualmente incluye: Hello World (aplicación de ejemplo)
 
-Para ver las herramientas que ya tienes instaladas (como el Dashboard de Kubernetes), crea aplicaciones en ArgoCD:
-
-```bash
-# Crear aplicación para el Dashboard de Kubernetes
-kubectl apply -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: kubernetes-dashboard
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/kubernetes/dashboard
-    targetRevision: v2.7.0
-    path: aio/deploy/recommended.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: kubernetes-dashboard
-EOF
-```
-
-Después de crear la aplicación, podrás verla en la UI de ArgoCD y gestionar sus recursos.
+Todas las aplicaciones se consideran correctas cuando muestran estado **Synced** y **Healthy** en ArgoCD.
 
 
 Una vez que tengas repositorios Git con tus manifiestos de Kubernetes, puedes crear aplicaciones en ArgoCD desde la interfaz web o usando la CLI:
