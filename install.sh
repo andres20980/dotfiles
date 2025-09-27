@@ -146,11 +146,6 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 # 2. Esperar a que los pods estén listos
 echo "    - Esperando a que ArgoCD esté listo..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
-echo "    - Configurando servicios como NodePort para acceso directo..."
-kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
-kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
-echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 # 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
 echo "    - Configurando ArgoCD sin autenticación..."
 kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
@@ -162,6 +157,17 @@ echo "    - Configurando servicios como NodePort para acceso directo..."
 kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
 kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
 echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
+# 6. Configurar dominios personalizados en /etc/hosts
+echo "    - Configurando dominios personalizados en /etc/hosts..."
+KIND_IP=$(docker inspect mini-cluster-control-plane | grep '"IPAddress":' | grep -v null | head -1 | cut -d'"' -f4)
+if [ -n "$KIND_IP" ]; then
+    echo "# Kubernetes kind cluster services" | sudo tee -a /etc/hosts > /dev/null
+    echo "$KIND_IP argocd.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
+    echo "$KIND_IP dashboard.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
+    echo "    ✅ Dominios configurados: argocd.mini-cluster, dashboard.mini-cluster"
+else
+    echo "    ⚠️  No se pudo detectar la IP del contenedor kind. Configura manualmente /etc/hosts"
+fi
 echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 
 echo "
