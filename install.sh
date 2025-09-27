@@ -102,12 +102,22 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 # 2. Esperar a que los pods estén listos
 echo "    - Esperando a que ArgoCD esté listo..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 # 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
 echo "    - Configurando ArgoCD sin autenticación..."
 kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
 # 4. Reiniciar el deployment para aplicar los cambios
 kubectl rollout restart deployment argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 apiVersion: v1
 kind: ServiceAccount
@@ -136,12 +146,22 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 # 2. Esperar a que los pods estén listos
 echo "    - Esperando a que ArgoCD esté listo..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 # 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
 echo "    - Configurando ArgoCD sin autenticación..."
 kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
 # 4. Reiniciar el deployment para aplicar los cambios
 kubectl rollout restart deployment argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
+echo "    - Configurando servicios como NodePort para acceso directo..."
+kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
+kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30444}]'
+echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443), Dashboard (https:30444)"
 echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 
 echo "

@@ -50,6 +50,17 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
 ¡Y listo! Tu entorno estará replicado.
 
 ## 🐳 Uso de Kubernetes con kind y Docker
+## 🌐 Exposición de servicios (NodePort)
+
+El script configura automáticamente los servicios de **ArgoCD** y **Dashboard de Kubernetes** como **NodePort**, lo que significa que están disponibles directamente en `localhost` sin necesidad de mantener terminales abiertas con port-forwarding.
+
+**Puertos asignados:**
+- **ArgoCD HTTP:** `localhost:30080`
+- **ArgoCD HTTPS:** `localhost:30443`
+- **Dashboard Kubernetes:** `localhost:30444`
+
+Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
+
 
 El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local usando Docker como motor.
 
@@ -80,7 +91,7 @@ Después de que el script principal termine, se recomienda ejecutar estos dos pa
     ```
     *Nota: El script que hemos añadido a tu `.zshrc` usará este permiso para iniciar Docker automáticamente en nuevas terminales.*
 
-## 🖥️ Acceder al Dashboard de Kubernetes
+## 🖥️ Acceder a los servicios (sin port-forwarding necesario)
 
 El script de instalación ya despliega el Dashboard y le da los permisos necesarios.
 
