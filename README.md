@@ -22,7 +22,7 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña.*
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará también **Git Credential Manager** y sus dependencias (`libice6`) para que no tengas que introducir tus credenciales de Git repetidamente.*
 
 3.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -45,8 +45,6 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     Cierra y vuelve a abrir la terminal para que todos los cambios (`zsh`, `nvm`, etc.) se carguen correctamente.
 
 6.  **Autenticar Git con GitHub:**
-    La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub a través de tu navegador o con un Token de Acceso Personal (PAT). Solo tendrás que hacerlo una vez.
+    La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub. Solo tendrás que hacerlo una vez.
 
 ¡Y listo! Tu entorno estará replicado.
-
-# Prueba final de GCM
