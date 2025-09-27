@@ -20,17 +20,7 @@ Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (
     chmod +x install.sh
     ./install.sh
     ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará **Docker Engine**, **Git Credential Manager** y desplegará **ArgoCD** mínimamente.*
-
-3.  **Crear aplicaciones de ArgoCD:**
-    Después de la instalación, ejecuta el script para crear aplicaciones gestionadas por ArgoCD:
-    ```bash
-    # Crear aplicaciones de ArgoCD (GitOps Tools + Custom Apps)
-    ./create-argocd-apps.sh
-    ```
-    Este script instala:
-    - **GitOps Tools**: Herramientas como Kubernetes Dashboard (versión ligera, sin autenticación)
-    - **Custom Apps**: Aplicaciones de ejemplo como Hello World para entender GitOps
+    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará **Docker Engine**, **Git Credential Manager**, desplegará **ArgoCD**, **Gitea** y configurará aplicaciones GitOps automáticamente.*
 
 4.  **Crear el enlace simbólico:**
     El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
@@ -64,8 +54,10 @@ El script configura automáticamente los servicios de **ArgoCD** y **Dashboard d
 
 **URLs de acceso desde Windows:**
 - **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster`)
-- **Dashboard Kubernetes:** `http://localhost:30081` (o `http://dashboard.mini-cluster`)
-- **Hello World App:** `http://localhost:30082` (o `http://hello-world.mini-cluster`)
+- **Gitea:** `http://localhost:30083` (o `http://gitea.mini-cluster`)
+- **NGINX Ingress:** `http://localhost:30090`
+- **Dashboard Kubernetes:** `https://dashboard.mini-cluster` (via ingress)
+- **Hello World App:** `http://hello-world.mini-cluster` (via ingress)
 
 Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
 *Nota: Gracias a la configuración especial de kind, ahora puedes acceder directamente desde tu navegador de Windows usando `localhost` sin necesidad de configuración adicional en el hosts de Windows.*/
@@ -106,25 +98,19 @@ Después de que el script principal termine, se recomienda ejecutar estos dos pa
 El Dashboard de Kubernetes y las aplicaciones custom se instalan y gestionan a través de ArgoCD usando el script `create-argocd-apps.sh`.
 
 ### Acceder al Dashboard de Kubernetes:
-1.  **Ejecuta el script para crear aplicaciones de ArgoCD:**
-    ```bash
-    cd ~/dotfiles
-    ./create-argocd-apps.sh
-    ```
-
-2.  **Obtén el token de login** para acceder al Dashboard:
+1.  **Obtén el token de login** para acceder al Dashboard:
     ```bash
     kubectl -n kubernetes-dashboard create token kubernetes-dashboard
     ```
     Copia el token que se mostrará.
 
-3.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
-    `http://localhost:30081` (o `http://dashboard.mini-cluster`)
+2.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
+    `https://dashboard.mini-cluster` (accesible via NGINX Ingress)
 
 ### Acceder a la aplicación Hello World:
-La aplicación Hello World es un ejemplo simple que demuestra GitOps. Está desplegada directamente con kubectl para desarrollo local.
+La aplicación Hello World es un ejemplo simple que demuestra GitOps. Está desplegada y gestionada por ArgoCD.
 
-**Estado actual:** ✅ Desplegada y funcionando (accesible via port-forwarding en puerto 30082)
+**Estado actual:** ✅ Desplegada y funcionando (accesible via NGINX Ingress en `http://hello-world.mini-cluster`)
 
 ## 🚀 Acceder a ArgoCD
 
@@ -137,36 +123,33 @@ El script de instalación despliega ArgoCD (Argo Continuous Delivery) mínimamen
 
 *Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
 
-## 🚀 Acceder a ArgoCD
+## 🚀 Acceder a Gitea
 
-El script de instalación también despliega ArgoCD (Argo Continuous Delivery) y lo configura para funcionar **sin autenticación** en entornos locales y privados.
+El script de instalación despliega Gitea como repositorio Git local usando SQLite y sin autenticación.
 
-### Acceder a ArgoCD:
+### Acceder a Gitea:
 
-1. **Inicia el port-forwarding** en una terminal (este comando se queda en ejecución):
-   ```bash
-   kubectl port-forward svc/argocd-server -n argocd 8080:443 --address 0.0.0.0
-   ```
+1. **Abre el navegador** directamente en la siguiente URL:
+   `http://localhost:30083` (o `http://gitea.mini-cluster`)
 
-2. **Abre el navegador** en la siguiente URL:
-   `http://localhost:8080` (o la IP de tu máquina en el puerto 8080)
-
-   *Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
+*Nota: Gitea está configurado sin autenticación para facilitar el desarrollo local. Los repositorios se crean automáticamente durante la instalación.*
 
 ### Crear tu primer Application con ArgoCD:
 #### Gestionar herramientas con ArgoCD (GitOps)
 
-El script `create-argocd-apps.sh` crea automáticamente dos tipos de aplicaciones:
+El script `install.sh` crea automáticamente dos tipos de aplicaciones organizadas en proyectos de ArgoCD:
 
 **🔧 GitOps Tools** (`argocd-apps/gitops-tools/`):
 - Herramientas de infraestructura gestionadas por ArgoCD
 - Versión más ligera posible, sin autenticación cuando sea viable
 - Actualmente incluye: Kubernetes Dashboard
+- Repositorio: `http://gitea.mini-cluster/argocd/gitops-tools`
 
 **🛠️ Custom Apps** (`argocd-apps/custom-apps/`):
 - Tus aplicaciones personalizadas
 - Ejemplos para aprender GitOps
 - Actualmente incluye: Hello World (aplicación de ejemplo)
+- Repositorio: `http://gitea.mini-cluster/argocd/custom-apps`
 
 Todas las aplicaciones se consideran correctas cuando muestran estado **Synced** y **Healthy** en ArgoCD.
 

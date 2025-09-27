@@ -8,36 +8,14 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/kubernetes/dashboard.git
-    path: charts/kubernetes-dashboard
-    targetRevision: HEAD
-    helm:
-      valueFiles:
-        - values.yaml
-      values: |
-        # Configuración personalizada para el Dashboard
-        service:
-          type: NodePort
-          nodePort: 30081
-        protocolHttp: true
-        rbac:
-          clusterReadOnlyRole: true
-        metricsScraper:
-          enabled: true
+    repoURL: https://github.com/andres20980/dotfiles.git
+    path: argocd-apps/gitops-tools/dashboard/manifests
+    targetRevision: main
   destination:
     server: https://kubernetes.default.svc
     namespace: kubernetes-dashboard
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
       - PruneLast=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 3m

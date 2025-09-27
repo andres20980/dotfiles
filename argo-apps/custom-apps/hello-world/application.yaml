@@ -6,16 +6,25 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: custom-apps
   source:
-    repoURL: https://github.com/andres20980/dotfiles.git
-    path: argocd-apps/custom-apps/hello-world/manifests
-    targetRevision: main
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/argocd/hello-world.git
+    path: manifests
+    targetRevision: master
   destination:
     server: https://kubernetes.default.svc
     namespace: hello-world
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
       - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
