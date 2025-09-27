@@ -128,6 +128,37 @@ El script de instalación también despliega ArgoCD (Argo Continuous Delivery) y
    *Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
 
 ### Crear tu primer Application con ArgoCD:
+#### Gestionar herramientas con ArgoCD (GitOps)
+
+**Nota importante:** ArgoCD no muestra automáticamente recursos ya existentes en el cluster. Solo muestra aplicaciones que él mismo gestiona desde repositorios Git. Las herramientas instaladas por el script (`install.sh`) no aparecen automáticamente porque no se gestionan desde Git.
+
+Para ver y gestionar herramientas en ArgoCD, necesitas crear "Applications" que apunten a repositorios Git con los manifests deseados.
+
+
+Para ver las herramientas que ya tienes instaladas (como el Dashboard de Kubernetes), crea aplicaciones en ArgoCD:
+
+```bash
+# Crear aplicación para el Dashboard de Kubernetes
+kubectl apply -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubernetes-dashboard
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kubernetes/dashboard
+    targetRevision: v2.7.0
+    path: aio/deploy/recommended.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubernetes-dashboard
+EOF
+```
+
+Después de crear la aplicación, podrás verla en la UI de ArgoCD y gestionar sus recursos.
+
 
 Una vez que tengas repositorios Git con tus manifiestos de Kubernetes, puedes crear aplicaciones en ArgoCD desde la interfaz web o usando la CLI:
 

@@ -1,12 +1,18 @@
-# Para ver herramientas instaladas en ArgoCD, puedes crear aplicaciones así:
+#!/bin/bash
+# Script para crear aplicaciones en ArgoCD para gestionar herramientas
 
-# 1. Para el Dashboard de Kubernetes:
-kubectl apply -f - <<EOF
+echo "🚀 Creando aplicaciones en ArgoCD..."
+
+# Crear aplicación para el Dashboard de Kubernetes
+echo "📊 Creando aplicación para Kubernetes Dashboard..."
+kubectl apply -f - <<EOF_APP
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: kubernetes-dashboard
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
@@ -16,15 +22,22 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kubernetes-dashboard
-EOF
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+EOF_APP
 
-# 2. Para ArgoCD mismo:
-kubectl apply -f - <<EOF
+# Crear aplicación para ArgoCD (esto es meta - ArgoCD gestionándose a sí mismo)
+echo "🚢 Creando aplicación para ArgoCD..."
+kubectl apply -f - <<EOF_APP
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: argocd-system
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
@@ -34,4 +47,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-EOF
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+EOF_APP
+
+echo "✅ Aplicaciones creadas en ArgoCD"
+echo ""
+echo "📋 Para ver el estado:"
+echo "kubectl get applications -n argocd"
+echo ""
+echo "🌐 Accede a ArgoCD: http://localhost:30080"
+echo "   Usuario: admin (sin contraseña - autenticación deshabilitada)"
