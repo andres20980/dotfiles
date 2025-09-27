@@ -1,6 +1,6 @@
 # Mi Configuración de WSL (Dotfiles)
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, y otros.
+Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `podman`, `kubectl`, `kind` y otros.
 
 También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
 
@@ -48,3 +48,15 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
     La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub. Solo tendrás que hacerlo una vez.
 
 ¡Y listo! Tu entorno estará replicado.
+
+## 🐳 Uso de Kubernetes con kind y Podman
+
+El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local.
+
+Para crear tu primer clúster, usa el siguiente comando:
+
+```bash
+KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster
+```
+
+Esto le indica a `kind` que use `podman` como su motor de contenedores en lugar de Docker.

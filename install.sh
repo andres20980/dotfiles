@@ -57,6 +57,21 @@ echo "🔧 Configurando Git para usar GCM..."
 git config --global credential.helper manager
 git config --global credential.credentialStore plaintext
 
+# --- Instalar Herramientas Cloud Native (Podman, kubectl, kind) ---
+echo "📦 Instalando herramientas Cloud Native..."
+# Instalar Podman
+sudo apt-get install -y podman
+# Instalar kubectl (usando la versión que sabemos es estable)
+echo "    - Instalando kubectl..."
+curl -LO "https://dl.k8s.io/release/v1.34.1/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+# Instalar kind
+echo "    - Instalando kind..."
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+rm kind
+
 echo "
 ✅ ¡Configuración completada!"
 echo "NOTA: Cierra y vuelve a abrir tu terminal para que todos los cambios surtan efecto."
