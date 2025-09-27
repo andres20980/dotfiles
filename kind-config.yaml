@@ -1,6 +1,21 @@
 # kind-config.yaml
-# Configuración para un clúster de kind con un solo nodo
+# Configuración para un clúster de kind con red host para acceso desde Windows
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  # Usar la red del host para que los puertos NodePort sean accesibles desde Windows
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
 nodes:
 - role: control-plane
+  # Configuración para exponer puertos
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  - containerPort: 30443
+    hostPort: 30443
+    protocol: TCP
+  - containerPort: 30444
+    hostPort: 30444
+    protocol: TCP

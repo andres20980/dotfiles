@@ -54,12 +54,14 @@ También incluye un script (`install.sh`) para automatizar la instalación de to
 
 El script configura automáticamente los servicios de **ArgoCD** y **Dashboard de Kubernetes** como **NodePort**, lo que significa que están disponibles directamente en `localhost` sin necesidad de mantener terminales abiertas con port-forwarding.
 
-**Puertos asignados:**
-- **ArgoCD HTTP:** `localhost:30080`
-- **ArgoCD HTTPS:** `localhost:30443`
-- **Dashboard Kubernetes:** `localhost:30444`
+**URLs de acceso desde Windows:**
+- **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster:30080`)
+- **ArgoCD HTTPS:** `https://localhost:30443` (o `https://argocd.mini-cluster:30443`)
+- **Dashboard Kubernetes:** `https://localhost:30444` (o `https://dashboard.mini-cluster:30444`)
 
 Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
+*Nota: Gracias a la configuración especial de kind, ahora puedes acceder directamente desde tu navegador de Windows usando `localhost` sin necesidad de configuración adicional en el hosts de Windows.*/
+*Nota: El script configura automáticamente entradas en `/etc/hosts` para que puedas usar los dominios personalizados. Si no funciona, verifica que la IP del contenedor kind no haya cambiado.*
 
 
 El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local usando Docker como motor.
