@@ -38,6 +38,10 @@ rules:
   - get
   - list
   - watch
+  - create
+  - update
+  - patch
+  - delete
   - update
   - patch
 - apiGroups:
@@ -50,6 +54,18 @@ rules:
   - watch
   - update
   - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - ""
   resources:

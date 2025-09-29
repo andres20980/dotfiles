@@ -64,6 +64,13 @@ fi
 
 log_success "Prerequisitos verificados"
 
+# --- PASO 0: Aplicar fixes GitOps ---
+log_step "Aplicando fixes GitOps para instalación desatendida"
+if ! ./scripts/apply-fixes.sh; then
+    log_error "Falló la aplicación de fixes GitOps"
+    exit 1
+fi
+
 # --- PASO 1: Sistema base ---
 log_step "Instalando sistema base (herramientas Linux)"
 if ! ./setup/install-system.sh; then
