@@ -15,7 +15,7 @@ set -e
 # =============================================================================
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly DOTFILES_DIR="$SCRIPT_DIR"
 readonly CLUSTER_NAME="mini-cluster"
 readonly GITEA_NAMESPACE="gitea"
 
@@ -228,6 +228,12 @@ build_and_load_images() {
     else
         source_dir="$DOTFILES_DIR/source-code/hello-world-modern"
         log_info "Usando código fuente desde dotfiles: $source_dir"
+    fi
+    
+    # Verificar que el directorio existe
+    if [[ ! -d "$source_dir" ]]; then
+        log_error "Directorio de código fuente no encontrado: $source_dir"
+        return 1
     fi
     
     # Construir hello-world-modern
