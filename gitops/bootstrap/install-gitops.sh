@@ -1,12 +1,21 @@
 #!/bin/bash
 
-# 🚀 GitOps Bootstrap - Solo lógica GitOps  
+# 🚀 GitOps Bootstrap - Solo lógica GitOps SEGURA
 # Instala Gitea + configura repositorios + despliega aplicaciones
+# ⚠️  REQUIERE VARIABLES DE ENTORNO PARA CREDENCIALES
 
 set -e
 
-echo "🚀 Configurando GitOps completo..."
-echo "================================="
+echo "🚀 Configurando GitOps completo (MODO SEGURO)..."
+echo "==============================================="
+
+# --- Validar credenciales ---
+if [[ -z "$GITEA_ADMIN_PASSWORD" ]]; then
+    echo "❌ ERROR: Variable GITEA_ADMIN_PASSWORD no definida"
+    echo "💡 Ejecuta primero: source scripts/set-credentials.sh"
+    echo "💡 O genera nuevas: scripts/generate-secure-credentials.sh"
+    exit 1
+fi
 
 # --- Funciones auxiliares ---
 log_step() {
@@ -19,6 +28,10 @@ log_success() {
 
 log_info() {
     echo "💡 $1"
+}
+
+log_error() {
+    echo "❌ ERROR: $1" >&2
 }
 
 # Detectar directorio base automáticamente (agnóstico al usuario)
@@ -153,7 +166,7 @@ configure_gitea() {
     log_step "Creando usuario gitops via API..."
     curl -X POST "http://localhost:30083/user/sign_up" \
         -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "user_name=gitops&email=gitops@localhost&password=gitops123&retype=gitops123" \
+        -d "user_name=gitops&email=gitops@localhost&password=${GITEA_ADMIN_PASSWORD}&retype=${GITEA_ADMIN_PASSWORD}" \
         >/dev/null 2>&1 || log_info "Usuario puede ya existir"
     
     sleep 5
@@ -164,7 +177,7 @@ configure_gitea() {
         echo "📦 Creando repositorio: $repo"
         curl -X POST "http://localhost:30083/api/v1/user/repos" \
             -H "Content-Type: application/json" \
-            -u "gitops:gitops123" \
+            -u "gitops:${GITEA_ADMIN_PASSWORD}" \
             -d "{
                 \"name\": \"$repo\",
                 \"description\": \"GitOps repository for $repo\",
@@ -177,7 +190,7 @@ configure_gitea() {
     # Verificar login
     for i in {1..5}; do
         echo "Verificando login de gitops (intento $i)..."
-        if curl -s -f -u "gitops:gitops123" "http://localhost:30083/api/v1/user" >/dev/null 2>&1; then
+        if curl -s -f -u "gitops:${GITEA_ADMIN_PASSWORD}" "http://localhost:30083/api/v1/user" >/dev/null 2>&1; then
             log_success "Usuario gitops configurado correctamente"
             return 0
         fi
@@ -191,130 +204,286 @@ configure_gitea() {
 # Ejecutar configuración de Gitea
 configure_gitea
 
-# --- Subir manifests a repositorios Git ---
-log_step "Subiendo manifests a repositorios Git en Gitea..."
+# --- FLUJO GITOPS PURO: Solo Git -> ArgoCD ---
+log_step "🎯 INICIANDO FLUJO GITOPS PURO"
 
-# Verificar que existan los directorios
+# Verificar que existan los directorios de manifests
 if [[ ! -d "$DOTFILES_DIR/manifests" ]]; then
-    log_info "Error: No se encontró $DOTFILES_DIR/manifests/"
+    log_error "No se encontró $DOTFILES_DIR/manifests/"
     exit 1
 fi
 
 TEMP_DIR="/tmp/gitops-upload"
-mkdir -p "$TEMP_DIR"
 
-# Subir manifests de infraestructura
-log_step "Subiendo infraestructura a Git..."
-if [[ -d "$DOTFILES_DIR/manifests/infrastructure" ]]; then
+# Función robusta para subir a Git con verificación
+push_to_git_repo() {
+    local repo_name="$1"
+    local source_path="$2"
+    local commit_message="$3"
+    
+    log_step "📦 Subiendo $repo_name a Git..."
+    
+    # Verificar que existe el directorio fuente
+    if [[ ! -d "$source_path" ]]; then
+        log_error "Directorio fuente no existe: $source_path"
+        return 1
+    fi
+    
+    # Limpiar y preparar directorio temporal
     rm -rf "$TEMP_DIR" 2>/dev/null || true
     mkdir -p "$TEMP_DIR"
-    cp -r "$DOTFILES_DIR/manifests/infrastructure"/* "$TEMP_DIR/"
+    
+    # Copiar contenido
+    cp -r "$source_path"/* "$TEMP_DIR/" 2>/dev/null || {
+        log_error "Error copiando contenido desde $source_path"
+        return 1
+    }
+    
     cd "$TEMP_DIR"
-    git init -b main >/dev/null 2>&1
+    
+    # Configurar Git
+    git init -b main --quiet
     git config user.name "GitOps Setup"
     git config user.email "gitops@localhost"
+    
+    # Agregar archivos
     git add .
-    git commit -m "Infrastructure: Dashboard + Prometheus + Grafana (ports fixed)" >/dev/null 2>&1
-    git remote add origin http://gitops:gitops123@localhost:30083/gitops/infrastructure.git
-    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Infrastructure subida a Git" || log_info "Error subiendo infrastructure"
+    if ! git commit -m "$commit_message" --quiet; then
+        log_error "Error haciendo commit en $repo_name"
+        return 1
+    fi
+    
+    # Configurar remote y push con manejo de errores robusto
+    git remote add origin "http://gitops:${GITEA_ADMIN_PASSWORD}@localhost:30083/gitops/$repo_name.git"
+    
+    # Intentar push con fuerza (necesario por auto_init de Gitea)
+    local push_attempts=3
+    for attempt in $(seq 1 $push_attempts); do
+        log_info "Intento $attempt/$push_attempts: Subiendo $repo_name..."
+        if git push --set-upstream origin main --force --quiet; then
+            log_success "✅ $repo_name subido correctamente a Git"
+            return 0
+        fi
+        sleep 5
+    done
+    
+    log_error "❌ Error subiendo $repo_name después de $push_attempts intentos"
+    return 1
+}
+
+# Verificar conectividad con Gitea antes de empezar
+log_step "🔍 Verificando conectividad con Gitea..."
+for attempt in $(seq 1 10); do
+    if curl -s -f -u "gitops:${GITEA_ADMIN_PASSWORD}" "http://localhost:30083/api/v1/user" >/dev/null 2>&1; then
+        log_success "✅ Conectividad con Gitea verificada"
+        break
+    fi
+    log_info "Intento $attempt/10: Esperando conectividad con Gitea..."
+    sleep 10
+done
+
+# PASO 1: Subir infrastructure (CRÍTICO - debe estar ANTES de ArgoCD Apps)
+if ! push_to_git_repo "infrastructure" "$DOTFILES_DIR/manifests/infrastructure" "GitOps Infrastructure: Dashboard + Prometheus + Grafana"; then
+    log_error "CRÍTICO: Error subiendo infrastructure. Abortando."
+    exit 1
 fi
 
-# Subir manifests de aplicaciones
-log_step "Subiendo aplicaciones a Git..."
-if [[ -d "$DOTFILES_DIR/manifests/applications" ]]; then
-    rm -rf "$TEMP_DIR" 2>/dev/null || true
-    mkdir -p "$TEMP_DIR"
-    cp -r "$DOTFILES_DIR/manifests/applications"/* "$TEMP_DIR/"
-    cd "$TEMP_DIR"
-    git init -b main >/dev/null 2>&1
-    git config user.name "GitOps Setup" 
-    git config user.email "gitops@localhost"
-    git add .
-    git commit -m "Applications: Hello World Modern with observability" >/dev/null 2>&1
-    git remote add origin http://gitops:gitops123@localhost:30083/gitops/applications.git
-    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Applications subida a Git" || log_info "Error subiendo applications"
+# PASO 2: Subir applications (CRÍTICO - debe estar ANTES de ArgoCD Apps)
+if ! push_to_git_repo "applications" "$DOTFILES_DIR/manifests/applications" "GitOps Applications: Hello World con métricas"; then
+    log_error "CRÍTICO: Error subiendo applications. Abortando."
+    exit 1
 fi
 
-# Subir configuración ArgoCD (bootstrap)
-log_step "Subiendo bootstrap ArgoCD a Git..."
-if [[ -d "$DOTFILES_DIR/gitops" ]]; then
-    rm -rf "$TEMP_DIR" 2>/dev/null || true
-    mkdir -p "$TEMP_DIR"
-    cp -r "$DOTFILES_DIR/gitops"/* "$TEMP_DIR/"
-    cd "$TEMP_DIR"
-    git init -b main >/dev/null 2>&1
-    git config user.name "GitOps Setup"
-    git config user.email "gitops@localhost" 
-    git add .
-    git commit -m "Bootstrap: ArgoCD projects + applications + app-of-apps" >/dev/null 2>&1
-    git remote add origin http://gitops:gitops123@localhost:30083/gitops/bootstrap.git
-    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Bootstrap subida a Git" || log_info "Error subiendo bootstrap"
+# PASO 3: Verificar que los repos Git están poblados ANTES de crear Applications
+log_step "🔍 Verificando repositorios Git poblados..."
+for repo in infrastructure applications; do
+    log_info "Verificando contenido de $repo..."
+    if ! curl -s -f "http://gitops:${GITEA_ADMIN_PASSWORD}@localhost:30083/gitops/$repo/archive/main.zip" >/dev/null 2>&1; then
+        log_error "CRÍTICO: Repositorio $repo no está disponible o vacío"
+        exit 1
+    fi
+    log_success "✅ Repositorio $repo verificado y poblado"
+done
+
+# --- PASO 3.5: CONSTRUIR IMAGEN DOCKER (Antes de ArgoCD Applications) ---
+log_step "🐳 Construyendo imagen hello-world-modern..."
+if [[ ! -d "$DOTFILES_DIR/source-code/hello-world-modern" ]]; then
+    log_error "Directorio hello-world-modern no encontrado"
+    exit 1
 fi
 
-# --- Configurar ArgoCD para usar repositorios Git ---
-log_step "Configurando proyectos y repositorios ArgoCD..."
+cd "$DOTFILES_DIR/source-code/hello-world-modern"
+if ! docker build -t hello-world-modern:latest .; then
+    log_error "Error construyendo imagen hello-world-modern"
+    exit 1
+fi
+log_success "✅ Imagen hello-world-modern construida"
 
-# Aplicar projects
-kubectl apply -f "$DOTFILES_DIR/gitops/projects/" || log_info "Error aplicando projects"
+log_step "📦 Cargando imagen en cluster kind..."
+if ! kind load docker-image hello-world-modern:latest --name mini-cluster; then
+    log_error "Error cargando imagen en kind"
+    exit 1
+fi
+log_success "✅ Imagen cargada en cluster kind"
 
-# Aplicar repository secrets  
-kubectl apply -f "$DOTFILES_DIR/gitops/repositories/" || log_info "Error aplicando repositories"
+# Volver al directorio base
+cd "$DOTFILES_DIR"
 
-# --- Aplicar ArgoCD Applications ---
-log_step "Desplegando ArgoCD Applications..."
-kubectl apply -f "$DOTFILES_DIR/gitops/applications/" || log_info "Error aplicando applications"
+# --- PASO 4: CONFIGURAR ARGOCD (Solo después de verificar Git y construir imagen) ---
+log_step "🔧 Configurando proyectos ArgoCD..."
+if ! kubectl apply -f "$DOTFILES_DIR/gitops/projects/"; then
+    log_error "CRÍTICO: Error aplicando projects ArgoCD"
+    exit 1
+fi
+
+log_step "🔐 Configurando repository secrets ArgoCD (con credenciales seguras)..."
+# Procesar template con credenciales del entorno
+if ! envsubst < "$DOTFILES_DIR/gitops/repositories/gitea-repos.yaml" | kubectl apply -f -; then
+    log_error "CRÍTICO: Error aplicando repository secrets con credenciales seguras"
+    exit 1
+fi
+
+# --- PASO 5: DESPLEGAR ARGOCD APPLICATIONS (CRÍTICO) ---
+log_step "🚀 Desplegando ArgoCD Applications..."
+if ! kubectl apply -f "$DOTFILES_DIR/gitops/applications/"; then
+    log_error "CRÍTICO: Error aplicando ArgoCD Applications"
+    exit 1
+fi
+
+# --- PASO 6: VERIFICAR SINCRONIZACIÓN GITOPS ---
+log_step "⏳ Esperando sincronización GitOps..."
+
+# Función para verificar sincronización de ArgoCD Application
+verify_argocd_sync() {
+    local app_name="$1"
+    local timeout="$2"
+    
+    log_info "Verificando sincronización de $app_name..."
+    
+    for attempt in $(seq 1 "$timeout"); do
+        # Verificar que la aplicación existe
+        if ! kubectl get application "$app_name" -n argocd >/dev/null 2>&1; then
+            log_info "[$attempt/$timeout] Aplicación $app_name no existe aún..."
+            sleep 10
+            continue
+        fi
+        
+        # Verificar estado de sync y health
+        local sync_status
+        sync_status=$(kubectl get application "$app_name" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+        local health_status
+        health_status=$(kubectl get application "$app_name" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+        
+        log_info "[$attempt/$timeout] $app_name: Sync=$sync_status, Health=$health_status"
+        
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+            log_success "✅ $app_name sincronizada correctamente"
+            return 0
+        fi
+        
+        sleep 10
+    done
+    
+    log_error "❌ TIMEOUT: $app_name no se sincronizó en $((timeout * 10)) segundos"
+    return 1
+}
+
+# Verificar sincronización de cada aplicación crítica
+declare -a critical_apps=("kubernetes-dashboard" "prometheus" "grafana" "hello-world" "argo-rollouts")
+for app in "${critical_apps[@]}"; do
+    if ! verify_argocd_sync "$app" 12; then  # 2 minutos por app
+        log_error "CRÍTICO: Aplicación $app falló en sincronizar desde Git"
+        # Mostrar detalles del error
+        kubectl describe application "$app" -n argocd | tail -20
+        exit 1
+    fi
+done
 
 # Limpiar archivos temporales
 rm -rf "$TEMP_DIR"
 
-log_success "GitOps configurado - manifests en Git + ArgoCD Applications"
+log_success "🎉 GitOps PURO configurado - Solo Git -> ArgoCD -> Kubernetes"
 
-# --- Construir imagen hello-world-modern ---
-log_step "Construyendo imagen hello-world-modern..."
-cd "$DOTFILES_DIR/source-code/hello-world-modern"
-docker build -t hello-world-modern:latest . || log_info "Error construyendo imagen"
+# --- PASO 7: VERIFICACIÓN FINAL GITOPS ---
+log_step "🔍 Verificación final del flujo GitOps..."
 
-log_step "Cargando imagen en cluster kind..."
-kind load docker-image hello-world-modern:latest --name mini-cluster || log_info "Error cargando imagen en kind"
+# Verificar que todos los namespaces fueron creados por ArgoCD
+declare -a expected_namespaces=("monitoring" "kubernetes-dashboard" "argo-rollouts")
+for ns in "${expected_namespaces[@]}"; do
+    log_info "Verificando namespace $ns creado por ArgoCD..."
+    for attempt in $(seq 1 30); do
+        if kubectl get namespace "$ns" >/dev/null 2>&1; then
+            log_success "✅ Namespace $ns creado por GitOps"
+            break
+        fi
+        log_info "[$attempt/30] Esperando namespace $ns..."
+        sleep 10
+    done
+    
+    if ! kubectl get namespace "$ns" >/dev/null 2>&1; then
+        log_error "CRÍTICO: Namespace $ns no fue creado por ArgoCD"
+        exit 1
+    fi
+done
 
+# Verificar que todos los deployments fueron creados por ArgoCD
+declare -a expected_deployments=(
+    "kubernetes-dashboard:kubernetes-dashboard"
+    "monitoring:prometheus" 
+    "monitoring:grafana"
+    "hello-world:hello-world"
+    "argo-rollouts:argo-rollouts"
+)
 
+for deployment_info in "${expected_deployments[@]}"; do
+    IFS=':' read -r namespace deployment <<< "$deployment_info"
+    log_info "Verificando deployment $deployment en namespace $namespace..."
+    
+    for attempt in $(seq 1 30); do
+        if kubectl get deployment "$deployment" -n "$namespace" >/dev/null 2>&1; then
+            log_success "✅ Deployment $deployment creado por GitOps en $namespace"
+            break
+        fi
+        log_info "[$attempt/30] Esperando deployment $deployment en $namespace..."
+        sleep 10
+    done
+    
+    if ! kubectl get deployment "$deployment" -n "$namespace" >/dev/null 2>&1; then
+        log_error "CRÍTICO: Deployment $deployment no existe en namespace $namespace"
+        exit 1
+    fi
+done
 
-# --- Configurar Dashboard con skip-login ---
-log_step "Configurando Dashboard con skip-login..."
+# Configurar Dashboard RBAC (única excepción permitida)
+log_step "🔐 Configurando Dashboard RBAC (post-deployment)..."
 kubectl create clusterrolebinding kubernetes-dashboard-admin \
     --clusterrole=cluster-admin \
     --serviceaccount=kubernetes-dashboard:kubernetes-dashboard \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || log_info "RBAC ya configurado"
 
-# --- Esperar a que los pods estén funcionando ---
-log_step "Esperando a que todos los servicios estén listos..."
-
-# Esperar a Dashboard
-kubectl wait --for=condition=available --timeout=120s deployment/kubernetes-dashboard -n kubernetes-dashboard 2>/dev/null || log_info "Dashboard aún iniciando"
-
-# Esperar a Prometheus
-kubectl wait --for=condition=available --timeout=120s deployment/prometheus -n monitoring 2>/dev/null || log_info "Prometheus aún iniciando"
-
-# Esperar a Grafana
-kubectl wait --for=condition=available --timeout=120s deployment/grafana -n monitoring 2>/dev/null || log_info "Grafana aún iniciando"
-
-# Esperar a Hello World
-kubectl wait --for=condition=available --timeout=120s deployment/hello-world -n default 2>/dev/null || log_info "Hello World aún iniciando"
-
-log_success "GitOps configurado correctamente con manifests directos"
+log_success "🎯 FLUJO GITOPS PURO COMPLETADO - Solo Git -> ArgoCD -> Kubernetes"
 echo ""
-echo "🎉 Ecosistema GitOps completo instalado!"
+echo "🎉 ECOSISTEMA GITOPS PURO INSTALADO! 🎯"
+echo ""
+echo "✨ FLUJO VERIFICADO: Git -> ArgoCD -> Kubernetes"
 echo ""
 echo "🌐 URLs disponibles:"
-echo "   ArgoCD:      http://localhost:30080 (admin/admin123)"
-echo "   Gitea:       http://localhost:30083 (para futuros ejercicios)" 
-echo "   Dashboard:   https://localhost:30081 (skip login habilitado)"
-echo "   Hello World: http://localhost:30082 (con métricas Prometheus)"
-echo "   Prometheus:  http://localhost:30092 (métricas del cluster)"
-echo "   Grafana:     http://localhost:30093 (admin/admin123)"
+echo "   🚀 ArgoCD:        http://localhost:30080 (admin/[PASSWORD_FROM_ENV])"
+echo "   🗃️  Gitea:         http://localhost:30083 (gitops/[PASSWORD_FROM_ENV])" 
+echo "   📱 Dashboard:     https://localhost:30081 (skip login habilitado)"
+echo "   🎯 Hello World:   http://localhost:30082 (con métricas Prometheus)"
+echo "   🔄 Rollouts UI:   http://localhost:30084 (Progressive Delivery)"
+echo "   🚀 Canary Demo:   http://localhost:30087 (Hello World Canary)"
+echo "   📈 Prometheus:    http://localhost:30092 (métricas del cluster)"
+echo "   📊 Grafana:       http://localhost:30093 (admin/[PASSWORD_FROM_ENV])"
 echo ""
-echo "📊 Verificar estado:"
+echo "� Verificar estado GitOps:"
+echo "   kubectl get applications -n argocd"
 echo "   kubectl get pods --all-namespaces"
 echo "   kubectl get svc --all-namespaces"
 echo ""
-echo "✨ Entorno educativo GitOps listo para aprender!"
+echo "📋 Repositorios Git (fuente de verdad):"
+echo "   http://localhost:30083/gitops/infrastructure"
+echo "   http://localhost:30083/gitops/applications"
+echo ""
+echo "✨ Entorno educativo GitOps PURO listo para aprender!"

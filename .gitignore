@@ -1,6 +1,20 @@
 # 🙈 Archivos a ignorar
 
-# 🔧 Sistema y logs
+# � SEGURIDAD - Credenciales y secrets
+.env
+.env.*
+*credentials*
+*secrets*
+*.key
+*.pem
+*.p12
+*.pfx
+/tmp/.gitops-*
+sealed-secrets-manifests/
+*-secret.yaml
+!sealed-*-secret.yaml
+
+# �🔧 Sistema y logs
 *.log
 *.tmp
 .DS_Store

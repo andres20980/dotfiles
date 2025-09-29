@@ -19,6 +19,8 @@
 ### Namespaces
 - `argocd`: ArgoCD controller y UI
 - `monitoring`: Prometheus, Grafana, herramientas observabilidad
+- `argo-rollouts`: Argo Rollouts controller y dashboard
+- `sealed-secrets`: Sealed Secrets controller
 - `gitea`: Git server local
 - `hello-world`: Aplicaciones demo
 - `kubernetes-dashboard`: Dashboard Kubernetes
@@ -27,15 +29,20 @@
 - `30080`: ArgoCD UI
 - `30081`: Kubernetes Dashboard
 - `30082`: Hello World App
-- `30083`: Gitea Git Server  
+- `30083`: Gitea Git Server
+- `30084`: Argo Rollouts Dashboard
+- `30085`: Argo Workflows UI (futuro)
+- `30086`: Argo Image Updater webhook
+- `30087`: Hello World Canary (ejemplo)
 - `30092`: Prometheus
 - `30093`: Grafana
-- `30094-30099`: Reservados expansión futura
+- `30094`: Argo Events webhook endpoint
+- `30095-30099`: Reservados expansión futura
 
 ### Credenciales Demo
-- ArgoCD: `admin / admin123`
-- Gitea: `gitops / gitops123`
-- Grafana: `admin / admin123`
+- ArgoCD: `admin / [PASSWORD_FROM_ENV]`
+- Gitea: `gitops / [PASSWORD_FROM_ENV]`
+- Grafana: `admin / [PASSWORD_FROM_ENV]`
 - Dashboard: Skip login habilitado
 
 ### Cluster Kind
@@ -157,12 +164,12 @@ Verificar antes de cualquier merge:
 - [ ] No drift entre Git y cluster
 
 ### Acceso Servicios
-- [ ] ArgoCD: http://localhost:30080 (admin/admin123)
+- [ ] ArgoCD: http://localhost:30080 (admin/[SECURE_PASSWORD])
 - [ ] Dashboard: https://localhost:30081 (skip login)
 - [ ] Hello World: http://localhost:30082 
-- [ ] Gitea: http://localhost:30083 (gitops/gitops123)
+- [ ] Gitea: http://localhost:30083 (gitops/[SECURE_PASSWORD])
 - [ ] Prometheus: http://localhost:30092
-- [ ] Grafana: http://localhost:30093 (admin/admin123)
+- [ ] Grafana: http://localhost:30093 (admin/[SECURE_PASSWORD])
 
 ---
 

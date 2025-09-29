@@ -1,3 +1,7 @@
+# 🔐 ArgoCD Repository Secrets Template
+# Este archivo es generado dinámicamente por install-gitops.sh
+# NO contiene credenciales hardcodeadas - usa variables de entorno
+
 apiVersion: v1
 kind: Secret
 metadata:
@@ -10,7 +14,7 @@ stringData:
   type: git
   url: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
   username: gitops
-  password: gitops123
+  password: "${GITEA_ADMIN_PASSWORD}"
 ---
 apiVersion: v1
 kind: Secret
@@ -24,4 +28,4 @@ stringData:
   type: git
   url: http://gitea.gitea.svc.cluster.local:3000/gitops/applications.git
   username: gitops
-  password: gitops123
+  password: "${GITEA_ADMIN_PASSWORD}"

@@ -31,7 +31,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-DOTFILES_DIR="/home/asanchez/dotfiles"
+DOTFILES_DIR="/home/asanchez/Code/dotfiles"
 cd "$DOTFILES_DIR"
 
 # --- Funciones auxiliares ---
@@ -175,9 +175,11 @@ EOF
 
 # Agregar al zshrc si no existe
 if ! grep -q "GitOps aliases" ~/.zshrc 2>/dev/null; then
-    echo "" >> ~/.zshrc
-    echo "# 🚀 GitOps aliases" >> ~/.zshrc
-    echo "source $DOTFILES_DIR/.gitops_aliases" >> ~/.zshrc
+    {
+        echo ""
+        echo "# 🚀 GitOps aliases"
+        echo "source $DOTFILES_DIR/.gitops_aliases"
+    } >> ~/.zshrc
 fi
 
 # --- Verificar instalación final ---
@@ -204,12 +206,12 @@ echo ""
 echo "🌐 URLs de acceso (desde Windows):"
 WSL_IP=$(hostname -I | awk '{print $1}')
 echo "   📍 Desde WSL/Linux:"
-echo "      ArgoCD:       http://$WSL_IP:30080 (admin/admin123)"
-echo "      Gitea:        http://$WSL_IP:30083 (gitops/gitops123)"
+echo "      ArgoCD:       http://$WSL_IP:30080 (admin/[SECURE_PASSWORD])"
+echo "      Gitea:        http://$WSL_IP:30083 (gitops/[SECURE_PASSWORD])"
 echo "      Dashboard:    https://$WSL_IP:30081 (SKIP login)"
 echo "      Hello World:  http://$WSL_IP:30082 (con métricas)"
 echo "      Prometheus:   http://$WSL_IP:30092 (métricas)"
-echo "      Grafana:      http://$WSL_IP:30093 (admin/admin123)"
+echo "      Grafana:      http://$WSL_IP:30093 (admin/[SECURE_PASSWORD])"
 echo ""
 echo "   🪟 Desde Windows:"
 echo "      ArgoCD:       http://localhost:30080"

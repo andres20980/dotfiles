@@ -40,7 +40,9 @@ sudo apt install -y \
     tree \
     htop \
     vim \
-    zsh
+    zsh \
+    yamllint \
+    shellcheck
 
 # --- Instalar Oh My Zsh ---
 log_step "Instalando Oh My Zsh..."
@@ -68,6 +70,16 @@ if ! command -v git-credential-manager &> /dev/null; then
     log_success "Git Credential Manager instalado y configurado"
 else
     log_success "Git Credential Manager ya está instalado"
+fi
+
+# --- Instalar kubeconform ---
+log_step "Instalando kubeconform..."
+if ! command -v kubeconform >/dev/null 2>&1; then
+    curl -L "https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz" | tar xz
+    sudo mv kubeconform /usr/local/bin/
+    log_success "kubeconform instalado"
+else
+    log_success "kubeconform ya está instalado"
 fi
 
 # --- Configurar aliases básicos ---

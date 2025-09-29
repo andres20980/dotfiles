@@ -33,7 +33,7 @@ if ! command -v docker &> /dev/null; then
     sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
     # Agregar usuario al grupo docker
-    sudo usermod -aG docker $USER
+    sudo usermod -aG docker "$USER"
     
     log_success "Docker instalado correctamente"
 else

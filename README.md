@@ -102,7 +102,7 @@ gitops-learning/
 
 │   ├── install-docker.sh        # Solo Docker + Kubernetes tools  | **ArgoCD** | `http://IP_WSL:30080` | `admin` / `admin123` |
 
-│   └── install-cluster.sh       # Solo cluster + ArgoCD básico| **Gitea** | `http://IP_WSL:30083` | `gitops` / `gitops123` |
+│   └── install-cluster.sh       # Solo cluster + ArgoCD básico| **Gitea** | `http://IP_WSL:30083` | `gitops` / `[SECURE_PASSWORD]` |
 
 ├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `https://IP_WSL:30081` | Click "SKIP" o usar token |
 
@@ -358,7 +358,7 @@ kind load docker-image hello-world-modern:v2 --name mini-cluster---
 
 - ✅ **Grafana**: Datasource automático + acceso admin- Despliega Gitea como servidor Git local
 
-- ✅ **Gitea**: Repos privados + webhooks + usuario demo- Crea usuario gitops/gitops123
+- ✅ **Gitea**: Repos privados + webhooks + usuario demo- Crea usuario gitops con password seguro generado
 
 - ✅ **Dashboard**: Skip-login + cluster-admin + métricas- Expone en puerto 30083
 

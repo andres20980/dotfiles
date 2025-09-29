@@ -27,15 +27,15 @@ wait_for_pods() {
     local timeout=${3:-300}
     
     log_step "Esperando a que los pods de $app estén listos..."
-    kubectl wait --for=condition=ready pod -l app=$app -n $namespace --timeout=${timeout}s || \
-    kubectl wait --for=condition=ready pod -l k8s-app=$app -n $namespace --timeout=${timeout}s || \
+    kubectl wait --for=condition=ready pod -l app="$app" -n "$namespace" --timeout="${timeout}"s || \
+    kubectl wait --for=condition=ready pod -l k8s-app="$app" -n "$namespace" --timeout="${timeout}"s || \
     log_info "Timeout esperando pods de $app"
 }
 
 # --- Crear cluster kind ---
 log_step "Creando cluster kind..."
 if ! kind get clusters | grep -q mini-cluster; then
-    kind create cluster --name mini-cluster --config /home/asanchez/dotfiles/config/kind-config.yaml
+    kind create cluster --name mini-cluster --config /home/asanchez/Code/dotfiles/config/kind-config.yaml
     log_success "Cluster kind creado y configurado"
 else
     log_success "Cluster kind ya existe"
@@ -54,7 +54,7 @@ log_step "Configurando credenciales de ArgoCD..."
 kubectl delete secret argocd-initial-admin-secret -n argocd 2>/dev/null || true
 ADMIN_PASSWORD_HASH=$(kubectl exec -n argocd deployment/argocd-server -- argocd account bcrypt --password admin123)
 ADMIN_PASSWORD_B64=$(echo -n "$ADMIN_PASSWORD_HASH" | base64 -w 0)
-ADMIN_TIME_B64=$(echo -n $(date +%s) | base64 -w 0)
+ADMIN_TIME_B64=$(echo -n "$(date +%s)" | base64 -w 0)
 
 kubectl patch secret argocd-secret -n argocd -p="{\"data\":{\"admin.password\":\"$ADMIN_PASSWORD_B64\",\"admin.passwordMtime\":\"$ADMIN_TIME_B64\"}}" --type=merge
 

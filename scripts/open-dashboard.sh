@@ -7,4 +7,4 @@ if [ "$TOKEN" != "ERROR" ]; then
     echo "✅ Token copiado al portapapeles"
 fi
 echo "🚀 Abriendo Dashboard..."
-cmd.exe /c start https://$(hostname -I | awk '{print $1}'):30081
+cmd.exe /c start "https://$(hostname -I | awk '{print $1}'):30081"

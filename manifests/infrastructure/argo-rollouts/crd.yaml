@@ -1,0 +1,140 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  name: rollouts.argoproj.io
+spec:
+  group: argoproj.io
+  names:
+    kind: Rollout
+    listKind: RolloutList
+    plural: rollouts
+    singular: rollout
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        description: Rollout is a specification for a Rollout resource
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object.'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents.'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RolloutSpec is the spec for a Rollout resource
+            properties:
+              replicas:
+                description: Number of desired pods.
+                format: int32
+                type: integer
+              selector:
+                description: Label selector for pods.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                    items:
+                      description: A label selector requirement
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to a set of values.
+                          type: string
+                        values:
+                          description: values is an array of string values.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs.
+                    type: object
+                type: object
+              template:
+                description: Template describes the pods that will be created.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              strategy:
+                description: The deployment strategy to use to replace existing pods with new ones.
+                properties:
+                  blueGreen:
+                    description: Blue-green update strategy
+                    properties:
+                      activeService:
+                        description: Name of the service which the rollout modifies as the active service.
+                        type: string
+                      previewService:
+                        description: Name of the service which the rollout modifies as the preview service.
+                        type: string
+                    type: object
+                  canary:
+                    description: Canary update strategy
+                    properties:
+                      steps:
+                        description: Steps define the canary analysis steps to perform
+                        items:
+                          description: CanaryStep defines a step of a canary update.
+                          properties:
+                            setWeight:
+                              description: SetWeight sets what percentage of the newRS should receive
+                              format: int32
+                              type: integer
+                            pause:
+                              description: Pause freezes the rollout by setting .spec.paused to true
+                              properties:
+                                duration:
+                                  description: Duration the amount of time to wait before proceeding to the next step.
+                                  type: string
+                              type: object
+                          type: object
+                        type: array
+                    type: object
+                type: object
+            required:
+            - selector
+            - template
+            type: object
+          status:
+            description: RolloutStatus is the status for a Rollout resource
+            properties:
+              replicas:
+                description: Total number of non-terminated pods targeted by this rollout
+                format: int32
+                type: integer
+              updatedReplicas:
+                description: Total number of non-terminated pods targeted by this rollout that have the desired template spec.
+                format: int32
+                type: integer
+              readyReplicas:
+                description: Total number of ready pods targeted by this rollout.
+                format: int32
+                type: integer
+              availableReplicas:
+                description: Total number of available pods (ready for at least minReadySeconds) targeted by this rollout.
+                format: int32
+                type: integer
+              currentPodHash:
+                description: CurrentPodHash the hash of the current pod template
+                type: string
+              currentStepIndex:
+                description: CurrentStepIndex defines the current step of the rollout is on
+                format: int32
+                type: integer
+            type: object
+        type: object
