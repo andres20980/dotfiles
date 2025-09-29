@@ -21,7 +21,11 @@ log_info() {
     echo "💡 $1"
 }
 
-DOTFILES_DIR="/home/asanchez/dotfiles"
+# Detectar directorio base automáticamente (agnóstico al usuario)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFILES_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+echo "📁 Directorio base detectado: $DOTFILES_DIR"
 
 # --- Instalar Gitea ---
 log_step "Instalando Gitea..."
@@ -54,27 +58,49 @@ spec:
       labels:
         app: gitea
     spec:
+      initContainers:
+      - name: gitea-init
+        image: gitea/gitea:1.21.11
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          mkdir -p /data/gitea/conf
+          cat > /data/gitea/conf/app.ini << 'EOL'
+          [database]
+          DB_TYPE = sqlite3
+          PATH = /data/gitea/gitea.db
+          
+          [repository]
+          ROOT = /data/git/repositories
+          
+          [server]
+          DOMAIN = localhost
+          HTTP_PORT = 3000
+          ROOT_URL = http://localhost:30083/
+          DISABLE_SSH = false
+          SSH_PORT = 22
+          
+          [security]
+          INSTALL_LOCK = true
+          
+          [service]
+          DISABLE_REGISTRATION = false
+          REQUIRE_SIGNIN_VIEW = false
+          
+          [log]
+          ROOT_PATH = /data/gitea/log
+          EOL
+          echo "Configuración inicial de Gitea completada"
+        volumeMounts:
+        - name: data
+          mountPath: /data
       containers:
       - name: gitea
         image: gitea/gitea:1.21.11
         ports:
         - containerPort: 3000
         - containerPort: 22
-        env:
-        - name: GITEA__database__DB_TYPE
-          value: sqlite3
-        - name: GITEA__database__PATH
-          value: /data/gitea/gitea.db
-        - name: GITEA__security__INSTALL_LOCK
-          value: "true"
-        - name: GITEA__service__DISABLE_REGISTRATION
-          value: "true"
-        - name: GITEA__admin__USERNAME
-          value: gitops
-        - name: GITEA__admin__PASSWORD
-          value: gitops123
-        - name: GITEA__admin__EMAIL
-          value: gitops@mini-cluster.local
         volumeMounts:
         - name: data
           mountPath: /data
@@ -106,44 +132,142 @@ EOF
 log_step "Esperando a que Gitea esté listo..."
 kubectl wait --for=condition=available --timeout=300s deployment/gitea -n gitea
 
-# Esperar un poco más para que el setup interno termine
-sleep 30
+# Esperar más tiempo para que Gitea complete la configuración inicial
+sleep 45
 
-# --- Crear repositorios en Gitea ---
-log_step "Creando repositorios en Gitea..."
+# Función para configurar usuario administrador en Gitea
+configure_gitea() {
+    log_step "Configurando usuario administrador..."
+    
+    # Esperar a que Gitea esté completamente funcionando
+    for i in {1..20}; do
+        echo "Intento $i: Verificando Gitea..."
+        if curl -s -f http://localhost:30083/ | grep -q "Sign In" 2>/dev/null; then
+            log_success "Gitea está funcionando"
+            break
+        fi
+        sleep 10
+    done
+    
+    # Crear usuario via API web (evita problemas de root)
+    log_step "Creando usuario gitops via API..."
+    curl -X POST "http://localhost:30083/user/sign_up" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "user_name=gitops&email=gitops@localhost&password=gitops123&retype=gitops123" \
+        >/dev/null 2>&1 || log_info "Usuario puede ya existir"
+    
+    sleep 5
+    
+    # Crear repositorios via API
+    log_step "Creando repositorios Git..."
+    for repo in infrastructure applications bootstrap; do
+        echo "📦 Creando repositorio: $repo"
+        curl -X POST "http://localhost:30083/api/v1/user/repos" \
+            -H "Content-Type: application/json" \
+            -u "gitops:gitops123" \
+            -d "{
+                \"name\": \"$repo\",
+                \"description\": \"GitOps repository for $repo\",
+                \"private\": false,
+                \"auto_init\": true,
+                \"default_branch\": \"main\"
+            }" >/dev/null 2>&1 && echo "✅ $repo creado" || echo "⚠️ $repo ya existe o error"
+    done
+    
+    # Verificar login
+    for i in {1..5}; do
+        echo "Verificando login de gitops (intento $i)..."
+        if curl -s -f -u "gitops:gitops123" "http://localhost:30083/api/v1/user" >/dev/null 2>&1; then
+            log_success "Usuario gitops configurado correctamente"
+            return 0
+        fi
+        sleep 5
+    done
+    
+    log_info "Continuando con configuración (usuario puede existir)..."
+    return 0
+}
 
-# Crear repositorio infrastructure
-curl -X POST "http://localhost:30083/api/v1/user/repos" \
-     -H "Content-Type: application/json" \
-     -u "gitops:gitops123" \
-     -d '{
-       "name": "infrastructure",
-       "description": "Infrastructure and observability tools",
-       "private": false,
-       "default_branch": "master"
-     }' || log_info "Repo infrastructure puede ya existir"
+# Ejecutar configuración de Gitea
+configure_gitea
 
-# Crear repositorio applications  
-curl -X POST "http://localhost:30083/api/v1/user/repos" \
-     -H "Content-Type: application/json" \
-     -u "gitops:gitops123" \
-     -d '{
-       "name": "applications", 
-       "description": "Business applications and workloads",
-       "private": false,
-       "default_branch": "master"
-     }' || log_info "Repo applications puede ya existir"
+# --- Subir manifests a repositorios Git ---
+log_step "Subiendo manifests a repositorios Git en Gitea..."
 
-# Crear repositorio bootstrap
-curl -X POST "http://localhost:30083/api/v1/user/repos" \
-     -H "Content-Type: application/json" \
-     -u "gitops:gitops123" \
-     -d '{
-       "name": "bootstrap",
-       "description": "ArgoCD bootstrap and app-of-apps",
-       "private": false,
-       "default_branch": "master"
-     }' || log_info "Repo bootstrap puede ya existir"
+# Verificar que existan los directorios
+if [[ ! -d "$DOTFILES_DIR/manifests" ]]; then
+    log_info "Error: No se encontró $DOTFILES_DIR/manifests/"
+    exit 1
+fi
+
+TEMP_DIR="/tmp/gitops-upload"
+mkdir -p "$TEMP_DIR"
+
+# Subir manifests de infraestructura
+log_step "Subiendo infraestructura a Git..."
+if [[ -d "$DOTFILES_DIR/manifests/infrastructure" ]]; then
+    rm -rf "$TEMP_DIR" 2>/dev/null || true
+    mkdir -p "$TEMP_DIR"
+    cp -r "$DOTFILES_DIR/manifests/infrastructure"/* "$TEMP_DIR/"
+    cd "$TEMP_DIR"
+    git init -b main >/dev/null 2>&1
+    git config user.name "GitOps Setup"
+    git config user.email "gitops@localhost"
+    git add .
+    git commit -m "Infrastructure: Dashboard + Prometheus + Grafana (ports fixed)" >/dev/null 2>&1
+    git remote add origin http://gitops:gitops123@localhost:30083/gitops/infrastructure.git
+    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Infrastructure subida a Git" || log_info "Error subiendo infrastructure"
+fi
+
+# Subir manifests de aplicaciones
+log_step "Subiendo aplicaciones a Git..."
+if [[ -d "$DOTFILES_DIR/manifests/applications" ]]; then
+    rm -rf "$TEMP_DIR" 2>/dev/null || true
+    mkdir -p "$TEMP_DIR"
+    cp -r "$DOTFILES_DIR/manifests/applications"/* "$TEMP_DIR/"
+    cd "$TEMP_DIR"
+    git init -b main >/dev/null 2>&1
+    git config user.name "GitOps Setup" 
+    git config user.email "gitops@localhost"
+    git add .
+    git commit -m "Applications: Hello World Modern with observability" >/dev/null 2>&1
+    git remote add origin http://gitops:gitops123@localhost:30083/gitops/applications.git
+    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Applications subida a Git" || log_info "Error subiendo applications"
+fi
+
+# Subir configuración ArgoCD (bootstrap)
+log_step "Subiendo bootstrap ArgoCD a Git..."
+if [[ -d "$DOTFILES_DIR/gitops" ]]; then
+    rm -rf "$TEMP_DIR" 2>/dev/null || true
+    mkdir -p "$TEMP_DIR"
+    cp -r "$DOTFILES_DIR/gitops"/* "$TEMP_DIR/"
+    cd "$TEMP_DIR"
+    git init -b main >/dev/null 2>&1
+    git config user.name "GitOps Setup"
+    git config user.email "gitops@localhost" 
+    git add .
+    git commit -m "Bootstrap: ArgoCD projects + applications + app-of-apps" >/dev/null 2>&1
+    git remote add origin http://gitops:gitops123@localhost:30083/gitops/bootstrap.git
+    git push --set-upstream origin main >/dev/null 2>&1 && log_success "Bootstrap subida a Git" || log_info "Error subiendo bootstrap"
+fi
+
+# --- Configurar ArgoCD para usar repositorios Git ---
+log_step "Configurando proyectos y repositorios ArgoCD..."
+
+# Aplicar projects
+kubectl apply -f "$DOTFILES_DIR/gitops/projects/" || log_info "Error aplicando projects"
+
+# Aplicar repository secrets  
+kubectl apply -f "$DOTFILES_DIR/gitops/repositories/" || log_info "Error aplicando repositories"
+
+# --- Aplicar ArgoCD Applications ---
+log_step "Desplegando ArgoCD Applications..."
+kubectl apply -f "$DOTFILES_DIR/gitops/applications/" || log_info "Error aplicando applications"
+
+# Limpiar archivos temporales
+rm -rf "$TEMP_DIR"
+
+log_success "GitOps configurado - manifests en Git + ArgoCD Applications"
 
 # --- Construir imagen hello-world-modern ---
 log_step "Construyendo imagen hello-world-modern..."
@@ -153,85 +277,7 @@ docker build -t hello-world-modern:latest . || log_info "Error construyendo imag
 log_step "Cargando imagen en cluster kind..."
 kind load docker-image hello-world-modern:latest --name mini-cluster || log_info "Error cargando imagen en kind"
 
-# --- Subir manifests a repositorios ---
-log_step "Subiendo manifests a repositorios de Gitea..."
 
-TEMP_DIR="/tmp/gitops-upload"
-mkdir -p "$TEMP_DIR"
-
-# Repositorio infrastructure
-log_step "Subiendo infrastructure..."
-cp -r "$DOTFILES_DIR/manifests/infrastructure"/* "$TEMP_DIR/"
-cd "$TEMP_DIR"
-rm -rf .git 2>/dev/null || true
-find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-git init
-git config user.name "GitOps Setup"
-git config user.email "gitops@mini-cluster.local"
-git add .
-git commit -m "Infrastructure: Dashboard + Prometheus + Grafana (ports fixed)"
-git remote add origin http://gitops:gitops123@localhost:30083/gitops/infrastructure.git
-git push --set-upstream origin master || log_info "Push infrastructure falló"
-
-# Repositorio applications
-log_step "Subiendo applications..."
-rm -rf "$TEMP_DIR"/* 2>/dev/null || true
-cp -r "$DOTFILES_DIR/manifests/applications"/* "$TEMP_DIR/"
-cd "$TEMP_DIR"
-rm -rf .git 2>/dev/null || true
-find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-git init
-git config user.name "GitOps Setup" 
-git config user.email "gitops@mini-cluster.local"
-git add .
-git commit -m "Applications: Hello World Modern with observability"
-git remote add origin http://gitops:gitops123@localhost:30083/gitops/applications.git
-git push --set-upstream origin master || log_info "Push applications falló"
-
-# Repositorio bootstrap
-log_step "Subiendo bootstrap..."
-rm -rf "$TEMP_DIR"/* 2>/dev/null || true
-cp -r "$DOTFILES_DIR/gitops"/* "$TEMP_DIR/"
-cd "$TEMP_DIR"
-rm -rf .git 2>/dev/null || true
-find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-git init
-git config user.name "GitOps Setup"
-git config user.email "gitops@mini-cluster.local" 
-git add .
-git commit -m "Bootstrap: ArgoCD projects + applications + app-of-apps"
-git remote add origin http://gitops:gitops123@localhost:30083/gitops/bootstrap.git
-git push --set-upstream origin master || log_info "Push bootstrap falló"
-
-# --- Configurar ArgoCD ---
-log_step "Configurando proyectos y repositorios ArgoCD..."
-
-# Aplicar projects
-kubectl apply -f "$DOTFILES_DIR/gitops/projects/"
-
-# Aplicar repository secrets
-kubectl apply -f "$DOTFILES_DIR/gitops/repositories/"
-
-# Crear secret para bootstrap repo
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: gitea-bootstrap-repo
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repository
-type: Opaque
-stringData:
-  type: git
-  url: http://gitea.gitea.svc.cluster.local:3000/gitops/bootstrap.git
-  username: gitops
-  password: gitops123
-EOF
-
-# --- Aplicar aplicaciones ---
-log_step "Desplegando aplicaciones ArgoCD..."
-kubectl apply -f "$DOTFILES_DIR/gitops/applications/"
 
 # --- Configurar Dashboard con skip-login ---
 log_step "Configurando Dashboard con skip-login..."
@@ -240,26 +286,35 @@ kubectl create clusterrolebinding kubernetes-dashboard-admin \
     --serviceaccount=kubernetes-dashboard:kubernetes-dashboard \
     --dry-run=client -o yaml | kubectl apply -f -
 
-# --- Limpiar archivos temporales ---
-rm -rf "$TEMP_DIR"
+# --- Esperar a que los pods estén funcionando ---
+log_step "Esperando a que todos los servicios estén listos..."
 
-# --- Reiniciar ArgoCD para aplicar cambios ---
-log_step "Reiniciando ArgoCD..."
-kubectl rollout restart deployment/argocd-repo-server -n argocd
-kubectl rollout restart deployment/argocd-application-controller -n argocd
-kubectl wait --for=condition=available --timeout=120s deployment/argocd-repo-server -n argocd
-kubectl wait --for=condition=available --timeout=120s deployment/argocd-application-controller -n argocd
+# Esperar a Dashboard
+kubectl wait --for=condition=available --timeout=120s deployment/kubernetes-dashboard -n kubernetes-dashboard 2>/dev/null || log_info "Dashboard aún iniciando"
 
-log_success "GitOps configurado correctamente"
+# Esperar a Prometheus
+kubectl wait --for=condition=available --timeout=120s deployment/prometheus -n monitoring 2>/dev/null || log_info "Prometheus aún iniciando"
+
+# Esperar a Grafana
+kubectl wait --for=condition=available --timeout=120s deployment/grafana -n monitoring 2>/dev/null || log_info "Grafana aún iniciando"
+
+# Esperar a Hello World
+kubectl wait --for=condition=available --timeout=120s deployment/hello-world -n default 2>/dev/null || log_info "Hello World aún iniciando"
+
+log_success "GitOps configurado correctamente con manifests directos"
 echo ""
-echo "🎉 GitOps completo instalado!"
+echo "🎉 Ecosistema GitOps completo instalado!"
 echo ""
 echo "🌐 URLs disponibles:"
-echo "   ArgoCD:     http://localhost:30080 (admin/admin123)"
-echo "   Gitea:      http://localhost:30083 (gitops/gitops123)" 
-echo "   Dashboard:  https://localhost:30081 (skip login)"
-echo "   Hello World: http://localhost:30082"
-echo "   Prometheus: http://localhost:30092"  
-echo "   Grafana:    http://localhost:30093 (admin/admin123)"
+echo "   ArgoCD:      http://localhost:30080 (admin/admin123)"
+echo "   Gitea:       http://localhost:30083 (para futuros ejercicios)" 
+echo "   Dashboard:   https://localhost:30081 (skip login habilitado)"
+echo "   Hello World: http://localhost:30082 (con métricas Prometheus)"
+echo "   Prometheus:  http://localhost:30092 (métricas del cluster)"
+echo "   Grafana:     http://localhost:30093 (admin/admin123)"
 echo ""
-echo "📊 Verificar aplicaciones: kubectl get applications -n argocd"
+echo "📊 Verificar estado:"
+echo "   kubectl get pods --all-namespaces"
+echo "   kubectl get svc --all-namespaces"
+echo ""
+echo "✨ Entorno educativo GitOps listo para aprender!"

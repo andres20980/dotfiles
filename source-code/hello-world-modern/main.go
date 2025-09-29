@@ -196,6 +196,15 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if Prometheus format is requested
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/plain") || r.URL.Query().Get("format") == "prometheus" {
+		// Return Prometheus format
+		metricsPrometheusHandler(w, r)
+		return
+	}
+	
+	// Default JSON format for UI
 	requestCountMutex.RLock()
 	currentRequests := requestCount
 	requestCountMutex.RUnlock()
@@ -222,6 +231,44 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(metrics)
+}
+
+func metricsPrometheusHandler(w http.ResponseWriter, r *http.Request) {
+	requestCountMutex.RLock()
+	currentRequests := requestCount
+	requestCountMutex.RUnlock()
+
+	guestbookEntriesMutex.RLock()
+	entriesCount := len(guestbookEntries)
+	guestbookEntriesMutex.RUnlock()
+
+	// Get memory stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	
+	uptime := time.Since(startTime).Seconds()
+	
+	// Prometheus format
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total number of HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", currentRequests)
+	
+	fmt.Fprintf(w, "# HELP guestbook_entries_total Total number of guestbook entries\n")
+	fmt.Fprintf(w, "# TYPE guestbook_entries_total gauge\n")
+	fmt.Fprintf(w, "guestbook_entries_total %d\n", entriesCount)
+	
+	fmt.Fprintf(w, "# HELP uptime_seconds Application uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE uptime_seconds gauge\n")
+	fmt.Fprintf(w, "uptime_seconds %.2f\n", uptime)
+	
+	fmt.Fprintf(w, "# HELP go_goroutines Number of goroutines\n")
+	fmt.Fprintf(w, "# TYPE go_goroutines gauge\n")
+	fmt.Fprintf(w, "go_goroutines %d\n", runtime.NumGoroutine())
+	
+	fmt.Fprintf(w, "# HELP memory_usage_bytes Memory usage in bytes\n")
+	fmt.Fprintf(w, "# TYPE memory_usage_bytes gauge\n")
+	fmt.Fprintf(w, "memory_usage_bytes %d\n", m.Alloc)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -330,6 +377,7 @@ func main() {
 	r.HandleFunc("/health", healthHandler)
 	r.HandleFunc("/healthz", healthHandler)
 	r.HandleFunc("/metrics", metricsHandler)
+	r.HandleFunc("/metrics-prometheus", metricsPrometheusHandler)
 	r.HandleFunc("/env", envHandler)
 	r.HandleFunc("/info", infoHandler)
 

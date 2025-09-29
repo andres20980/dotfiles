@@ -35,7 +35,7 @@ wait_for_pods() {
 # --- Crear cluster kind ---
 log_step "Creando cluster kind..."
 if ! kind get clusters | grep -q mini-cluster; then
-    kind create cluster --name mini-cluster --config ../config/kind-config.yaml
+    kind create cluster --name mini-cluster --config /home/asanchez/dotfiles/config/kind-config.yaml
     log_success "Cluster kind creado y configurado"
 else
     log_success "Cluster kind ya existe"

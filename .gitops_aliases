@@ -1,0 +1,20 @@
+# 🚀 Aliases GitOps
+alias dashboard='~/dotfiles/scripts/dashboard.sh'
+alias dashboard-full='~/dotfiles/scripts/open-dashboard.sh' 
+alias k8s-dash='~/dotfiles/scripts/dashboard.sh'
+alias check-gitops='~/dotfiles/scripts/check-status.sh'
+
+# Servicios principales
+alias argocd='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30080 2>/dev/null || echo "ArgoCD: http://$(hostname -I | awk "{print \$1}"):30080"'
+alias gitea='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30083 2>/dev/null || echo "Gitea: http://$(hostname -I | awk "{print \$1}"):30083"'
+alias prometheus='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30092 2>/dev/null || echo "Prometheus: http://$(hostname -I | awk "{print \$1}"):30092"'
+alias grafana='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30093 2>/dev/null || echo "Grafana: http://$(hostname -I | awk "{print \$1}"):30093"'
+
+echo "🚀 Aliases GitOps cargados:"
+echo "   dashboard      - Dashboard con skip login"
+echo "   dashboard-full - Dashboard con token"
+echo "   check-gitops   - Verificar estado"
+echo "   argocd         - Abrir ArgoCD"
+echo "   gitea          - Abrir Gitea"  
+echo "   prometheus     - Abrir Prometheus"
+echo "   grafana        - Abrir Grafana"
