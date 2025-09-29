@@ -210,7 +210,7 @@ EOF
 
     # Esperar a que ArgoCD esté listo
     log_info "Esperando a que ArgoCD esté listo..."
-    wait_for_condition "kubectl get pods -n argocd --no-headers | grep -v Running | wc -l | grep -q '^0$'" 300
+    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
 
     log_success "Cluster y ArgoCD creados"
 }
@@ -360,7 +360,8 @@ create_gitops_repositories() {
     local gitops_base_dir="$HOME/gitops-repos"
     
     # Esperar a que Gitea API esté disponible
-    wait_for_condition "curl -s -f http://localhost:30083/api/v1/version" 60
+    log_info "Esperando a que Gitea API esté disponible..."
+    wait_for_condition "curl -s -f http://localhost:30083/api/v1/version" 120
     
     # Crear usuario gitops (puede fallar si ya existe, es OK)
     curl -X POST "http://localhost:30083/api/v1/admin/users" \
@@ -591,6 +592,12 @@ EOF
 # =============================================================================
 
 main() {
+    # Modo desatendido si se pasa argumento --unattended
+    local unattended=false
+    if [[ "$1" == "--unattended" ]]; then
+        unattended=true
+    fi
+    
     echo "🚀 INSTALADOR MASTER GITOPS"
     echo "=============================================="
     echo "Este script instalará un entorno GitOps completo:"
@@ -609,10 +616,15 @@ main() {
     echo ""
     echo "⏱️ Tiempo estimado: 15-20 minutos"
     echo ""
-    read -p "¿Continuar con la instalación? (y/N): " -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Instalación cancelada"
-        exit 0
+    
+    if [[ "$unattended" == "false" ]]; then
+        read -p "¿Continuar con la instalación? (y/N): " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Instalación cancelada"
+            exit 0
+        fi
+    else
+        echo "🤖 MODO DESATENDIDO ACTIVADO - Instalando automáticamente..."
     fi
 
     # Ejecutar pasos de instalación
