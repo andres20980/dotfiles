@@ -324,7 +324,7 @@ spec:
         - name: GITEA__security__INSTALL_LOCK
           value: "true"
         - name: GITEA__service__DISABLE_REGISTRATION
-          value: "true"
+          value: "false"
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
@@ -369,16 +369,14 @@ create_gitops_repositories() {
     log_info "Esperando a que Gitea API esté disponible..."
     wait_for_condition "curl -s -f http://localhost:30083/api/v1/version" 120
     
-    # Crear usuario gitops (puede fallar si ya existe, es OK)
-    curl -X POST "http://localhost:30083/api/v1/admin/users" \
-        -H "Content-Type: application/json" \
-        -u "admin:$GITEA_ADMIN_PASSWORD" \
-        -d "{
-            \"username\": \"gitops\",
-            \"email\": \"gitops@localhost\",
-            \"password\": \"$GITEA_ADMIN_PASSWORD\",
-            \"must_change_password\": false
-        }" >/dev/null 2>&1 || true
+    # Crear usuario gitops usando el endpoint de registro público
+    curl -X POST "http://localhost:30083/user/sign_up" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "user_name=gitops&email=gitops@localhost&password=$GITEA_ADMIN_PASSWORD&retype=$GITEA_ADMIN_PASSWORD" \
+        >/dev/null 2>&1 || true
+    
+    # Esperar un momento para que la cuenta se active
+    sleep 5
 
     # Crear estructuras de repositorios persistentes
     mkdir -p "$gitops_base_dir"
