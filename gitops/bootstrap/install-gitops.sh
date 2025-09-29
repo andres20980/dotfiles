@@ -350,6 +350,25 @@ if ! kubectl apply -f "$DOTFILES_DIR/gitops/applications/"; then
     exit 1
 fi
 
+# --- PASO 5.1: DESPLEGAR ApplicationSets PARA CARGA AUTOMÁTICA ---
+log_step "🚀 Desplegando ApplicationSets para carga automática de manifests..."
+if ! kubectl apply -f "$DOTFILES_DIR/gitops/applications/applicationsets.yaml" -n argocd; then
+    log_error "CRÍTICO: Error aplicando ApplicationSets unificados"
+    exit 1
+fi
+
+# Asegurar que AppProject 'infrastructure' permite los namespaces dinámicos (añadir argo-rollouts si falta)
+log_step "🔧 Asegurando AppProject 'infrastructure' destinos permitidos..."
+if kubectl get appproject infrastructure -n argocd >/dev/null 2>&1; then
+    # Añadir namespace argo-rollouts si no existe
+    if ! kubectl get appproject infrastructure -n argocd -o jsonpath='{.spec.destinations[*].namespace}' | grep -qw "argo-rollouts"; then
+        kubectl patch appproject infrastructure -n argocd --type='json' -p='[{"op":"add","path":"/spec/destinations/-","value":{"namespace":"argo-rollouts","server":"https://kubernetes.default.svc"}}]' || true
+        log_info "Destino 'argo-rollouts' añadido al AppProject 'infrastructure'"
+    else
+        log_info "Destino 'argo-rollouts' ya permitido en AppProject 'infrastructure'"
+    fi
+fi
+
 # --- PASO 6: VERIFICAR SINCRONIZACIÓN GITOPS ---
 log_step "⏳ Esperando sincronización GitOps..."
 
