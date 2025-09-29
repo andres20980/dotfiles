@@ -1,13 +1,65 @@
-# Temporary files
-*.tmp
-*.log
-.DS_Store
+# 🙈 Archivos a ignorar
 
-# IDE files
+# 🔧 Sistema y logs
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# 🐳 Docker
+.dockerignore
+docker-compose.override.yml
+
+# 🔑 Credenciales y secretos
+*.key
+*.pem
+*.p12
+.env
+.env.local
+.env.*.local
+secrets/
+.secrets/
+
+# 💻 IDEs y editores
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Local test files
+# 🗂️ Archivos temporales del sistema
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 📦 Node.js (si hay apps JS futuras)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 🐍 Python (si hay scripts Python futuros)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+
+# 🚀 GitOps específico
+.argocd/
+.kubectl_cache/
+kubeconfig*
+!config/kind-config.yaml
+
+# 📊 Datos temporales
+data/
+logs/
+tmp/
 test-*-local.*
 
 # ArgoCD admin password (if stored locally)
