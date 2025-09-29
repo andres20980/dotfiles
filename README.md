@@ -18,9 +18,14 @@ Este repositorio contiene la configuración automática para crear un **entorno 
 - ✅ **NGINX Ingress** - Controlador de ingreso
 - ✅ **Kubernetes Dashboard** - UI web de Kubernetes
 
-### 📱 **Aplicaciones de Ejemplo:**
+### � **Herramientas de Observabilidad:**
+- ✅ **Prometheus** - Recolección de métricas y alertas
+- ✅ **Grafana** - Dashboards y visualización de métricas
+- ✅ **Métricas Nativas** - Aplicaciones con métricas Prometheus integradas
+
+### �📱 **Aplicaciones de Ejemplo:**
 - ✅ **Dashboard** - UI de administración de Kubernetes
-- ✅ **Hello World** - Aplicación de prueba con Nginx
+- ✅ **Hello World Modern** - Aplicación Go con observabilidad completa
 
 ---
 
@@ -47,7 +52,9 @@ Una vez instalado, podrás acceder a todos los servicios desde Windows usando es
 | **ArgoCD** | `http://IP_WSL:30080` | `admin` / `admin123` |
 | **Gitea** | `http://IP_WSL:30083` | `gitops` / `gitops123` |
 | **Dashboard** | `https://IP_WSL:30081` | Click "SKIP" o usar token |
-| **Hello World** | `http://IP_WSL:30082` | Sin credenciales |
+| **Hello World** | `http://IP_WSL:30082` | Sin credenciales (con métricas) |
+| **Prometheus** | `http://IP_WSL:30090` | Sin credenciales (métricas) |
+| **Grafana** | `http://IP_WSL:30091` | `admin` / `admin123` (dashboards) |
 
 > **💡 Tip:** Usa `./check-windows-access.sh` para obtener las URLs exactas con tu IP de WSL.
 
@@ -96,9 +103,11 @@ kubectl get pods --all-namespaces   # Todos los pods deberían estar "Running"
 
 ### **❌ Las aplicaciones no se sincronizan:**
 ```bash
-# Forzar sincronización manual
+# Forzar sincronización manual de todas las aplicaciones
 kubectl patch application dashboard -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 kubectl patch application hello-world -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+kubectl patch application prometheus -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+kubectl patch application grafana -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 ```
 
 ### **❌ No puedo acceder desde Windows:**
@@ -106,8 +115,8 @@ kubectl patch application hello-world -n argocd --type merge -p '{"metadata":{"a
 # Obtener IP correcta de WSL
 ./check-windows-access.sh
 
-# Verificar que los puertos estén abiertos
-netstat -tlnp | grep -E ':(30080|30081|30082|30083)'
+# Verificar que todos los puertos estén abiertos
+netstat -tlnp | grep -E ':(30080|30081|30082|30083|30090|30091)'
 ```
 
 ### **❌ El Dashboard pide token:**
@@ -182,13 +191,19 @@ El script realiza una **instalación completa desde cero**:
 - Crea repositorio `custom-apps` (Hello World)
 - Sube manifests iniciales a Gitea
 
-### **7. 🎯 Configuración de Aplicaciones ArgoCD:**
+### **7. 📊 Instalación de Stack de Observabilidad:**
+- Despliega Prometheus para recolección de métricas
+- Instala Grafana con datasource automático
+- Construye aplicación Hello World moderna con métricas
+- Configura RBAC para monitoreo de cluster
+
+### **8. 🎯 Configuración de Aplicaciones ArgoCD:**
 - Crea proyectos ArgoCD
 - Configura secrets de autenticación de repositorios
-- Despliega aplicaciones Dashboard y Hello World
+- Despliega aplicaciones Dashboard, Hello World, Prometheus y Grafana
 - Configura sincronización automática
 
-### **8. 🚀 Scripts de Acceso Automático:**
+### **9. 🚀 Scripts de Acceso Automático:**
 - Crea scripts para abrir Dashboard automáticamente
 - Configura aliases de comandos
 - Genera tokens de acceso automáticos
@@ -237,6 +252,46 @@ Después de ejecutar `install.sh`, tendrás:
 ```bash
 kubectl logs -f deployment/argocd-application-controller -n argocd  # Logs ArgoCD
 kubectl get events --all-namespaces --sort-by='.lastTimestamp'     # Eventos del cluster
+```
+
+---
+
+## 📊 Stack de Observabilidad Enterprise
+
+### **🎯 ¿Qué métricas obtienes automáticamente?**
+
+#### **📈 Prometheus - Métricas del Sistema:**
+- **Métricas de Kubernetes:** CPU, memoria, red de todos los pods
+- **Métricas de Aplicaciones:** Hello World expone métricas HTTP automáticamente
+- **Métricas del Cluster:** Estado de nodos, eventos, recursos
+- **Alertas Básicas:** Configuradas para detectar problemas comunes
+
+#### **📊 Grafana - Visualización:**
+- **Acceso:** http://localhost:30091 (admin/admin123)
+- **Datasource Automático:** Prometheus preconfigurado
+- **Dashboards Listos:** Para usar inmediatamente
+- **Personalización:** Crea tus propios dashboards fácilmente
+
+#### **🔍 Hello World Moderna - Métricas de Aplicación:**
+- **Endpoint Métricas:** `/metrics` - Formato Prometheus nativo
+- **Health Checks:** `/health` y `/ready` para monitoreo
+- **API Funcional:** Guestbook interactivo en `/api/entries`
+- **Instrumentación:** Middleware automático para todas las requests
+
+### **📋 Cómo usar el Stack de Observabilidad:**
+
+```bash
+# Ver métricas en tiempo real
+curl http://localhost:30082/metrics
+
+# Acceder a Prometheus para queries
+# http://localhost:30090 - Busca: http_requests_total
+
+# Crear dashboards en Grafana  
+# http://localhost:30091 - Login: admin/admin123
+
+# Ver health de la aplicación
+curl http://localhost:30082/health
 ```
 
 ---

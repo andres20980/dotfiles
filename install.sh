@@ -38,7 +38,7 @@ sudo apt-get update
 
 # --- Instalar paquetes esenciales ---
 log_step "Instalando paquetes esenciales..."
-sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential libice6 ca-certificates apache2-utils
+sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential libice6 ca-certificates apache2-utils unzip
 
 # --- Instalar Oh My Zsh ---
 if [ -d "$HOME/.oh-my-zsh" ]; then
@@ -254,6 +254,15 @@ curl -X POST "http://gitops:gitops123@localhost:30083/api/v1/user/repos" \
   -H "Content-Type: application/json" \
   -d '{"name": "custom-apps", "private": false}' -s > /dev/null || true
 
+# --- Construir imagen Hello World Modern ---
+log_step "Construyendo imagen Hello World Modern..."
+cd "$HOME/dotfiles/hello-world-modern"
+docker build -t hello-world-modern:latest . || log_info "Error construyendo imagen, usando nginx como fallback"
+
+# Cargar imagen en kind
+log_step "Cargando imagen en cluster kind..."
+kind load docker-image hello-world-modern:latest --name mini-cluster || log_info "Error cargando imagen en kind"
+
 # --- Subir manifests desde argo-apps a Gitea ---
 log_step "Subiendo manifests a repositorios de Gitea..."
 
@@ -272,7 +281,7 @@ git init
 git config user.name "GitOps Setup"
 git config user.email "gitops@mini-cluster.local"
 git add .
-git commit -m "Initial dashboard manifests with all fixes"
+git commit -m "GitOps tools: Dashboard + Prometheus + Grafana with full observability"
 git remote add origin http://gitops:gitops123@localhost:30083/gitops/gitops-tools.git
 git push --set-upstream origin master || log_info "Push gitops-tools falló"
 
@@ -287,7 +296,7 @@ git init
 git config user.name "GitOps Setup"
 git config user.email "gitops@mini-cluster.local"
 git add .
-git commit -m "Initial hello-world application"
+git commit -m "Hello World Modern with Prometheus metrics and observability"
 git remote add origin http://gitops:gitops123@localhost:30083/gitops/custom-apps.git
 git push --set-upstream origin master || log_info "Push custom-apps falló"
 
@@ -400,6 +409,48 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: hello-world
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+spec:
+  project: gitops-tools
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
+    targetRevision: master
+    path: prometheus/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  project: gitops-tools
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
+    targetRevision: master
+    path: grafana/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
   syncPolicy:
     automated:
       prune: true
@@ -611,13 +662,17 @@ echo "   📍 Desde WSL/Linux:"
 echo "      ArgoCD:       http://$WSL_IP:30080 (admin/admin123)"
 echo "      Gitea:        http://$WSL_IP:30083 (gitops/gitops123)"
 echo "      Dashboard:    https://$WSL_IP:30081 (SKIP login habilitado)"
-echo "      Hello World:  http://$WSL_IP:30082"
+echo "      Hello World:  http://$WSL_IP:30082 (con métricas)"
+echo "      Prometheus:   http://$WSL_IP:30090 (métricas y alertas)"
+echo "      Grafana:      http://$WSL_IP:30091 (dashboards, admin/admin123)"
 echo ""
 echo "   🪟 Desde Windows:"
 echo "      ArgoCD:       http://localhost:30080 (admin/admin123)"
 echo "      Gitea:        http://localhost:30083 (gitops/gitops123)"
 echo "      Dashboard:    https://localhost:30081 (SKIP login habilitado)"
-echo "      Hello World:  http://localhost:30082"
+echo "      Hello World:  http://localhost:30082 (con métricas)"
+echo "      Prometheus:   http://localhost:30090 (métricas y alertas)"
+echo "      Grafana:      http://localhost:30091 (dashboards, admin/admin123)"
 echo ""
 echo "🚀 Comandos de acceso rápido:"
 echo "   dashboard       - Abre Dashboard con skip login"

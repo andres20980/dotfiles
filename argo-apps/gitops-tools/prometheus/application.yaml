@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+  labels:
+    app: prometheus
+spec:
+  project: gitops-tools
+  source:
+    repoURL: http://gitea:3000/gitops/gitops-tools.git
+    targetRevision: master
+    path: prometheus/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
