@@ -49,7 +49,7 @@ validate_prerequisites() {
     log_step "Verificando prerequisitos"
     
     # Validar que estamos en el directorio correcto
-    if [[ ! -f "$DOTFILES_DIR/install.sh" ]]; then
+    if [[ ! -f "install.sh" ]]; then
         log_error "Debes ejecutar este script desde la raíz del repositorio dotfiles"
         exit 1
     fi
@@ -218,9 +218,21 @@ EOF
 build_and_load_images() {
     log_step "Construyendo y cargando imágenes"
     
+    # Verificar si existe la estructura de repositorios
+    local gitops_base_dir="$HOME/gitops-repos"
+    local source_dir
+    
+    if [[ -d "$gitops_base_dir/apps/hello-world-modern" ]]; then
+        source_dir="$gitops_base_dir/apps/hello-world-modern"
+        log_info "Usando código fuente desde: $source_dir"
+    else
+        source_dir="$DOTFILES_DIR/source-code/hello-world-modern"
+        log_info "Usando código fuente desde dotfiles: $source_dir"
+    fi
+    
     # Construir hello-world-modern
     log_info "Construyendo imagen hello-world-modern..."
-    cd "$DOTFILES_DIR/source-code/hello-world-modern"
+    cd "$source_dir"
     docker build -t hello-world-modern:latest . >/dev/null 2>&1
 
     # Cargar en kind
@@ -344,9 +356,8 @@ EOF
 create_gitops_repositories() {
     log_info "Creando repositorios GitOps en Gitea..."
     
-    # Crear usuario gitops en Gitea
-    local temp_dir="/tmp/gitea_setup_$$"
-    mkdir -p "$temp_dir"
+    # Directorio base para repositorios GitOps (fuera de dotfiles)
+    local gitops_base_dir="$HOME/gitops-repos"
     
     # Esperar a que Gitea API esté disponible
     wait_for_condition "curl -s -f http://localhost:30083/api/v1/version" 60
@@ -362,7 +373,10 @@ create_gitops_repositories() {
             \"must_change_password\": false
         }" >/dev/null 2>&1 || true
 
-    # Crear repositorios
+    # Crear estructuras de repositorios persistentes
+    mkdir -p "$gitops_base_dir"
+    
+    # Crear repositorios GitOps
     for repo in infrastructure applications; do
         log_info "Creando repositorio: $repo"
         
@@ -377,30 +391,91 @@ create_gitops_repositories() {
                 \"private\": false
             }" >/dev/null 2>&1
 
-        # Preparar directorio temporal con manifests
-        local repo_dir="$temp_dir/$repo"
+        # Crear directorio de trabajo para el repositorio
+        local repo_dir="$gitops_base_dir/gitops-$repo"
+        rm -rf "$repo_dir"  # Limpiar si existe
         mkdir -p "$repo_dir"
         
+        # Copiar manifests desde dotfiles
         if [[ "$repo" == "infrastructure" ]]; then
             cp -r "$DOTFILES_DIR/manifests/infrastructure/"* "$repo_dir/"
         else
             cp -r "$DOTFILES_DIR/manifests/applications/"* "$repo_dir/"
         fi
 
-        # Subir manifests al repositorio
+        # Inicializar y subir repositorio
         cd "$repo_dir"
         git init -b main >/dev/null 2>&1
         git config user.name "GitOps Setup"
         git config user.email "gitops@localhost"
         git add .
-        git commit -m "Initial GitOps $repo manifests" >/dev/null 2>&1
+        git commit -m "Initial GitOps $repo manifests with correct versions
+
+- argo-rollouts: v1.8.3 con argumentos correctos
+- sealed-secrets: docker.io registry 
+- RBAC: permisos completos
+- Manifests listos para producción" >/dev/null 2>&1
         git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/$repo.git"
         git push --set-upstream origin main --force >/dev/null 2>&1
         
-        log_success "✅ $repo repository creado y poblado"
+        log_success "✅ $repo → $repo_dir"
     done
 
-    rm -rf "$temp_dir"
+    # Crear repositorios de código fuente para desarrollo
+    create_source_repositories "$gitops_base_dir"
+    
+    cd "$DOTFILES_DIR"
+}
+
+create_source_repositories() {
+    local base_dir="$1"
+    log_info "Creando repositorios de código fuente para desarrollo..."
+    
+    # Directorio para aplicaciones de desarrollo
+    local apps_dir="$base_dir/apps"
+    mkdir -p "$apps_dir"
+    
+    # Crear repositorio hello-world-modern para desarrollo
+    local app_dir="$apps_dir/hello-world-modern"
+    rm -rf "$app_dir"
+    mkdir -p "$app_dir"
+    
+    # Copiar código fuente desde dotfiles
+    cp -r "$DOTFILES_DIR/source-code/hello-world-modern/"* "$app_dir/"
+    
+    # Inicializar repositorio git para desarrollo
+    cd "$app_dir"
+    git init -b main >/dev/null 2>&1
+    git config user.name "Developer"
+    git config user.email "dev@localhost"
+    git add .
+    git commit -m "Initial hello-world-modern application
+
+- Aplicación Go moderna con métricas Prometheus
+- Dockerfile para containerización
+- Health checks y readiness probes
+- Configuración para despliegue con argo-rollouts" >/dev/null 2>&1
+    
+    # Crear repositorio en Gitea para el código fuente
+    curl -X POST "http://localhost:30083/api/v1/user/repos" \
+        -H "Content-Type: application/json" \
+        -u "gitops:$GITEA_ADMIN_PASSWORD" \
+        -d "{
+            \"name\": \"hello-world-modern\",
+            \"description\": \"Hello World Modern Application Source Code\",
+            \"auto_init\": false,
+            \"private\": false
+        }" >/dev/null 2>&1
+
+    # Subir código fuente a Gitea
+    git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/hello-world-modern.git"
+    git push --set-upstream origin main >/dev/null 2>&1
+    
+    log_success "✅ hello-world-modern → $app_dir"
+    log_info "📁 Estructura creada:"
+    log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
+    log_info "   $base_dir/gitops-applications/    (manifests apps)"
+    log_info "   $base_dir/apps/hello-world-modern/ (código fuente)"
 }
 
 setup_application_sets() {
@@ -559,7 +634,19 @@ main() {
     echo "   Gitea:      http://localhost:30083 (gitops/$GITEA_ADMIN_PASSWORD)"
     echo "   Dashboard:  ./dashboard.sh"
     echo ""
-    echo "📋 Comandos útiles:"
+    echo "� Estructura de repositorios creada:"
+    echo "   ~/gitops-repos/gitops-infrastructure/   (Kubernetes manifests)"
+    echo "   ~/gitops-repos/gitops-applications/     (Application manifests)"
+    echo "   ~/gitops-repos/apps/hello-world-modern/ (Source code)"
+    echo ""
+    echo "🔧 Flujo de desarrollo:"
+    echo "   1. Modificar código en: ~/gitops-repos/apps/hello-world-modern/"
+    echo "   2. Build + push imagen: cd ~/gitops-repos/apps/hello-world-modern && docker build -t hello-world-modern:latest ."
+    echo "   3. Cargar en kind: kind load docker-image hello-world-modern:latest --name $CLUSTER_NAME"
+    echo "   4. Modificar manifests en: ~/gitops-repos/gitops-applications/"
+    echo "   5. Git push → ArgoCD sync automático"
+    echo ""
+    echo "�📋 Comandos útiles:"
     echo "   ./dashboard.sh     - Abrir Dashboard K8s"
     echo "   gitea             - Ver URL de Gitea"
     echo ""
@@ -567,7 +654,7 @@ main() {
     echo "   kubectl get applications -n argocd"
     echo "   kubectl get pods --all-namespaces"
     echo ""
-    log_success "¡Todo listo! El entorno GitOps está funcionando."
+    log_success "¡Todo listo! Entorno GitOps completo con repositorios de desarrollo."
 }
 
 # Ejecutar si es llamado directamente
