@@ -4,11 +4,10 @@ metadata:
   name: hello-world
   namespace: hello-world
 spec:
-  type: NodePort
+  selector:
+    app: hello-world
   ports:
   - port: 80
     targetPort: 80
     nodePort: 30082
-    protocol: TCP
-  selector:
-    app: hello-world
+  type: NodePort

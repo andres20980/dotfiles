@@ -1,0 +1,15 @@
+# Aliases para GitOps Dashboard
+alias dashboard='cd /home/asanchez/dotfiles && ./dashboard.sh'
+alias dashboard-full='cd /home/asanchez/dotfiles && ./open-dashboard.sh'
+alias k8s-dash='cd /home/asanchez/dotfiles && ./dashboard.sh'
+
+# Aliases para otros servicios GitOps
+alias argocd='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30080'
+alias gitea='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30083'
+
+echo "🚀 Aliases de GitOps cargados:"
+echo "   dashboard      - Abre Dashboard (skip login)"
+echo "   dashboard-full - Abre Dashboard con token automático"  
+echo "   k8s-dash       - Alias corto para dashboard"
+echo "   argocd         - Abre ArgoCD UI"
+echo "   gitea          - Abre Gitea UI"

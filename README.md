@@ -1,177 +1,283 @@
-# Mi Configuración de WSL (Dotfiles)
+# 🚀 Entorno de Desarrollo GitOps Completo
 
-Este repositorio contiene la configuración de mi entorno de desarrollo en WSL (Ubuntu). Incluye la configuración de `zsh`, `Oh My Zsh`, `nvm`, `docker`, `kubectl`, `kind`, ArgoCD y otros. También incluye un script (`install.sh`) para automatizar la instalación de todas las herramientas.
+Este repositorio contiene la configuración automática para crear un **entorno GitOps completo** con Kubernetes, ArgoCD, Gitea y aplicaciones de ejemplo. Todo se instala y configura automáticamente con un solo comando.
 
-## 🚀 Cómo restaurar la configuración en una máquina nueva
+## 🎯 ¿Qué incluye este entorno?
 
-1.  **Clonar este repositorio:**
-    ```bash
-    # Clona el repositorio en tu directorio home
-    git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
-    ```
+### 🔧 **Herramientas Base:**
+- ✅ **Docker** - Containerización
+- ✅ **kubectl** - Cliente Kubernetes
+- ✅ **kind** - Kubernetes local en Docker
+- ✅ **zsh + Oh My Zsh** - Shell mejorado con plugins
+- ✅ **Git Credential Manager** - Gestión de credenciales
 
-2.  **Ejecutar el script de instalación:**
-    Este script instalará todas las aplicaciones, herramientas y configuraciones necesarias.
-    ```bash
-    # Navega a la carpeta
-    cd ~/dotfiles
+### 🏗️ **Stack GitOps:**
+- ✅ **Kubernetes Cluster** (kind) - Cluster local completo
+- ✅ **ArgoCD** - Controlador GitOps con UI web
+- ✅ **Gitea** - Servidor Git local (como GitHub local)
+- ✅ **NGINX Ingress** - Controlador de ingreso
+- ✅ **Kubernetes Dashboard** - UI web de Kubernetes
 
-    # Dale permisos de ejecución y lánzalo
-    chmod +x install.sh
-    ./install.sh
-    ```
-    *Nota: El script usará `sudo`, por lo que te pedirá tu contraseña. Instalará **Docker Engine**, **Git Credential Manager**, desplegará **ArgoCD**, **Gitea** y configurará aplicaciones GitOps automáticamente.*
+### 📱 **Aplicaciones de Ejemplo:**
+- ✅ **Dashboard** - UI de administración de Kubernetes
+- ✅ **Hello World** - Aplicación de prueba con Nginx
 
-4.  **Crear el enlace simbólico:**
-    El script no sobreescribe tu `.zshrc` por seguridad. Después de que el script termine, enlaza el `.zshrc` de este repositorio a tu `home`.
-    ```bash
-    # Borra el .zshrc por defecto si existe
-    rm ~/.zshrc
+---
 
-    # Crea el enlace simbólico
-    ln -s ~/dotfiles/.zshrc ~/.zshrc
-    ```
-
-5.  **Configurar tu identidad de Git:**
-    El script no configura tus datos personales. Hazlo con los siguientes comandos:
-    ```bash
-    git config --global user.name "tu-nombre"
-    git config --global user.email "tu-email@example.com"
-    ```
-
-6.  **Reiniciar la Terminal:**
-    Cierra y vuelve a abrir la terminal para que todos los cambios (`zsh`, `nvm`, `docker`, etc.) se carguen correctamente.
-
-7.  **Autenticar Git con GitHub:**
-    La primera vez que hagas `git push` a un repositorio privado, el Git Credential Manager (instalado por el script) te pedirá que te autentiques en GitHub. Solo tendrás que hacerlo una vez.
-
-¡Y listo! Tu entorno estará replicado.
-
-## 🐳 Entorno Kubernetes (kind + Docker)
-## 🌐 Exposición de servicios (NodePort)
-
-El script configura automáticamente los servicios de **ArgoCD** y **Dashboard de Kubernetes** como **NodePort**, lo que significa que están disponibles directamente en `localhost` sin necesidad de mantener terminales abiertas con port-forwarding.
-
-**URLs de acceso desde Windows:**
-- **ArgoCD HTTP:** `http://localhost:30080` (o `http://argocd.mini-cluster`)
-- **Gitea:** `http://localhost:30083` (o `http://gitea.mini-cluster`)
-- **NGINX Ingress:** `http://localhost:30090`
-- **Dashboard Kubernetes:** `https://dashboard.mini-cluster` (via ingress)
-- **Hello World App:** `http://hello-world.mini-cluster` (via ingress)
-
-Esta configuración es ideal para desarrollo local con kind, ya que los NodePorts se mapean automáticamente a localhost.
-*Nota: Gracias a la configuración especial de kind, ahora puedes acceder directamente desde tu navegador de Windows usando `localhost` sin necesidad de configuración adicional en el hosts de Windows.*/
-*Nota: El script configura automáticamente entradas en `/etc/hosts` para dominios personalizados en WSL. Para Windows, usa directamente `localhost` gracias a la configuración especial de kind.*
-
-
-El script de instalación prepara todo lo necesario para levantar un clúster de Kubernetes local usando Docker como motor.
-
-Para crear tu primer clúster, simplemente usa:
+## ⚡ Instalación Rápida (Un Solo Comando)
 
 ```bash
-kind create cluster
+# 1. Clonar el repositorio
+git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
+
+# 2. Ejecutar la instalación completa
+cd ~/dotfiles && chmod +x install.sh && ./install.sh
 ```
 
-`kind` usará Docker automáticamente, que es su motor por defecto y el más probado.
+**¡Eso es todo!** En ~10-15 minutos tendrás un entorno GitOps completo funcionando.
 
-## ⚙️ Post-instalación de Docker (Uso cómodo)
+---
 
-Después de que el script principal termine, se recomienda ejecutar estos dos pasos para poder usar Docker sin `sudo` y para que se inicie automáticamente.
+## 🌐 URLs de Acceso (Después de la Instalación)
 
-1.  **Añadir tu usuario al grupo `docker`:**
-    ```bash
-    # Esto te permite ejecutar comandos de docker sin sudo
-    sudo usermod -aG docker $USER
-    ```
-    **¡Importante!** Después de este comando, debes cerrar y volver a abrir la terminal.
+Una vez instalado, podrás acceder a todos los servicios desde Windows usando estas URLs:
 
-2.  **Configurar el arranque automático del servicio de Docker:**
-    Esto permite que el servicio de Docker se inicie sin pedir contraseña, para poder automatizarlo en el `.zshrc`.
-    ```bash
-    # La variable $USER se reemplazará por tu nombre de usuario actual
-    echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/service docker start" | sudo tee /etc/sudoers.d/docker-service
-    ```
-    *Nota: El script que hemos añadido a tu `.zshrc` usará este permiso para iniciar Docker automáticamente en nuevas terminales.*
+| Servicio | URL | Credenciales |
+|----------|-----|--------------|
+| **ArgoCD** | `http://IP_WSL:30080` | `admin` / `admin123` |
+| **Gitea** | `http://IP_WSL:30083` | `gitops` / `gitops123` |
+| **Dashboard** | `https://IP_WSL:30081` | Click "SKIP" o usar token |
+| **Hello World** | `http://IP_WSL:30082` | Sin credenciales |
 
-## 🖥️ Acceder a los servicios (sin port-forwarding necesario)
+> **💡 Tip:** Usa `./check-windows-access.sh` para obtener las URLs exactas con tu IP de WSL.
 
-El Dashboard de Kubernetes y las aplicaciones custom se instalan y gestionan a través de ArgoCD usando el script `create-argocd-apps.sh`.
+---
 
-### Acceder al Dashboard de Kubernetes:
-1.  **Obtén el token de login** para acceder al Dashboard:
-    ```bash
-    kubectl -n kubernetes-dashboard create token kubernetes-dashboard
-    ```
-    Copia el token que se mostrará.
+## 🚀 Comandos de Acceso Rápido
 
-2.  **Abre el navegador** en la siguiente URL, elige "Token" y pega el token para entrar:
-    `https://dashboard.mini-cluster` (accesible via NGINX Ingress)
-
-### Acceder a la aplicación Hello World:
-La aplicación Hello World es un ejemplo simple que demuestra GitOps. Está desplegada y gestionada por ArgoCD.
-
-**Estado actual:** ✅ Desplegada y funcionando (accesible via NGINX Ingress en `http://hello-world.mini-cluster`)
-
-## 🚀 Acceder a ArgoCD
-
-El script de instalación despliega ArgoCD (Argo Continuous Delivery) mínimamente y lo configura para funcionar **sin autenticación** en entornos locales y privados.
-
-### Acceder a ArgoCD:
-
-1. **Abre el navegador** directamente en la siguiente URL (sin necesidad de port-forwarding):
-   `http://localhost:30080` (o `http://argocd.mini-cluster`)
-
-*Nota: ArgoCD está configurado en modo inseguro (`server.insecure=true`) y sin autenticación (`server.disable.auth=true`) para facilitar el desarrollo local. No uses esta configuración en entornos de producción.*
-
-## 🚀 Acceder a Gitea
-
-El script de instalación despliega Gitea como repositorio Git local usando SQLite y sin autenticación.
-
-### Acceder a Gitea:
-
-1. **Abre el navegador** directamente en la siguiente URL:
-   `http://localhost:30083` (o `http://gitea.mini-cluster`)
-
-*Nota: Gitea está configurado sin autenticación para facilitar el desarrollo local. Los repositorios se crean automáticamente durante la instalación.*
-
-### Crear tu primer Application con ArgoCD:
-#### Gestionar herramientas con ArgoCD (GitOps)
-
-El script `install.sh` crea automáticamente dos tipos de aplicaciones organizadas en proyectos de ArgoCD:
-
-**🔧 GitOps Tools** (`argocd-apps/gitops-tools/`):
-- Herramientas de infraestructura gestionadas por ArgoCD
-- Versión más ligera posible, sin autenticación cuando sea viable
-- Actualmente incluye: Kubernetes Dashboard
-- Repositorio: `http://gitea.mini-cluster/argocd/gitops-tools`
-
-**🛠️ Custom Apps** (`argocd-apps/custom-apps/`):
-- Tus aplicaciones personalizadas
-- Ejemplos para aprender GitOps
-- Actualmente incluye: Hello World (aplicación de ejemplo)
-- Repositorio: `http://gitea.mini-cluster/argocd/custom-apps`
-
-Todas las aplicaciones se consideran correctas cuando muestran estado **Synced** y **Healthy** en ArgoCD.
-
-
-Una vez que tengas repositorios Git con tus manifiestos de Kubernetes, puedes crear aplicaciones en ArgoCD desde la interfaz web o usando la CLI:
+Después de la instalación, tendrás estos **aliases automáticos**:
 
 ```bash
-# Ejemplo de creación de una aplicación
-kubectl apply -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/tu-usuario/tu-repo
-    targetRevision: HEAD
-    path: k8s-manifests
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: default
-EOF
+# Acceso súper rápido al Dashboard (recomendado)
+dashboard         # Abre Dashboard - haz clic en "SKIP" 
+
+# Acceso con token automático
+dashboard-full    # Abre Dashboard + token en clipboard
+
+# Otros servicios
+argocd           # Abre ArgoCD UI directamente
+gitea            # Abre Gitea UI directamente
+k8s-dash         # Alias corto para dashboard
 ```
+
+---
+
+## 📋 Verificación del Sistema
+
+### **1. Verificar Estado General:**
+```bash
+./verify-setup.sh                    # Script de verificación completo
+./check-windows-access.sh           # URLs y credenciales para Windows
+```
+
+### **2. Verificar Aplicaciones ArgoCD:**
+```bash
+kubectl get applications -n argocd   # Deberían mostrar "Synced & Healthy"
+```
+
+### **3. Verificar Pods:**
+```bash
+kubectl get pods --all-namespaces   # Todos los pods deberían estar "Running"
+```
+
+---
+
+## 🔧 Solución de Problemas
+
+### **❌ Las aplicaciones no se sincronizan:**
+```bash
+# Forzar sincronización manual
+kubectl patch application dashboard -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+kubectl patch application hello-world -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+```
+
+### **❌ No puedo acceder desde Windows:**
+```bash
+# Obtener IP correcta de WSL
+./check-windows-access.sh
+
+# Verificar que los puertos estén abiertos
+netstat -tlnp | grep -E ':(30080|30081|30082|30083)'
+```
+
+### **❌ El Dashboard pide token:**
+```bash
+# Generar token de administrador
+kubectl -n kubernetes-dashboard create token admin-user
+
+# O usar acceso sin token (más fácil)
+# En el Dashboard, simplemente haz clic en "SKIP"
+```
+
+### **❌ Gitea no responde:**
+```bash
+# Reiniciar Gitea
+kubectl rollout restart deployment/gitea -n gitea
+kubectl wait --for=condition=available --timeout=120s deployment/gitea -n gitea
+```
+
+---
+
+## 📁 Estructura del Repositorio
+
+```
+dotfiles/
+├── install.sh                    # 🔥 Script de instalación principal
+├── verify-setup.sh              # ✅ Verificación del sistema
+├── check-windows-access.sh      # 🌐 URLs para acceso desde Windows
+├── dashboard.sh                 # 🚀 Acceso rápido al Dashboard  
+├── open-dashboard.sh            # 🔑 Dashboard con token automático
+├── kind-config.yaml             # ⚙️ Configuración del cluster
+├── .gitops_aliases              # 📋 Aliases de comandos
+├── argo-apps/                   # 📦 Definiciones de aplicaciones ArgoCD
+│   ├── gitops-tools/           # Dashboard y herramientas
+│   └── custom-apps/            # Aplicaciones personalizadas
+└── README.md                    # 📚 Esta documentación
+```
+
+---
+
+## 🎯 ¿Qué hace automáticamente `install.sh`?
+
+El script realiza una **instalación completa desde cero**:
+
+### **1. 🔧 Instalación de Herramientas Base:**
+- Actualiza el sistema Ubuntu/WSL
+- Instala Docker, kubectl, kind
+- Configura zsh + Oh My Zsh con plugins
+- Instala Git Credential Manager
+
+### **2. 🏗️ Creación del Cluster Kubernetes:**
+- Crea cluster kind llamado "mini-cluster"
+- Configura red para acceso desde Windows
+- Expone servicios como NodePort
+
+### **3. 🚢 Instalación de ArgoCD:**
+- Instala ArgoCD desde manifests oficiales
+- Configura credenciales admin/admin123
+- Expone UI en puertos 30080 (HTTP) y 30443 (HTTPS)
+
+### **4. 📚 Instalación de Gitea:**
+- Despliega Gitea como servidor Git local
+- Crea usuario gitops/gitops123
+- Expone en puerto 30083
+
+### **5. 🌐 Configuración de NGINX Ingress:**
+- Instala controlador de ingreso
+- Configura para acceso por hostname
+- Expone en puerto 30090
+
+### **6. 📦 Creación de Repositorios Git:**
+- Crea repositorio `gitops-tools` (Dashboard)
+- Crea repositorio `custom-apps` (Hello World)
+- Sube manifests iniciales a Gitea
+
+### **7. 🎯 Configuración de Aplicaciones ArgoCD:**
+- Crea proyectos ArgoCD
+- Configura secrets de autenticación de repositorios
+- Despliega aplicaciones Dashboard y Hello World
+- Configura sincronización automática
+
+### **8. 🚀 Scripts de Acceso Automático:**
+- Crea scripts para abrir Dashboard automáticamente
+- Configura aliases de comandos
+- Genera tokens de acceso automáticos
+- Configura apertura de navegador desde WSL
+
+---
+
+## 🎉 Resultado Final
+
+Después de ejecutar `install.sh`, tendrás:
+
+### **✅ Estado Esperado:**
+- **ArgoCD Applications:** `Synced & Healthy`
+- **Todos los Pods:** `Running` 
+- **Servicios:** Accesibles desde Windows
+- **Git Repositories:** Configurados y funcionando
+- **Acceso Automático:** Comandos `dashboard`, `argocd`, `gitea` funcionando
+
+### **🌐 Acceso desde Windows:**
+- Abres un navegador en Windows
+- Usas las IPs proporcionadas por `check-windows-access.sh`
+- Dashboard accesible con "SKIP" login
+- ArgoCD y Gitea con credenciales automáticas
+
+### **🔄 GitOps Funcional:**
+- Cambios en Git → Sincronización automática en Kubernetes
+- UI de ArgoCD para monitorear aplicaciones
+- Repositorios Git locales totalmente funcionales
+
+---
+
+## 💡 Consejos de Uso
+
+### **📈 Para Desarrollo:**
+1. Clona repos en Gitea: `http://IP_WSL:30083`
+2. Modifica manifests de Kubernetes
+3. Push a Git → ArgoCD sincroniza automáticamente
+4. Monitorea en ArgoCD UI: `http://IP_WSL:30080`
+
+### **🔄 Para Probar GitOps:**
+1. Edita archivos en `/tmp/gitops-tools-repo/` 
+2. `git add . && git commit -m "test" && git push`
+3. Ve a ArgoCD UI y observa la sincronización automática
+
+### **🛠️ Para Debugging:**
+```bash
+kubectl logs -f deployment/argocd-application-controller -n argocd  # Logs ArgoCD
+kubectl get events --all-namespaces --sort-by='.lastTimestamp'     # Eventos del cluster
+```
+
+---
+
+## ⚙️ Personalización
+
+### **🔧 Agregar Nueva Aplicación:**
+1. Crea manifests en `custom-apps/nueva-app/manifests/`
+2. Commit y push al repo `custom-apps`
+3. Crea Application en ArgoCD apuntando a la nueva carpeta
+
+### **🌐 Cambiar URLs de Acceso:**
+- Edita `kind-config.yaml` para cambiar puertos
+- Modifica services en `argo-apps/` para cambiar NodePorts
+
+### **🔑 Cambiar Credenciales:**
+- ArgoCD: Edita secret `argocd-secret` en namespace `argocd`  
+- Gitea: Usa UI web o kubectl exec para cambiar en DB
+
+---
+
+## 📞 Soporte
+
+Si tienes problemas:
+
+1. **🔍 Ejecuta verificación:** `./verify-setup.sh`
+2. **📋 Revisa logs:** `kubectl logs -n argocd deployment/argocd-application-controller`
+3. **🔄 Reinicia servicios:** `kubectl rollout restart deployment/NOMBRE -n NAMESPACE`
+4. **💾 Re-ejecuta:** Si todo falla, ejecuta `install.sh` de nuevo
+
+---
+
+## 🏆 Características Avanzadas
+
+- ✅ **Auto-login al Dashboard** (sin copiar tokens)
+- ✅ **Apertura automática de navegador** desde WSL
+- ✅ **Sincronización GitOps automática**
+- ✅ **Acceso directo desde Windows** (sin port-forwarding)
+- ✅ **Repositorios Git locales** (sin dependencias externas)
+- ✅ **Aliases de comandos** para acceso rápido
+- ✅ **Scripts de verificación** y debugging
+- ✅ **Configuración persistente** (sobrevive reinicios)
+
+¡Disfruta de tu nuevo entorno GitOps! 🚀

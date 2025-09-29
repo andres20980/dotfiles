@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-world-html
+  namespace: hello-world
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Hello World - ArgoCD</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            h1 { color: #4CAF50; }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 Hello World!</h1>
+        <p>Esta aplicación está siendo gestionada por ArgoCD desde un repositorio Gitea local.</p>
+        <p><strong>Estado:</strong> <span style="color: green;">Synced & Healthy</span></p>
+    </body>
+    </html>

@@ -1,0 +1,17 @@
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# Local test files
+test-*-local.*
+
+# ArgoCD admin password (if stored locally)
+argocd-admin-password.txt
+
+# Kubernetes context backup
+kubeconfig.backup

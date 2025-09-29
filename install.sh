@@ -1,178 +1,156 @@
 #!/bin/bash
 
-# Script para configurar un nuevo entorno de desarrollo en Ubuntu
+# Script completo para configurar entorno GitOps con ArgoCD + Gitea + Dashboard
+# Usa manifests existentes en argo-apps/ y los sube a Gitea
 
-echo "🚀 Empezando la configuración..."
+set -e  # Salir si cualquier comando falla
+
+echo "🚀 Empezando la configuración del entorno GitOps completo..."
+echo "============================================================="
+
+# --- Funciones auxiliares ---
+log_step() {
+    echo "📋 $1"
+}
+
+log_success() {
+    echo "✅ $1"
+}
+
+log_info() {
+    echo "💡 $1"
+}
+
+wait_for_pods() {
+    local namespace=$1
+    local app=$2
+    local timeout=${3:-300}
+    
+    log_step "Esperando a que los pods de $app estén listos..."
+    kubectl wait --for=condition=ready pod -l app=$app -n $namespace --timeout=${timeout}s || \
+    kubectl wait --for=condition=ready pod -l k8s-app=$app -n $namespace --timeout=${timeout}s || \
+    kubectl wait --for=condition=available deployment/$app -n $namespace --timeout=${timeout}s
+}
 
 # --- Actualizar paquetes ---
-echo "🔄 Actualizando lista de paquetes..."
+log_step "Actualizando lista de paquetes..."
 sudo apt-get update
 
-# --- Instalar paquetes esenciales con APT ---
-echo "📦 Instalando paquetes esenciales (jq, pip, zsh, htop...)"
-sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential libice6
+# --- Instalar paquetes esenciales ---
+log_step "Instalando paquetes esenciales..."
+sudo apt-get install -y jq python3-pip zsh htop git curl wget build-essential libice6 ca-certificates apache2-utils
 
 # --- Instalar Oh My Zsh ---
 if [ -d "$HOME/.oh-my-zsh" ]; then
-    echo "✅ Oh My Zsh ya está instalado."
+    log_success "Oh My Zsh ya está instalado."
 else
-    echo "💤 Instalando Oh My Zsh..."
+    log_step "Instalando Oh My Zsh..."
     sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
 
 # --- Instalar plugins de Zsh ---
-echo "🔌 Instalando plugins de Zsh..."
+log_step "Instalando plugins de Zsh..."
 ZSH_CUSTOM=${ZSH_CUSTOM:-~/.oh-my-zsh/custom}
 
-# Comprobar si el directorio del plugin ya existe
 if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting" ]; then
     git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting
 else
-    echo "✅ Plugin zsh-syntax-highlighting ya está instalado."
+    log_success "Plugin zsh-syntax-highlighting ya está instalado."
 fi
 
 if [ ! -d "${ZSH_CUSTOM}/plugins/zsh-autosuggestions" ]; then
     git clone https://github.com/zsh-users/zsh-autosuggestions.git ${ZSH_CUSTOM}/plugins/zsh-autosuggestions
 else
-    echo "✅ Plugin zsh-autosuggestions ya está instalado."
+    log_success "Plugin zsh-autosuggestions ya está instalado."
 fi
 
-# --- Instalar NVM ---
-if [ -d "$HOME/.nvm" ]; then
-    echo "✅ nvm ya está instalado."
+# --- Instalar Docker ---
+log_step "Instalando Docker Engine..."
+if ! command -v docker &> /dev/null; then
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo usermod -aG docker $USER
+    log_success "Docker instalado correctamente"
 else
-    echo "📦 Instalando nvm (Node Version Manager)..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    log_success "Docker ya está instalado"
 fi
 
-# --- Instalar Git Credential Manager (GCM) ---
-echo "📦 Instalando Git Credential Manager..."
-# Descargar el paquete
-wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.5.1/gcm-linux_amd64.2.5.1.deb -O /tmp/gcm.deb
-# Instalar el paquete (requiere sudo)
-sudo dpkg -i /tmp/gcm.deb
-# Configurar Git para usar GCM y el almacén de texto plano
-echo "🔧 Configurando Git para usar GCM..."
-git config --global credential.helper manager
-git config --global credential.credentialStore plaintext
+# --- Instalar kubectl ---
+log_step "Instalando kubectl..."
+if ! command -v kubectl &> /dev/null; then
+    curl -LO "https://dl.k8s.io/release/v1.34.1/bin/linux/amd64/kubectl"
+    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    rm kubectl
+    log_success "kubectl instalado correctamente"
+else
+    log_success "kubectl ya está instalado"
+fi
 
-# --- Instalar Herramientas Cloud Native (Docker, kubectl, kind) ---
-echo "📦 Instalando herramientas Cloud Native..."
+# --- Instalar kind ---
+log_step "Instalando kind..."
+if ! command -v kind &> /dev/null; then
+    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+    sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+    rm kind
+    log_success "kind instalado correctamente"
+else
+    log_success "kind ya está instalado"
+fi
 
-# Instalar Docker Engine
-echo "    - Instalando Docker Engine..."
-sudo apt-get install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# --- Crear cluster kind ---
+log_step "Creando cluster kind..."
+if ! kind get clusters | grep -q mini-cluster; then
+    kind create cluster --name mini-cluster --config ~/dotfiles/kind-config.yaml
+    log_success "Cluster kind creado y configurado"
+else
+    log_success "Cluster kind ya existe"
+fi
 
-# Instalar kubectl (usando la versión que sabemos es estable)
-echo "    - Instalando kubectl..."
-curl -LO "https://dl.k8s.io/release/v1.34.1/bin/linux/amd64/kubectl"
-sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-rm kubectl
-
-# Instalar kind
-echo "    - Instalando kind..."
-curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
-sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
-rm kind
-
-# Crear cluster kind con configuración para acceso desde Windows
-echo "    - Creando cluster kind con configuración especial..."
-kind create cluster --name mini-cluster --config ~/dotfiles/kind-config.yaml
-echo "    ✅ Cluster kind creado y configurado"
-
-# --- Instalar y configurar ArgoCD ---
-echo "🚢 Instalando y configurando ArgoCD..."
-# 1. Instalar ArgoCD usando el manifiesto oficial
+# --- Instalar ArgoCD ---
+log_step "Instalando ArgoCD..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-# 2. Esperar a que los pods estén listos
-echo "    - Esperando a que ArgoCD esté listo..."
+
+log_step "Esperando a que ArgoCD esté listo..."
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-# 3. Configurar ArgoCD para funcionar sin autenticación (modo inseguro)
-echo "    - Configurando ArgoCD sin autenticación..."
-kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}'
-# 4. Reiniciar el deployment para aplicar los cambios
-kubectl rollout restart deployment argocd-server -n argocd
-kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-# 5. Cambiar servicios a NodePort para acceso directo sin port-forwarding
-echo "    - Configurando servicios como NodePort para acceso directo..."
+
+# Configurar ArgoCD con credenciales admin/admin123
+log_step "Configurando credenciales de ArgoCD..."
+# Eliminar el secret inicial automático que interfiere con nuestra contraseña personalizada
+kubectl delete secret argocd-initial-admin-secret -n argocd 2>/dev/null || true
+# Generar hash usando ArgoCD para garantizar compatibilidad
+ADMIN_PASSWORD_HASH=$(kubectl exec -n argocd deployment/argocd-server -- argocd account bcrypt --password admin123)
+ADMIN_PASSWORD_B64=$(echo -n "$ADMIN_PASSWORD_HASH" | base64 -w 0)
+ADMIN_TIME_B64=$(echo -n $(date +%s) | base64 -w 0)
+kubectl patch secret argocd-secret -n argocd -p="{\"data\":{\"admin.password\":\"$ADMIN_PASSWORD_B64\",\"admin.passwordMtime\":\"$ADMIN_TIME_B64\"}}" --type=merge
+
+# Configurar servicios como NodePort
+log_step "Configurando servicios ArgoCD como NodePort..."
 kubectl patch svc argocd-server -n argocd --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30080}, {"op": "replace", "path": "/spec/ports/1/nodePort", "value": 30443}]'
-echo "    ✅ Servicios expuestos en localhost: ArgoCD (http:30080, https:30443)"
-# 6. Configurar dominios personalizados en /etc/hosts
-echo "    - Configurando dominios personalizados en /etc/hosts..."
-KIND_IP=$(docker inspect mini-cluster-control-plane | grep '"IPAddress":' | grep -v null | head -1 | cut -d'"' -f4)
-if [ -n "$KIND_IP" ]; then
-    echo "# Kubernetes kind cluster services" | sudo tee -a /etc/hosts > /dev/null
-    echo "$KIND_IP argocd.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
-    echo "$KIND_IP dashboard.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
-    echo "$KIND_IP hello-world.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
-    echo "$KIND_IP gitea.mini-cluster" | sudo tee -a /etc/hosts > /dev/null
-    echo "    ✅ Dominios configurados: argocd.mini-cluster, dashboard.mini-cluster, hello-world.mini-cluster, gitea.mini-cluster"
-else
-    echo "    ⚠️  No se pudo detectar la IP del contenedor kind. Configura manualmente /etc/hosts"
-fi
-echo "    ✅ ArgoCD instalado y configurado sin autenticación"
 
-# --- Crear proyectos de ArgoCD ---
-echo "📋 Creando proyectos de ArgoCD..."
-kubectl apply -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: gitops-tools
-  namespace: argocd
-spec:
-  description: GitOps tools and infrastructure components
-  sourceRepos:
-  - '*'
-  destinations:
-  - namespace: '*'
-    server: '*'
-  clusterResourceWhitelist:
-  - group: '*'
-    kind: '*'
-EOF
+# Configurar ArgoCD para acceso HTTP sin TLS
+log_step "Configurando ArgoCD para acceso HTTP sin TLS..."
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p='{"data":{"server.insecure":"true"}}'
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl rollout status deployment argocd-server -n argocd --timeout=300s
 
-kubectl apply -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: custom-apps
-  namespace: argocd
-spec:
-  description: Custom applications managed by ArgoCD
-  sourceRepos:
-  - '*'
-  destinations:
-  - namespace: '*'
-    server: '*'
-  clusterResourceWhitelist:
-  - group: '*'
-    kind: '*'
-EOF
-echo "    ✅ Proyectos de ArgoCD creados"
+log_success "ArgoCD instalado y configurado (admin/admin123) en puertos 30080/30443"
 
-# --- Instalar NGINX Ingress Controller ---
-echo "🌐 Instalando NGINX Ingress Controller..."
+# --- Instalar NGINX Ingress ---
+log_step "Instalando NGINX Ingress Controller..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
-echo "    - Esperando a que NGINX Ingress esté listo..."
 kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
-# Cambiar el servicio a NodePort para acceso directo
 kubectl patch svc ingress-nginx-controller -n ingress-nginx --type='json' -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30090}]'
-echo "    ✅ NGINX Ingress Controller instalado y configurado como NodePort en puerto 30090"
+log_success "NGINX Ingress instalado en puerto 30090"
 
-# --- Instalar y configurar Gitea (repositorio Git local) ---
-echo "📚 Instalando y configurando Gitea..."
-# 1. Crear namespace para Gitea
+# --- Instalar Gitea ---
+log_step "Instalando Gitea..."
 kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
-# 2. Instalar Gitea usando configuración ligera
-echo "    - Instalando Gitea con configuración mínima..."
+
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -180,8 +158,7 @@ metadata:
   name: gitea-data
   namespace: gitea
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
     requests:
       storage: 1Gi
@@ -206,9 +183,7 @@ spec:
         image: gitea/gitea:1.21.11
         ports:
         - containerPort: 3000
-          name: http
         - containerPort: 22
-          name: ssh
         env:
         - name: GITEA__database__DB_TYPE
           value: sqlite3
@@ -217,7 +192,7 @@ spec:
         - name: GITEA__security__INSTALL_LOCK
           value: "true"
         - name: GITEA__service__DISABLE_REGISTRATION
-          value: "true"
+          value: "false"
         - name: GITEA__service__REQUIRE_SIGNIN_VIEW
           value: "false"
         - name: GITEA__webhook__SKIP_TLS_VERIFY
@@ -250,300 +225,146 @@ spec:
   type: NodePort
 EOF
 
-# 3. Esperar a que Gitea esté listo
-echo "    - Esperando a que Gitea esté listo..."
-kubectl wait --for=condition=available --timeout=300s deployment/gitea -n gitea
+wait_for_pods gitea gitea
+log_success "Gitea instalado en puerto 30083"
 
-# 4. Inicializar repositorios en Gitea
-echo "    - Inicializando repositorios en Gitea..."
-# Crear usuario argocd y repositorios
-kubectl exec -n gitea deployment/gitea -- sh -c "
-  # Esperar a que Gitea esté completamente inicializado
-  sleep 10
-  
-  # Crear usuario argocd
-  curl -X POST 'http://localhost:3000/api/v1/admin/users' \
-    -H 'Content-Type: application/json' \
-    -d '{
-      \"username\": \"argocd\",
-      \"email\": \"argocd@local\",
-      \"password\": \"argocd123\",
-      \"must_change_password\": false
-    }' 2>/dev/null || echo 'Usuario ya existe o error en creación'
-  
-  # Crear repositorio gitops-tools
-  curl -X POST 'http://localhost:3000/api/v1/user/repos' \
-    -H 'Content-Type: application/json' \
-    -u 'argocd:argocd123' \
-    -d '{
-      \"name\": \"gitops-tools\",
-      \"description\": \"GitOps tools and infrastructure components\",
-      \"private\": false
-    }' 2>/dev/null || echo 'Repositorio gitops-tools ya existe'
-  
-  # Crear repositorio custom-apps
-  curl -X POST 'http://localhost:3000/api/v1/user/repos' \
-    -H 'Content-Type: application/json' \
-    -u 'argocd:argocd123' \
-    -d '{
-      \"name\": \"custom-apps\",
-      \"description\": \"Custom applications managed by ArgoCD\",
-      \"private\": false
-    }' 2>/dev/null || echo 'Repositorio custom-apps ya existe'
-"
+# --- Esperar a que Gitea esté completamente listo ---
+log_step "Esperando a que Gitea esté completamente funcional..."
+sleep 30
 
-# 5. Configurar repositorios locales para usar Gitea
-echo "    - Configurando repositorios locales para Gitea..."
-cd ~/dotfiles/argo-apps/gitops-tools
-if ! git remote get-url origin >/dev/null 2>&1; then
-    git remote add origin http://localhost:30083/argocd/gitops-tools.git
-fi
-git push -u origin main || echo "Error al hacer push (posiblemente ya existe)"
+# --- Crear usuario gitops en Gitea ---
+log_step "Creando usuario gitops en Gitea..."
+# Crear usuario a través de la API REST
+CSRF_TOKEN=$(curl -s "http://localhost:30083/user/sign_up" | grep -o 'value="[^"]*"' | head -1 | cut -d'"' -f2)
+curl -X POST "http://localhost:30083/user/sign_up" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "_csrf=$CSRF_TOKEN&user_name=gitops&email=gitops%40mini-cluster.local&password=gitops123&retype=gitops123" \
+  -L -s > /dev/null || log_info "Usuario gitops ya existe"
 
-cd ~/dotfiles/argo-apps/custom-apps
-if ! git remote get-url origin >/dev/null 2>&1; then
-    git remote add origin http://localhost:30083/argocd/custom-apps.git
-fi
-git push -u origin main || echo "Error al hacer push (posiblemente ya existe)"
+log_success "Usuario gitops creado (gitops/gitops123)"
 
-echo "    ✅ Gitea instalado y configurado (SQLite, sin autenticación)"
+# --- Crear repositorios en Gitea ---
+log_step "Creando repositorios en Gitea..."
+# Crear repositorios a través de la API REST
+curl -X POST "http://gitops:gitops123@localhost:30083/api/v1/user/repos" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "gitops-tools", "private": false}' -s > /dev/null || true
 
-# --- Crear repositorios y estructura de directorios ---
-echo "📁 Creando repositorios y estructura de directorios..."
-# 1. Crear directorios para los repositorios
-mkdir -p ~/dotfiles/argo-apps/gitops-tools/dashboard/manifests
-mkdir -p ~/dotfiles/argo-apps/custom-apps/hello-world/manifests
+curl -X POST "http://gitops:gitops123@localhost:30083/api/v1/user/repos" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "custom-apps", "private": false}' -s > /dev/null || true
 
-# 2. Inicializar repositorio Git para gitops-tools
-echo "    - Inicializando repositorio gitops-tools..."
-cd ~/dotfiles/argo-apps/gitops-tools
-if [ ! -d ".git" ]; then
-    git init
-    git config user.name "ArgoCD Bot"
-    git config user.email "argocd@local"
-fi
+# --- Subir manifests desde argo-apps a Gitea ---
+log_step "Subiendo manifests a repositorios de Gitea..."
 
-# 3. Inicializar repositorio Git para custom-apps
-echo "    - Inicializando repositorio custom-apps..."
-cd ~/dotfiles/argo-apps/custom-apps
-if [ ! -d ".git" ]; then
-    git init
-    git config user.name "ArgoCD Bot"
-    git config user.email "argocd@local"
-fi
+# Crear directorio temporal
+TEMP_DIR="/tmp/gitops-upload"
+mkdir -p "$TEMP_DIR"
 
-# 4. Crear namespaces para las aplicaciones
-echo "    - Creando namespaces..."
-kubectl create namespace kubernetes-dashboard --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace hello-world --dry-run=client -o yaml | kubectl apply -f -
+# Repositorio gitops-tools
+log_step "Subiendo gitops-tools..."
+cp -r "$HOME/dotfiles/argo-apps/gitops-tools" "$TEMP_DIR/"
+cd "$TEMP_DIR/gitops-tools"
+rm -rf .git
+# Eliminar cualquier directorio .git anidado para evitar submodules
+find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+git init
+git config user.name "GitOps Setup"
+git config user.email "gitops@mini-cluster.local"
+git add .
+git commit -m "Initial dashboard manifests with all fixes"
+git remote add origin http://gitops:gitops123@localhost:30083/gitops/gitops-tools.git
+git push --set-upstream origin master || log_info "Push gitops-tools falló"
 
-# 5. Crear manifiestos básicos
-echo "    - Creando manifiestos básicos..."
+# Repositorio custom-apps
+log_step "Subiendo custom-apps..."
+cp -r "$HOME/dotfiles/argo-apps/custom-apps" "$TEMP_DIR/"
+cd "$TEMP_DIR/custom-apps"
+rm -rf .git
+# Eliminar cualquier directorio .git anidado para evitar submodules
+find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+git init  
+git config user.name "GitOps Setup"
+git config user.email "gitops@mini-cluster.local"
+git add .
+git commit -m "Initial hello-world application"
+git remote add origin http://gitops:gitops123@localhost:30083/gitops/custom-apps.git
+git push --set-upstream origin master || log_info "Push custom-apps falló"
 
-# Dashboard manifests
-cat > ~/dotfiles/argo-apps/gitops-tools/dashboard/manifests/deployment.yaml << 'EOF'
-apiVersion: apps/v1
-kind: Deployment
+log_success "Repositorios subidos a Gitea"
+
+# --- Crear proyectos y aplicaciones ArgoCD ---
+log_step "Creando proyectos ArgoCD..."
+
+kubectl apply -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
 metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-  labels:
-    app: kubernetes-dashboard
+  name: gitops-tools
+  namespace: argocd
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: kubernetes-dashboard
-  template:
-    metadata:
-      labels:
-        app: kubernetes-dashboard
-    spec:
-      serviceAccountName: kubernetes-dashboard
-      containers:
-      - name: kubernetes-dashboard
-        image: kubernetesui/dashboard:v2.7.0
-        ports:
-        - containerPort: 8443
-          protocol: TCP
-        args:
-          - --auto-generate-certificates
-          - --namespace=kubernetes-dashboard
-        volumeMounts:
-        - name: kubernetes-dashboard-certs
-          mountPath: /certs
-        - name: tmp-volume
-          mountPath: /tmp
-      volumes:
-      - name: kubernetes-dashboard-certs
-        secret:
-          secretName: kubernetes-dashboard-certs
-      - name: tmp-volume
-        emptyDir: {}
-EOF
-
-cat > ~/dotfiles/argo-apps/gitops-tools/dashboard/manifests/service.yaml << 'EOF'
-apiVersion: v1
-kind: Service
-metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-spec:
-  selector:
-    app: kubernetes-dashboard
-  ports:
-  - port: 443
-    targetPort: 8443
-    nodePort: 30081
-  type: NodePort
-EOF
-
-cat > ~/dotfiles/argo-apps/gitops-tools/dashboard/manifests/rbac.yaml << 'EOF'
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
+  description: GitOps tools and infrastructure
+  sourceRepos: ['*']
+  destinations:
+  - namespace: '*'
+    server: '*'
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
 metadata:
-  name: kubernetes-dashboard
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-EOF
-
-cat > ~/dotfiles/argo-apps/gitops-tools/dashboard/manifests/ingress.yaml << 'EOF'
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/rewrite-target: /
+  name: custom-apps
+  namespace: argocd
 spec:
-  ingressClassName: nginx
-  rules:
-  - host: dashboard.mini-cluster
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: kubernetes-dashboard
-            port:
-              number: 443
+  description: Custom applications
+  sourceRepos: ['*']
+  destinations:
+  - namespace: '*'
+    server: '*'
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
 EOF
 
-# Hello World manifests
-cat > ~/dotfiles/argo-apps/custom-apps/hello-world/manifests/deployment.yaml << 'EOF'
-apiVersion: apps/v1
-kind: Deployment
+# --- Crear secrets para repositorios ---
+log_step "Creando secrets de repositorio ArgoCD..."
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
 metadata:
-  name: hello-world
-  namespace: hello-world
+  name: gitea-repo-gitops-tools
+  namespace: argocd
   labels:
-    app: hello-world
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hello-world
-  template:
-    metadata:
-      labels:
-        app: hello-world
-    spec:
-      containers:
-      - name: hello-world
-        image: nginx:alpine
-        ports:
-        - containerPort: 80
-        volumeMounts:
-        - name: html
-          mountPath: /usr/share/nginx/html
-      volumes:
-      - name: html
-        configMap:
-          name: hello-world-html
-EOF
-
-cat > ~/dotfiles/argo-apps/custom-apps/hello-world/manifests/service.yaml << 'EOF'
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
+  username: gitops
+  password: gitops123
+---
 apiVersion: v1
-kind: Service
+kind: Secret
 metadata:
-  name: hello-world
-  namespace: hello-world
-spec:
-  selector:
-    app: hello-world
-  ports:
-  - port: 80
-    targetPort: 80
-    nodePort: 30082
-  type: NodePort
+  name: gitea-repo-custom-apps
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
+  username: gitops
+  password: gitops123
 EOF
 
-cat > ~/dotfiles/argo-apps/custom-apps/hello-world/manifests/configmap.yaml << 'EOF'
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hello-world-html
-  namespace: hello-world
-data:
-  index.html: |
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Hello World - ArgoCD</title>
-        <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-            h1 { color: #4CAF50; }
-        </style>
-    </head>
-    <body>
-        <h1>🚀 Hello World!</h1>
-        <p>Esta aplicación está siendo gestionada por ArgoCD desde un repositorio Gitea local.</p>
-        <p><strong>Estado:</strong> <span style="color: green;">Synced & Healthy</span></p>
-    </body>
-    </html>
-EOF
+# --- Crear aplicaciones ArgoCD ---
+log_step "Creando aplicaciones ArgoCD..."
 
-cat > ~/dotfiles/argo-apps/custom-apps/hello-world/manifests/ingress.yaml << 'EOF'
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: hello-world
-  namespace: hello-world
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: hello-world.mini-cluster
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: hello-world
-            port:
-              number: 80
-EOF
-
-# 5. Crear archivos application.yaml para ArgoCD
-echo "    - Creando archivos application.yaml para ArgoCD..."
-
-cat > ~/dotfiles/argo-apps/gitops-tools/dashboard/application.yaml << 'EOF'
+kubectl apply -f - <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -552,15 +373,19 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: http://gitea.mini-cluster/argocd/gitops-tools
-    targetRevision: HEAD
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
+    targetRevision: master
     path: dashboard/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: kubernetes-dashboard
-EOF
-
-cat > ~/dotfiles/argo-apps/custom-apps/hello-world/application.yaml << 'EOF'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -569,45 +394,251 @@ metadata:
 spec:
   project: custom-apps
   source:
-    repoURL: http://gitea.mini-cluster/argocd/custom-apps
-    targetRevision: HEAD
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
+    targetRevision: master
     path: hello-world/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: hello-world
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
 EOF
 
-# 6. Hacer commit de los manifiestos
-echo "    - Haciendo commit de los manifiestos..."
-cd ~/dotfiles/argo-apps/gitops-tools
-git add .
-git commit -m "Initial commit: Kubernetes Dashboard manifests" || echo "No changes to commit or already committed"
+# --- Reiniciar ArgoCD repo-server ---
+log_step "Reiniciando ArgoCD repo-server..."
+kubectl rollout restart deployment/argocd-repo-server -n argocd
+kubectl wait --for=condition=available --timeout=120s deployment/argocd-repo-server -n argocd
 
-cd ~/dotfiles/argo-apps/custom-apps
-git add .
-git commit -m "Initial commit: Hello World app manifests" || echo "No changes to commit or already committed"
+# --- Configurar permisos admin para Dashboard (skip-login) ---
+log_step "Configurando permisos admin para Dashboard..."
+kubectl create clusterrolebinding kubernetes-dashboard-admin \
+    --clusterrole=cluster-admin \
+    --serviceaccount=kubernetes-dashboard:kubernetes-dashboard \
+    --dry-run=client -o yaml | kubectl apply -f -
 
-# 7. Aplicar aplicaciones en ArgoCD
-echo "    - Aplicando aplicaciones en ArgoCD..."
-kubectl apply -f ~/dotfiles/argo-apps/gitops-tools/dashboard/application.yaml
-kubectl apply -f ~/dotfiles/argo-apps/custom-apps/hello-world/application.yaml
-echo "    - Esperando a que las aplicaciones se sincronicen..."
-sleep 30  # Dar tiempo para que ArgoCD procese
-kubectl get applications -n argocd
+# --- Crear scripts de acceso automático ---
+log_step "Creando scripts de acceso automático..."
 
-echo "    ✅ Repositorios creados, manifiestos inicializados y aplicaciones aplicadas"
+# Script de acceso rápido al dashboard
+cat > ~/dotfiles/dashboard.sh << 'EOFDASH'
+#!/bin/bash
+WSL_IP=$(hostname -I | awk '{print $1}')
+DASHBOARD_URL="https://$WSL_IP:30081"
 
-echo "
-✅ ¡Configuración completada!"
-echo "NOTA: Cierra y vuelve a abrir tu terminal para que todos los cambios surtan efecto."
+echo "🚀 Abriendo Kubernetes Dashboard..."
+echo "URL: $DASHBOARD_URL"
+
+if command -v cmd.exe &> /dev/null; then
+    cmd.exe /c start "$DASHBOARD_URL"
+    echo "✅ Dashboard abierto en Windows"
+    echo "💡 Si pide token, haz clic en 'SKIP' para saltarlo"
+else
+    echo "📋 Ve a: $DASHBOARD_URL"
+    echo "💡 Haz clic en 'SKIP' para acceder sin token"
+fi
+EOFDASH
+
+# Script completo con token automático
+cat > ~/dotfiles/open-dashboard.sh << 'EOFOPEN'
+#!/bin/bash
+
+WSL_IP=$(hostname -I | awk '{print $1}')
+DASHBOARD_URL="https://$WSL_IP:30081"
+
+echo "🚀 Iniciando Dashboard Automático..."
+
+TOKEN=$(kubectl -n kubernetes-dashboard create token admin-user 2>/dev/null)
+if [ $? -eq 0 ]; then
+    if command -v clip.exe &> /dev/null; then
+        echo "$TOKEN" | clip.exe
+        echo "✅ Token copiado al clipboard de Windows"
+    fi
+    
+    if command -v cmd.exe &> /dev/null; then
+        cmd.exe /c start "$DASHBOARD_URL"
+        echo "🌐 Dashboard abierto en Windows"
+    fi
+    
+    echo "🔑 Token: $TOKEN"
+    echo "💡 El token está en tu clipboard, solo pégalo en el Dashboard"
+else
+    echo "❌ Error generando token"
+fi
+EOFOPEN
+
+# Script de verificación
+cat > ~/dotfiles/check-windows-access.sh << 'EOFCHECK'
+#!/bin/bash
+
+WSL_IP=$(hostname -I | awk '{print $1}')
+
+echo "🌐 URLs de acceso para Windows:"
+echo "=================================="
+echo "📍 IP de WSL: $WSL_IP"
+echo
+echo "🔗 URLs de acceso desde Windows:"
+echo "   ArgoCD UI:      http://$WSL_IP:30080"
+echo "   Gitea:          http://$WSL_IP:30083"
+echo "   Dashboard:      https://$WSL_IP:30081"
+echo "   Hello World:    http://$WSL_IP:30082"
+echo
+echo "📋 Credenciales de acceso:"
+echo "   ArgoCD: admin / admin123"
+echo "   Gitea:  gitops / gitops123"
+echo
+echo "🔑 Token de Dashboard:"
+kubectl -n kubernetes-dashboard create token admin-user 2>/dev/null || echo "Error generando token"
+EOFCHECK
+
+chmod +x ~/dotfiles/dashboard.sh
+chmod +x ~/dotfiles/open-dashboard.sh
+chmod +x ~/dotfiles/check-windows-access.sh
+
+# Script de prueba de conectividad desde Windows
+cat > ~/dotfiles/test-windows-access.sh << 'EOFTEST'
+#!/bin/bash
+# Script para probar conectividad GitOps desde Windows
+
+echo "🔍 Probando conectividad GitOps desde Windows..."
+echo "================================================="
+
+WSL_IP=$(hostname -I | awk '{print $1}')
+echo "📍 IP de WSL: $WSL_IP"
 echo ""
-echo "🔗 Servicios disponibles:"
-echo "   ArgoCD: http://localhost:30080 o http://argocd.mini-cluster"
-echo "   Gitea: http://localhost:30083 o http://gitea.mini-cluster"
-echo "   NGINX Ingress: http://localhost:30090"
-echo "   Dashboard: https://dashboard.mini-cluster (via ingress)"
-echo "   Hello World: http://hello-world.mini-cluster (via ingress)"
+
+echo "🌐 Probando URLs con localhost (recomendado para Windows):"
+echo -n "   ArgoCD:       http://localhost:30080 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:30080 --max-time 5 || echo "ERROR"
+
+echo -n "   Dashboard:    https://localhost:30081 -> "
+curl -k -s -o /dev/null -w "%{http_code}\n" https://localhost:30081 --max-time 5 || echo "ERROR"
+
+echo -n "   Gitea:        http://localhost:30083 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:30083 --max-time 5 || echo "ERROR"
+
+echo -n "   Hello World:  http://localhost:30082 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:30082 --max-time 5 || echo "ERROR"
+
 echo ""
-echo "📚 Repositorios Gitea:"
-echo "   GitOps Tools: http://gitea.mini-cluster/argocd/gitops-tools"
-echo "   Custom Apps: http://gitea.mini-cluster/argocd/custom-apps"
+echo "🌐 Probando URLs con IP de WSL:"
+echo -n "   ArgoCD:       http://$WSL_IP:30080 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://$WSL_IP:30080 --max-time 5 || echo "ERROR"
+
+echo -n "   Dashboard:    https://$WSL_IP:30081 -> "
+curl -k -s -o /dev/null -w "%{http_code}\n" https://$WSL_IP:30081 --max-time 5 || echo "ERROR"
+
+echo -n "   Gitea:        http://$WSL_IP:30083 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://$WSL_IP:30083 --max-time 5 || echo "ERROR"
+
+echo -n "   Hello World:  http://$WSL_IP:30082 -> "
+curl -s -o /dev/null -w "%{http_code}\n" http://$WSL_IP:30082 --max-time 5 || echo "ERROR"
+
+echo ""
+echo "📝 Instrucciones para Windows:"
+echo "   1. Abre tu navegador en Windows"
+echo "   2. Usa las URLs con 'localhost' (más compatibles):"
+echo "      - ArgoCD:    http://localhost:30080"
+echo "      - Dashboard: https://localhost:30081"
+echo "      - Gitea:     http://localhost:30083"
+echo "   3. Para Dashboard HTTPS:"
+echo "      - Acepta el certificado (click 'Avanzado' -> 'Continuar')"
+echo "      - En la pantalla de login, haz click en 'SKIP'"
+echo ""
+echo "🔧 Si no funciona desde Windows:"
+echo "   - Verifica que Windows Firewall permita las conexiones"
+echo "   - Asegúrate de que Docker Desktop está ejecutándose"
+echo "   - Prueba con las URLs de IP: $WSL_IP:PUERTO"
+EOFTEST
+
+chmod +x ~/dotfiles/test-windows-access.sh
+
+# --- Crear aliases ---
+cat > ~/dotfiles/.gitops_aliases << 'EOFALIAS'
+# Aliases para GitOps Dashboard
+alias dashboard='cd /home/asanchez/dotfiles && ./dashboard.sh'
+alias dashboard-full='cd /home/asanchez/dotfiles && ./open-dashboard.sh'
+alias k8s-dash='cd /home/asanchez/dotfiles && ./dashboard.sh'
+
+# Aliases para otros servicios GitOps
+alias argocd='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30080'
+alias gitea='cmd.exe /c start http://$(hostname -I | awk "{print \$1}"):30083'
+
+echo "🚀 Aliases de GitOps cargados:"
+echo "   dashboard      - Abre Dashboard (skip login)"
+echo "   dashboard-full - Abre Dashboard con token automático"  
+echo "   k8s-dash       - Alias corto para dashboard"
+echo "   argocd         - Abre ArgoCD UI"
+echo "   gitea          - Abre Gitea UI"
+EOFALIAS
+
+# Agregar aliases al .zshrc si no están ya
+if ! grep -q "GitOps aliases" ~/.zshrc; then
+    echo "" >> ~/.zshrc
+    echo "# GitOps aliases" >> ~/.zshrc
+    echo "source /home/asanchez/dotfiles/.gitops_aliases" >> ~/.zshrc
+fi
+
+# --- Esperar a que las aplicaciones se sincronicen ---
+log_step "Esperando a que ArgoCD sincronice las aplicaciones..."
+sleep 30
+
+# Forzar sincronización
+kubectl patch application dashboard -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' || true
+kubectl patch application hello-world -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' || true
+
+sleep 20
+
+# --- Limpiar archivos temporales ---
+rm -rf "$TEMP_DIR"
+
+# --- Verificar estado final ---
+log_step "Verificando estado final del sistema..."
+
+echo ""
+echo "🎉 ¡INSTALACIÓN COMPLETADA!"
+echo "=============================================="
+echo ""
+echo "📊 Estado de las aplicaciones ArgoCD:"
+kubectl get applications -n argocd 2>/dev/null || echo "Error obteniendo aplicaciones"
+echo ""
+echo "🌐 URLs de acceso:"
+WSL_IP=$(hostname -I | awk '{print $1}')
+echo "   📍 Desde WSL/Linux:"
+echo "      ArgoCD:       http://$WSL_IP:30080 (admin/admin123)"
+echo "      Gitea:        http://$WSL_IP:30083 (gitops/gitops123)"
+echo "      Dashboard:    https://$WSL_IP:30081 (SKIP login habilitado)"
+echo "      Hello World:  http://$WSL_IP:30082"
+echo ""
+echo "   🪟 Desde Windows:"
+echo "      ArgoCD:       http://localhost:30080 (admin/admin123)"
+echo "      Gitea:        http://localhost:30083 (gitops/gitops123)"
+echo "      Dashboard:    https://localhost:30081 (SKIP login habilitado)"
+echo "      Hello World:  http://localhost:30082"
+echo ""
+echo "🚀 Comandos de acceso rápido:"
+echo "   dashboard       - Abre Dashboard con skip login"
+echo "   dashboard-full  - Abre Dashboard con token automático"
+echo "   argocd          - Abre ArgoCD"
+echo "   gitea           - Abre Gitea"
+echo ""
+echo "📜 Scripts disponibles:"
+echo "   ./dashboard.sh             - Acceso rápido al Dashboard"
+echo "   ./open-dashboard.sh        - Dashboard con token automático"  
+echo "   ./check-windows-access.sh  - Verificar URLs y generar token"
+echo "   ./test-windows-access.sh   - Probar conectividad desde Windows"
+echo ""
+echo "💡 IMPORTANTE:"
+echo "   - Reinicia tu terminal para cargar los aliases"
+echo "   - El Dashboard permite 'SKIP' login para acceso rápido"
+echo "   - Todas las aplicaciones deberían mostrar 'Synced & Healthy'"
+echo ""
+echo "🪟 Para acceso desde Windows:"
+echo "   - Ejecuta: ./test-windows-access.sh (probar conectividad)"
+echo "   - Usa URLs con 'localhost' para mejor compatibilidad"
+echo "   - Dashboard HTTPS: Acepta certificado y haz click en 'SKIP'"
+echo ""
+log_success "Entorno GitOps completamente configurado y listo para usar"

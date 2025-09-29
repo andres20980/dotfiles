@@ -3,14 +3,12 @@ kind: Application
 metadata:
   name: hello-world
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
   project: custom-apps
   source:
-    repoURL: http://gitea.gitea.svc.cluster.local:3000/argocd/hello-world.git
-    path: manifests
-    targetRevision: master
+    repoURL: http://gitea.mini-cluster:30083/admin/custom-apps
+    targetRevision: HEAD
+    path: hello-world/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: hello-world
@@ -19,12 +17,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - PrunePropagationPolicy=foreground
-      - PruneLast=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 3m
+    - CreateNamespace=true

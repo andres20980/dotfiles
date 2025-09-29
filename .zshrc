@@ -118,3 +118,6 @@ fi
 
 # Iniciar siempre en la carpeta de proyectos
 cd ~/proyectos
+
+# GitOps aliases
+source /home/asanchez/dotfiles/.gitops_aliases
