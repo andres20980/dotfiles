@@ -16,7 +16,7 @@ spec:
     metadata:
       name: '{{path.basename}}'
     spec:
-      project: gitops-tools
+      project: infrastructure
       source:
         repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
         targetRevision: HEAD
@@ -50,7 +50,7 @@ spec:
     metadata:
       name: '{{path.basename}}'
     spec:
-      project: custom-apps
+      project: applications
       source:
         repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/applications.git'
         targetRevision: HEAD
