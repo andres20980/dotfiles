@@ -21,7 +21,7 @@ spec:
       containers:
       - args:
         - --leader-elect
-        - --prometheus-listen-port=8090
+        - --metricsport=8090
         env:
         - name: NAMESPACE
           valueFrom:
