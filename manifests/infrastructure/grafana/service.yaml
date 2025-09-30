@@ -5,6 +5,8 @@ metadata:
   namespace: monitoring
   labels:
     app: grafana
+  annotations:
+    link.argocd.argoproj.io/external-link: http://localhost:30093
 spec:
   selector:
     app: grafana

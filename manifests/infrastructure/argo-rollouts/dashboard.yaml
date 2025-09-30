@@ -43,6 +43,8 @@ metadata:
     app.kubernetes.io/part-of: argo-rollouts
   name: argo-rollouts-dashboard
   namespace: argo-rollouts
+  annotations:
+    link.argocd.argoproj.io/external-link: http://localhost:30084
 spec:
   ports:
   - name: dashboard

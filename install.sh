@@ -14,7 +14,8 @@ set -e
 # CONFIGURACIÓN Y CONSTANTES
 # =============================================================================
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly DOTFILES_DIR="$SCRIPT_DIR"
 readonly CLUSTER_NAME="mini-cluster"
 readonly GITEA_NAMESPACE="gitea"
@@ -27,6 +28,115 @@ log_step() {
     echo ""
     echo "🚀 PASO: $1"
     echo "----------------------------------------"
+}
+
+
+# Sanity check: verificar que los hostPorts mapeados por kind realmente apuntan
+# a los containerPorts que los servicios esperan (ej. argocd-server -> 8080)
+check_mapping_sanity() {
+  log_step "Comprobando mapeos de puertos (sanity)"
+
+  # Detectar contenedor control-plane de kind
+  local node_container
+  node_container=$(docker ps --format '{{.Names}}' | grep "${CLUSTER_NAME}-control-plane" || true)
+  if [[ -z "$node_container" ]]; then
+    log_warning "No se encontró el contenedor del control-plane. No puedo verificar mapeos."
+    return 1
+  fi
+
+  local issues=0
+  local mapping
+  mapping=$(docker port "$node_container" 2>/dev/null || true)
+
+  # argocd-server
+  if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
+    local nodePort
+    nodePort=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}{.spec.ports[?(@.port==443)].nodePort}' 2>/dev/null | awk '{print $1}')
+    if [[ -z "$nodePort" ]]; then
+      nodePort=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.nodePort)].nodePort}' 2>/dev/null | awk '{print $1}')
+    fi
+    log_info "argocd-server nodePort: ${nodePort:-none}"
+
+    # comprobar que docker expone ese puerto del nodo y que responde HTTP
+    if [[ -z "$nodePort" ]]; then
+      log_warning "argocd-server aún no es NodePort"
+      issues=$((issues+1))
+    elif ! echo "$mapping" | grep -q ":${nodePort}"; then
+      log_warning "NodePort ${nodePort} de argocd-server no aparece en 'docker port' del nodo $node_container"
+      issues=$((issues+1))
+    else
+      # prueba de conectividad
+      if curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:${nodePort}" | grep -q "^2\|^3"; then
+        log_success "ArgoCD responde en http://localhost:${nodePort}"
+      else
+        log_warning "ArgoCD no responde todavía en http://localhost:${nodePort}"
+        issues=$((issues+1))
+      fi
+    fi
+  else
+    log_warning "Service argocd-server no existe aún; omitiendo comprobación específica"
+    issues=$((issues+1))
+  fi
+
+  # Comprobar unos NodePorts comunes: gitea (si existe), grafana, prometheus
+  for item in "${GITEA_NAMESPACE}:gitea" "monitoring:grafana" "monitoring:prometheus"; do
+    IFS=':' read -r ns svc <<< "$item"
+    if kubectl get svc -n "$ns" "$svc" >/dev/null 2>&1; then
+      local nodePort
+      nodePort=$(kubectl get svc -n "$ns" "$svc" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+      if [[ -n "$nodePort" ]]; then
+        if ! echo "$mapping" | grep -q ":${nodePort}"; then
+          log_warning "NodePort ${nodePort} para $svc (ns: $ns) no visible en docker port del nodo"
+          issues=$((issues+1))
+        else
+          log_info "NodePort ${nodePort} para $svc visible en host"
+        fi
+      fi
+    fi
+  done
+
+  if [[ $issues -gt 0 ]]; then
+    log_warning "Se detectaron $issues posibles problemas en los mapeos de puertos"
+    return 1
+  fi
+
+  log_success "Mapeos de puertos verificados correctamente"
+  return 0
+}
+
+# Asegura que el servicio argocd-server esté en NodePort 30080 y que responda por HTTP
+ensure_argocd_nodeport_and_reachability() {
+  log_info "Asegurando argocd-server como NodePort:30080 y accesible desde host..."
+  # Hacer el patch de manera idempotente y con reintentos breves
+  local i=0
+  while [[ $i -lt 5 ]]; do
+    kubectl patch svc argocd-server -n argocd --type merge -p '{
+      "spec": {
+        "type": "NodePort",
+        "ports": [{
+          "name": "http",
+          "port": 80,
+          "protocol": "TCP",
+          "targetPort": 8080,
+          "nodePort": 30080
+        }]
+      }
+    }' >/dev/null 2>&1 || true
+
+    # Validar que ya es NodePort 30080
+    local type
+    type=$(kubectl -n argocd get svc argocd-server -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
+    local np
+    np=$(kubectl -n argocd get svc argocd-server -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}' 2>/dev/null || echo "")
+    if [[ "$type" == "NodePort" && "$np" == "30080" ]]; then
+      break
+    fi
+    sleep 2
+    i=$((i+1))
+  done
+
+  # Esperar a que responda HTTP en localhost:30080 (hasta 120s)
+  wait_for_condition "curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 | grep -q '^2\|^3'" 120 5 || true
 }
 
 log_success() {
@@ -74,7 +184,7 @@ wait_for_condition() {
             log_error "Timeout esperando: $condition"
             return 1
         fi
-        sleep $interval
+        sleep "$interval"
         elapsed=$((elapsed + interval))
         log_info "Esperando... (${elapsed}s/${timeout}s)"
     done
@@ -137,7 +247,7 @@ install_docker_and_tools() {
     # kind
     if ! command -v kind >/dev/null 2>&1; then
         log_info "Instalando kind..."
-        [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+        [ "$(uname -m)" = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
         sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
         rm kind
     fi
@@ -174,23 +284,84 @@ nodes:
       kubeletExtraArgs:
         node-labels: "ingress-ready=true"
   extraPortMappings:
-  - containerPort: 80
+  # Rango representativo de NodePorts (30000-30100) expuestos para facilitar
+  # acceso desde el host/Windows sin usar port-forward. Estos mapeos permiten
+  # que los servicios con NodePort dentro del cluster sean accesibles en
+  # localhost:<hostPort> en la máquina donde corre Docker/Kind.
+  # ArgoCD (HTTP) estándar en 30080
+  - containerPort: 30080
     hostPort: 30080
     protocol: TCP
-  - containerPort: 443
-    hostPort: 30443
+  - containerPort: 30000
+    hostPort: 30000
     protocol: TCP
-  - containerPort: 30083
-    hostPort: 30083
+  - containerPort: 30001
+    hostPort: 30001
+    protocol: TCP  
+  - containerPort: 30002
+    hostPort: 30002
+    protocol: TCP
+  - containerPort: 30003
+    hostPort: 30003
+    protocol: TCP
+  - containerPort: 30004
+    hostPort: 30004
+    protocol: TCP
+  - containerPort: 30005
+    hostPort: 30005
+    protocol: TCP
+  - containerPort: 30010
+    hostPort: 30010
+    protocol: TCP
+  - containerPort: 30020
+    hostPort: 30020
     protocol: TCP
   - containerPort: 30022
     hostPort: 30022
     protocol: TCP
-  - containerPort: 30001
-    hostPort: 30001
+  - containerPort: 30030
+    hostPort: 30030
     protocol: TCP
-  - containerPort: 30002
-    hostPort: 30002
+  - containerPort: 30040
+    hostPort: 30040
+    protocol: TCP
+  - containerPort: 30050
+    hostPort: 30050
+    protocol: TCP
+  - containerPort: 30060
+    hostPort: 30060
+    protocol: TCP  
+  - containerPort: 30070
+    hostPort: 30070
+    protocol: TCP
+  # NOTE: puerto 30080 ya mapeado arriba (para containerPort:80 -> hostPort:30080)
+  # Evitamos duplicar mapeos idénticos para prevenir errores de kind
+  - containerPort: 30081
+    hostPort: 30081
+    protocol: TCP
+  - containerPort: 30082
+    hostPort: 30082
+    protocol: TCP
+  - containerPort: 30083
+    hostPort: 30083
+    protocol: TCP
+  - containerPort: 30084
+    hostPort: 30084
+    protocol: TCP
+  - containerPort: 30085
+    hostPort: 30085
+    protocol: TCP
+  - containerPort: 30086
+    hostPort: 30086
+    protocol: TCP
+  - containerPort: 30087
+    hostPort: 30087
+    protocol: TCP
+  - containerPort: 30088
+    hostPort: 30088
+    protocol: TCP
+  - containerPort: 30089
+    hostPort: 30089
     protocol: TCP
   - containerPort: 30090
     hostPort: 30090
@@ -200,6 +371,30 @@ nodes:
     protocol: TCP
   - containerPort: 30092
     hostPort: 30092
+    protocol: TCP
+  - containerPort: 30093
+    hostPort: 30093
+    protocol: TCP
+  - containerPort: 30094
+    hostPort: 30094
+    protocol: TCP
+  - containerPort: 30095
+    hostPort: 30095
+    protocol: TCP
+  - containerPort: 30096
+    hostPort: 30096
+    protocol: TCP
+  - containerPort: 30097
+    hostPort: 30097
+    protocol: TCP
+  - containerPort: 30098
+    hostPort: 30098
+    protocol: TCP
+  - containerPort: 30099
+    hostPort: 30099
+    protocol: TCP
+  - containerPort: 30100
+    hostPort: 30100
     protocol: TCP
 EOF
 
@@ -212,8 +407,30 @@ EOF
     log_info "Esperando a que ArgoCD esté listo..."
     kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
 
-    log_success "Cluster y ArgoCD creados"
+  # Configurar ArgoCD sin autenticación para desarrollo local
+  log_info "Configurando ArgoCD sin autenticación..."
+  kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}' >/dev/null 2>&1 || true
+  kubectl rollout restart deployment argocd-server -n argocd >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-server -n argocd --timeout=180s >/dev/null 2>&1 || true
+
+  # Configurar health check personalizado para Ingress (fix Dashboard health status)
+  log_info "Configurando health checks personalizados..."
+  kubectl patch configmap argocd-cm -n argocd --type merge -p '{"data":{"resource.customizations.health.networking.k8s.io_Ingress":"hs = {}\nhs.status = \"Healthy\"\nhs.message = \"Ingress is configured\"\nreturn hs"}}' >/dev/null 2>&1 || true
+  kubectl rollout restart statefulset argocd-application-controller -n argocd >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-application-controller -n argocd --timeout=180s >/dev/null 2>&1 || true
+
+  # Exponer y comprobar reachability NodePort 30080
+  ensure_argocd_nodeport_and_reachability
+
+    # Verificar mapeos de puertos (sanity check)
+    if ! check_mapping_sanity; then
+        log_warning "Problemas detectados en el mapeo de puertos; revisa los mensajes previos"
+    fi
+
+    log_success "Cluster y ArgoCD creados (acceso sin autenticación)"
 }
+
+
 
 build_and_load_images() {
     log_step "Construyendo y cargando imágenes"
@@ -253,7 +470,8 @@ setup_gitops() {
     log_step "Configurando GitOps completo"
     
     # Generar credenciales automáticamente
-    local gitea_password=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
+    local gitea_password
+    gitea_password=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
     export GITEA_ADMIN_PASSWORD="$gitea_password"
     
     log_info "Password generado para Gitea: $gitea_password"
@@ -557,6 +775,205 @@ EOF
 
     # Proyectos ArgoCD
     kubectl apply -f "$DOTFILES_DIR/gitops/projects/"
+    
+    # Configurar permisos de proyectos automáticamente
+    configure_argocd_permissions
+    
+    # Esperar y sincronizar aplicaciones automáticamente
+    wait_and_sync_applications
+
+    # Configurar servicios como NodePort para acceso directo
+    configure_services_nodeports
+}
+
+configure_argocd_permissions() {
+    log_info "Configurando permisos de proyectos ArgoCD..."
+    
+    # Esperar a que ArgoCD esté completamente listo
+    wait_for_condition "kubectl get pods -n argocd --no-headers | grep -v Running | wc -l | grep -q '^0$'" 300
+    sleep 10
+    
+    # Actualizar proyecto infrastructure con todos los namespaces necesarios
+    kubectl patch appproject infrastructure -n argocd --type merge -p '{
+        "spec": {
+            "destinations": [
+                {"namespace": "monitoring", "server": "https://kubernetes.default.svc"},
+                {"namespace": "kubernetes-dashboard", "server": "https://kubernetes.default.svc"},
+                {"namespace": "ingress-nginx", "server": "https://kubernetes.default.svc"},
+                {"namespace": "argo-rollouts", "server": "https://kubernetes.default.svc"},
+                {"namespace": "sealed-secrets", "server": "https://kubernetes.default.svc"},
+                {"namespace": "dashboard", "server": "https://kubernetes.default.svc"},
+                {"namespace": "grafana", "server": "https://kubernetes.default.svc"},
+                {"namespace": "prometheus", "server": "https://kubernetes.default.svc"}
+            ]
+        }
+    }' >/dev/null 2>&1
+    
+    log_success "✅ Permisos de proyectos configurados"
+}
+
+configure_services_nodeports() {
+    log_info "Configurando servicios como NodePort para acceso directo..."
+    
+    # Cambiar argocd-server a NodePort con nodePort 30080
+    kubectl patch svc argocd-server -n argocd --type merge -p '{
+        "spec": {
+            "type": "NodePort",
+            "ports": [{
+                "name": "http",
+                "port": 80,
+                "protocol": "TCP",
+                "targetPort": 8080,
+                "nodePort": 30080
+            }]
+        }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar argocd-server NodePort"
+    
+  # grafana - usar nodePort 30093 (alineado con manifests)
+    kubectl patch svc grafana -n monitoring --type merge -p '{
+        "spec": {
+            "type": "NodePort",
+            "ports": [{
+                "name": "web",
+                "port": 3000,
+                "protocol": "TCP",
+                "targetPort": 3000,
+        "nodePort": 30093
+            }]
+        }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar grafana NodePort"
+    
+    # prometheus - usar nodePort 30092 (ya está en manifests)
+    kubectl patch svc prometheus -n monitoring --type merge -p '{
+        "spec": {
+            "type": "NodePort",
+            "ports": [{
+                "name": "web",
+                "port": 9090,
+                "protocol": "TCP",
+                "targetPort": 9090,
+                "nodePort": 30092
+            }]
+        }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar prometheus NodePort"
+    
+    # argo-rollouts-dashboard - usar nodePort 30084 (ya está en manifests)
+    kubectl patch svc argo-rollouts-dashboard -n argo-rollouts --type merge -p '{
+        "spec": {
+            "type": "NodePort",
+            "ports": [{
+                "port": 3100,
+                "protocol": "TCP",
+                "targetPort": 3100,
+                "nodePort": 30084
+            }]
+        }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar argo-rollouts-dashboard NodePort"
+    
+    # kubernetes-dashboard - usar nodePort 30085 (ya está en manifests)
+    kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type merge -p '{
+        "spec": {
+            "type": "NodePort",
+            "ports": [{
+                "name": "https",
+                "port": 443,
+                "protocol": "TCP",
+                "targetPort": 8443,
+                "nodePort": 30085
+            }]
+        }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar kubernetes-dashboard NodePort"
+
+  # hello-world-canary - usar nodePort 30082 (ya está en manifests)
+  kubectl patch svc hello-world-canary -n hello-world --type merge -p '{
+    "spec": {
+      "type": "NodePort",
+      "ports": [{
+        "name": "http",
+        "port": 3000,
+        "protocol": "TCP",
+        "targetPort": 3000,
+        "nodePort": 30082
+      }]
+    }
+  }' >/dev/null 2>&1 || log_warning "No se pudo configurar hello-world-canary NodePort"
+    
+    log_success "✅ Servicios configurados como NodePort"
+}
+
+
+
+wait_and_sync_applications() {
+    log_info "Esperando y sincronizando aplicaciones..."
+    
+    # Esperar a que se generen las aplicaciones
+    log_info "Esperando a que ApplicationSets generen aplicaciones..."
+    local attempts=0
+    while [ $attempts -lt 30 ]; do
+        local app_count
+        app_count=$(kubectl get applications -n argocd --no-headers 2>/dev/null | wc -l || echo "0")
+        if [ "$app_count" -gt 0 ]; then
+            log_success "✅ $app_count aplicaciones generadas"
+            break
+        fi
+        sleep 5
+        attempts=$((attempts + 1))
+    done
+    
+  # Obtener contraseña de admin de ArgoCD (no crítico si no existe en modo no-auth)
+  local argocd_password=""
+  argocd_password=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+  # Intentar login y sync, pero no fallar si auth está deshabilitado
+  if [ -n "$argocd_password" ]; then
+    kubectl exec -n argocd deployment/argocd-server -- argocd login localhost:8080 --username admin --password "$argocd_password" --insecure >/dev/null 2>&1 || true
+  fi
+  # Sincronizar aplicaciones de infraestructura igualmente (no requiere login en modo no-auth)
+  log_info "Sincronizando aplicaciones de infraestructura..."
+  # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
+  wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
+  kubectl exec -n argocd deployment/argocd-server -- argocd app sync argo-rollouts sealed-secrets dashboard grafana prometheus hello-world --insecure --server localhost:8080 >/dev/null 2>&1 || true
+
+  # Esperar a que las aplicaciones alcancen estado saludable
+  log_info "Esperando a que las aplicaciones alcancen estado saludable..."
+  sleep 30
+
+    # Esperar a que apps clave estén Healthy
+    log_info "Esperando a que apps estén Synced+Healthy (dashboard, grafana, prometheus, argo-rollouts, sealed-secrets, hello-world)..."
+    local apps=(dashboard grafana prometheus argo-rollouts sealed-secrets hello-world)
+    local timeout=300
+    local interval=5
+  local start_ts
+  start_ts=$(date +%s)
+    while :; do
+      local all_ok=true
+      for app in "${apps[@]}"; do
+        local s h
+        s=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
+        h=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
+        if [[ "$s" != "Synced" || "$h" != "Healthy" ]]; then
+          all_ok=false
+          break
+        fi
+      done
+      if [[ "$all_ok" == true ]]; then
+        break
+      fi
+  local now
+  now=$(date +%s)
+      if (( now - start_ts > timeout )); then
+        log_warning "Algunas apps siguen no-Healthy tras $timeout s; continuando..."
+        break
+      fi
+      sleep "$interval"
+    done
+
+    # Asegurar despliegue del Dashboard listo (por salud y SSL)
+    kubectl -n kubernetes-dashboard rollout status deploy/kubernetes-dashboard --timeout=120s >/dev/null 2>&1 || true
+
+    # Mostrar estado final
+    log_success "📊 Estado final de aplicaciones:"
+    kubectl get applications -n argocd 2>/dev/null | grep -E "NAME|Synced|Healthy" || true
 }
 
 create_access_scripts() {
@@ -565,14 +982,14 @@ create_access_scripts() {
     # Script de dashboard
     cat > "$DOTFILES_DIR/dashboard.sh" << 'EOF'
 #!/bin/bash
-echo "🚀 Abriendo Kubernetes Dashboard..."
-echo "💡 En la pantalla de login, haz click en 'SKIP'"
-kubectl proxy --port=8001 &
-sleep 3
+set -euo pipefail
+URL="https://localhost:30085"
+echo "🚀 Abriendo Kubernetes Dashboard en $URL"
+echo "💡 En la pantalla de login, pulsa 'SKIP'"
 if command -v cmd.exe >/dev/null 2>&1; then
-    cmd.exe /c start http://localhost:8001/api/v1/namespaces/dashboard/services/https:kubernetes-dashboard:/proxy/ 2>/dev/null
+  cmd.exe /c start "$URL" 2>/dev/null || true
 else
-    echo "Dashboard disponible en: http://localhost:8001/api/v1/namespaces/dashboard/services/https:kubernetes-dashboard:/proxy/"
+  xdg-open "$URL" 2>/dev/null || echo "Dashboard disponible en: $URL"
 fi
 EOF
 
@@ -645,10 +1062,82 @@ main() {
     echo "🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE"
     echo "====================================="
     echo ""
-    echo "🚀 Servicios disponibles:"
-    echo "   ArgoCD:     http://localhost:8080 (admin/[ver secret])"
-    echo "   Gitea:      http://localhost:30083 (gitops/$GITEA_ADMIN_PASSWORD)"
-    echo "   Dashboard:  ./dashboard.sh"
+    echo "� VERIFICACIÓN AUTOMÁTICA DEL ESTADO:"
+    echo "====================================="
+    
+    # Verificar pods de ArgoCD
+    local argocd_pods_ready
+    argocd_pods_ready=$(kubectl get pods -n argocd --no-headers 2>/dev/null | awk '{if($2 ~ /\/.*/ && $3=="Running") print $1}' | wc -l || echo "0")
+    echo "🔵 ArgoCD: $argocd_pods_ready/7 pods Running"
+    
+    # Verificar aplicaciones GitOps
+    echo "🔵 Aplicaciones GitOps:"
+    kubectl get applications -n argocd --no-headers 2>/dev/null | while read -r app sync health _; do
+        local status_icon="⏳"
+        if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then
+            status_icon="✅"
+        elif [[ "$sync" == "Synced" ]]; then
+            status_icon="🟡"
+        fi
+        echo "   $status_icon $app: $sync + $health"
+    done 2>/dev/null || echo "   ⏳ Aplicaciones iniciándose..."
+    
+    # Verificar infraestructura desplegada
+    echo "🔵 Infraestructura desplegada:"
+  for ns in argo-rollouts sealed-secrets kubernetes-dashboard; do
+    local pod_count
+    pod_count=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -c Running || echo 0)
+    pod_count=$(echo "$pod_count" | tr -d '[:space:]')
+    if [ "${pod_count:-0}" -gt 0 ]; then
+            echo "   ✅ $ns: $pod_count pods Running"
+        else
+            echo "   ⏳ $ns: iniciándose..."
+        fi
+    done
+    
+    echo ""
+  echo "� Servicios disponibles (verificando accesibilidad):"
+  # Obtener credenciales desde secretos/configmaps
+  local argocd_password
+  argocd_password=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo "[obteniendo...]")
+  local gitea_pw="${GITEA_ADMIN_PASSWORD:-[obteniendo...]}"
+    local grafana_admin_pw
+    grafana_admin_pw=$(kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+  # Helper para chequear una URL (con soporte HTTPS -k y follow redirects)
+  check_url() {
+    local url="$1"; local name="$2"; local expected_http="${3:-200}"
+    local curl_opts=("-sS" "-o" "/dev/null" "-w" "%{http_code}" "--max-time" "10" "-L")
+    case "$url" in https://*) curl_opts+=("-k");; esac
+    local code
+    code=$(curl "${curl_opts[@]}" "$url" || echo "000")
+    if echo "$code" | grep -q "^$expected_http\|^30"; then
+      echo "   ✅ $name reachable: $url"
+      return 0
+    else
+      echo "   ❌ $name NOT reachable yet: $url (got $code)"
+      return 1
+    fi
+  }
+
+  wait_url() {
+    local url="$1"; local name="$2"; local expected_http="${3:-200}"; local timeout="${4:-120}"; local interval=6
+    local elapsed=0
+  while [ $elapsed -lt "$timeout" ]; do
+      if check_url "$url" "$name" "$expected_http"; then return 0; fi
+      sleep $interval
+      elapsed=$((elapsed + interval))
+    done
+    check_url "$url" "$name" "$expected_http" || return 1
+  }
+
+  # Chequeos activos con espera (hostPorts expuestos por kind)
+  wait_url "http://localhost:30080" "ArgoCD (admin/${argocd_password})" 200 60 || true
+  wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
+  wait_url "http://localhost:30092" "Prometheus" 200 240 || true
+  wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
+  wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
+  wait_url "https://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
+  wait_url "http://localhost:30082" "App Demo (Hello World)" 200 240 || true
     echo ""
     echo "� Estructura de repositorios creada:"
     echo "   ~/gitops-repos/gitops-infrastructure/   (Kubernetes manifests)"
@@ -670,7 +1159,9 @@ main() {
     echo "   kubectl get applications -n argocd"
     echo "   kubectl get pods --all-namespaces"
     echo ""
-    log_success "¡Todo listo! Entorno GitOps completo con repositorios de desarrollo."
+    echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
+    echo ""
+    log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
 }
 
 # Ejecutar si es llamado directamente

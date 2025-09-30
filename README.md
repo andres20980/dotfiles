@@ -68,17 +68,22 @@ cd gitops-learning- ✅ **Hello World Modern** - Aplicación Go con observabilid
 
 # 1. Clonar el repositorio
 
-**📊 URLs instantáneas** (después de la instalación):git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
+**📊 URLs instantáneas** (después de la instalación):
 
-- **ArgoCD**: http://localhost:30080 (`admin/admin123`)
+- ArgoCD: http://localhost:30080 (sin login)
+- Gitea: http://localhost:30083
+- Prometheus: http://localhost:30092
+- Grafana: http://localhost:30093 (admin/admin123)
+- Kubernetes Dashboard: https://localhost:30085 (skip login)
+- Argo Rollouts: http://localhost:30084
+- App Demo: http://localhost:30082
 
-- **Grafana**: http://localhost:30093 (`admin/admin123`)  # 2. Ejecutar la instalación completa
+Para instalar:
 
-- **Prometheus**: http://localhost:30092cd ~/dotfiles && chmod +x install.sh && ./install.sh
-
-- **Dashboard**: https://localhost:30081 (skip login)```
-
-- **App Demo**: http://localhost:30082
+```bash
+git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
+cd ~/dotfiles && chmod +x install.sh && ./install.sh
+```
 
 **¡Eso es todo!** En ~10-15 minutos tendrás un entorno GitOps completo funcionando.
 
@@ -104,7 +109,7 @@ gitops-learning/
 
 │   └── install-cluster.sh       # Solo cluster + ArgoCD básico| **Gitea** | `http://IP_WSL:30083` | `gitops` / `[SECURE_PASSWORD]` |
 
-├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `https://IP_WSL:30081` | Click "SKIP" o usar token |
+├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `https://IP_WSL:30085` | Click "SKIP" o usar token |
 
 │   ├── bootstrap/               # ArgoCD bootstrap + scripts| **Hello World** | `http://IP_WSL:30082` | Sin credenciales (con métricas) |
 
@@ -344,7 +349,7 @@ kind load docker-image hello-world-modern:v2 --name mini-cluster---
 
 | **Grafana** | latest | Dashboards | 30093 |
 
-| **Dashboard** | latest | K8s UI | 30081 |### **3. 🚢 Instalación de ArgoCD:**
+| **Dashboard** | latest | K8s UI | 30085 |
 
 | **Hello World** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
 

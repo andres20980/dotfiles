@@ -31,6 +31,21 @@ rules:
   - update
   - patch
 - apiGroups:
+  - argoproj.io
+  resources:
+  - analysisruns
+  - analysistemplates
+  - clusteranalysistemplates
+  - experiments
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
   - apps
   resources:
   - replicasets
@@ -44,6 +59,18 @@ rules:
   - delete
   - update
   - patch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - ""
   resources:
