@@ -10,11 +10,7 @@ spec:
   sourceRepos: 
   - '*'
   destinations:
-  - namespace: 'monitoring'
-    server: https://kubernetes.default.svc
-  - namespace: 'kubernetes-dashboard'
-    server: https://kubernetes.default.svc
-  - namespace: 'ingress-nginx'
+  - namespace: '*'
     server: https://kubernetes.default.svc
   clusterResourceWhitelist:
   - group: '*'
