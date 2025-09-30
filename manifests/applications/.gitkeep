@@ -1,0 +1,7 @@
+# Este directorio está listo para recibir manifests de aplicaciones custom
+# Por ahora está vacío para enfocar la instalación en las herramientas GitOps core
+# 
+# Para desplegar hello-world:
+# 1. Renombrar hello-world.disabled a hello-world
+# 2. Hacer git push al repositorio manifests-apps en Gitea
+# 3. ArgoCD lo detectará y desplegará automáticamente

@@ -1,0 +1,34 @@
+---
+# ApplicationSet para GitOps Tools (infraestructura base)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gitops-tools
+  namespace: argocd
+spec:
+  generators:
+  - git:
+      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
+      revision: HEAD
+      directories:
+      - path: '*'
+  template:
+    metadata:
+      name: '{{path.basename}}'
+    spec:
+      project: infrastructure
+      source:
+        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+        targetRevision: HEAD
+        path: '{{path}}'
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: '{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+        - PrunePropagationPolicy=foreground
+        - PruneLast=true

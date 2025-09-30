@@ -4,7 +4,6 @@ metadata:
   labels:
     k8s-app: dashboard-metrics-scraper
   name: dashboard-metrics-scraper
-  namespace: kubernetes-dashboard
 spec:
   ports:
     - port: 8000
@@ -18,7 +17,6 @@ metadata:
   labels:
     k8s-app: dashboard-metrics-scraper
   name: dashboard-metrics-scraper
-  namespace: kubernetes-dashboard
 spec:
   replicas: 1
   revisionHistoryLimit: 10

@@ -8,7 +8,7 @@
 # Este script consolida toda la lógica de instalación en un solo lugar
 # siguiendo mejores prácticas de scripting modular.
 
-set -e
+set -euo pipefail
 
 # =============================================================================
 # CONFIGURACIÓN Y CONSTANTES
@@ -20,23 +20,179 @@ readonly DOTFILES_DIR="$SCRIPT_DIR"
 readonly CLUSTER_NAME="mini-cluster"
 readonly GITEA_NAMESPACE="gitea"
 
+# Controla si se gestionan aplicaciones personalizadas (hello-world-modern, etc.)
+# Por defecto deshabilitado para centrarse en herramientas GitOps.
+ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
+readonly ENABLE_CUSTOM_APPS
+
+export DEBIAN_FRONTEND=noninteractive
+
 # =============================================================================
 # FUNCIONES DE UTILIDAD
 # =============================================================================
 
 log_step() {
+    local message="$1"
     echo ""
-    echo "🚀 PASO: $1"
-    echo "----------------------------------------"
+    echo "============================================================"
+    echo "➡️  $message"
+    echo "============================================================"
 }
 
+log_info() {
+    local message="$1"
+    echo "   ℹ️  $message"
+}
 
-# Sanity check: verificar que los hostPorts mapeados por kind realmente apuntan
-# a los containerPorts que los servicios esperan (ej. argocd-server -> 8080)
+log_success() {
+    local message="$1"
+    echo "   ✅ $message"
+}
+
+log_warning() {
+    local message="$1"
+    echo "   ⚠️  $message"
+}
+
+log_error() {
+    local message="$1"
+    echo "   ❌ $message" >&2
+}
+
+open_url() {
+  local url="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    if xdg-open "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  if command -v cmd.exe >/dev/null 2>&1; then
+    if cmd.exe /c start "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+ensure_shell_alias() {
+  local shell_file="$1"
+  local alias_name="$2"
+  local alias_command="$3"
+
+  if [[ ! -f "$shell_file" ]]; then
+    return
+  fi
+
+  local alias_line
+  alias_line="alias ${alias_name}='${alias_command}'"
+
+  if grep -q "^alias ${alias_name}=" "$shell_file"; then
+    sed -i "s|^alias ${alias_name}=.*|${alias_line}|" "$shell_file"
+  else
+    printf '%s\n' "$alias_line" >> "$shell_file"
+  fi
+}
+
+open_service() {
+  local service="$1"
+  local url=""
+  local label=""
+  local note=""
+
+  case "$service" in
+    dashboard)
+      url="http://localhost:30085"
+      label="Kubernetes Dashboard"
+      note="En la pantalla de login, pulsa 'SKIP'"
+      ;;
+    argocd)
+      url="http://localhost:30080"
+      label="ArgoCD UI"
+      ;;
+    gitea)
+      url="http://localhost:30083"
+      label="Gitea"
+      ;;
+    grafana)
+      url="http://localhost:30093"
+      label="Grafana"
+      ;;
+    prometheus)
+      url="http://localhost:30092"
+      label="Prometheus"
+      ;;
+    rollouts|argo-rollouts)
+      url="http://localhost:30084"
+      label="Argo Rollouts"
+      ;;
+    *)
+      log_error "Servicio desconocido: $service"
+      return 1
+      ;;
+  esac
+
+  log_info "Abriendo ${label} en ${url}"
+  if open_url "$url"; then
+    if [[ -n "$note" ]]; then
+      log_info "$note"
+    fi
+  else
+    log_warning "No se pudo abrir automáticamente ${label}. URL disponible: ${url}"
+  fi
+}
+
+bootstrap_local_repo() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local commit_message="$3"
+  local skip_disabled="${4:-true}"
+
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+
+  shopt -s dotglob nullglob
+  for item in "$source_dir"/*; do
+    local name
+    name=$(basename "$item")
+    if [[ "$skip_disabled" == true && "$name" == *.disabled ]]; then
+      log_info "   Omitiendo ${name} (marcado como .disabled)"
+      continue
+    fi
+    cp -r "$item" "$target_dir/"
+  done
+  shopt -u dotglob
+  shopt -u nullglob
+
+  if [[ ! -e "$target_dir/.gitkeep" ]]; then
+    touch "$target_dir/.gitkeep"
+  fi
+
+  (
+    cd "$target_dir" || exit 1
+    git init -b main >/dev/null 2>&1
+    git checkout -B main >/dev/null 2>&1
+    git config user.name "GitOps Setup"
+    git config user.email "gitops@localhost"
+    git add .
+    git commit -m "$commit_message" >/dev/null 2>&1 || true
+  )
+}
+
+push_repo_to_gitea() {
+  local repo_dir="$1"
+  local repo_name="$2"
+
+  (
+    cd "$repo_dir" || exit 1
+    git remote remove origin >/dev/null 2>&1 || true
+    git remote add origin "http://gitops:${GITEA_ADMIN_PASSWORD}@localhost:30083/gitops/${repo_name}.git"
+    git push --set-upstream origin main --force >/dev/null 2>&1
+  )
+}
+
 check_mapping_sanity() {
   log_step "Comprobando mapeos de puertos (sanity)"
 
-  # Detectar contenedor control-plane de kind
   local node_container
   node_container=$(docker ps --format '{{.Names}}' | grep "${CLUSTER_NAME}-control-plane" || true)
   if [[ -z "$node_container" ]]; then
@@ -48,7 +204,6 @@ check_mapping_sanity() {
   local mapping
   mapping=$(docker port "$node_container" 2>/dev/null || true)
 
-  # argocd-server
   if kubectl get svc argocd-server -n argocd >/dev/null 2>&1; then
     local nodePort
     nodePort=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}{.spec.ports[?(@.port==443)].nodePort}' 2>/dev/null | awk '{print $1}')
@@ -57,7 +212,6 @@ check_mapping_sanity() {
     fi
     log_info "argocd-server nodePort: ${nodePort:-none}"
 
-    # comprobar que docker expone ese puerto del nodo y que responde HTTP
     if [[ -z "$nodePort" ]]; then
       log_warning "argocd-server aún no es NodePort"
       issues=$((issues+1))
@@ -65,8 +219,7 @@ check_mapping_sanity() {
       log_warning "NodePort ${nodePort} de argocd-server no aparece en 'docker port' del nodo $node_container"
       issues=$((issues+1))
     else
-      # prueba de conectividad
-      if curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:${nodePort}" | grep -q "^2\|^3"; then
+  if curl -fsS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:${nodePort}" | grep -q "^2\|^3"; then
         log_success "ArgoCD responde en http://localhost:${nodePort}"
       else
         log_warning "ArgoCD no responde todavía en http://localhost:${nodePort}"
@@ -78,7 +231,6 @@ check_mapping_sanity() {
     issues=$((issues+1))
   fi
 
-  # Comprobar unos NodePorts comunes: gitea (si existe), grafana, prometheus
   for item in "${GITEA_NAMESPACE}:gitea" "monitoring:grafana" "monitoring:prometheus"; do
     IFS=':' read -r ns svc <<< "$item"
     if kubectl get svc -n "$ns" "$svc" >/dev/null 2>&1; then
@@ -104,10 +256,8 @@ check_mapping_sanity() {
   return 0
 }
 
-# Asegura que el servicio argocd-server esté en NodePort 30080 y que responda por HTTP
 ensure_argocd_nodeport_and_reachability() {
   log_info "Asegurando argocd-server como NodePort:30080 y accesible desde host..."
-  # Hacer el patch de manera idempotente y con reintentos breves
   local i=0
   while [[ $i -lt 5 ]]; do
     kubectl patch svc argocd-server -n argocd --type merge -p '{
@@ -123,7 +273,6 @@ ensure_argocd_nodeport_and_reachability() {
       }
     }' >/dev/null 2>&1 || true
 
-    # Validar que ya es NodePort 30080
     local type
     type=$(kubectl -n argocd get svc argocd-server -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
     local np
@@ -135,60 +284,67 @@ ensure_argocd_nodeport_and_reachability() {
     i=$((i+1))
   done
 
-  # Esperar a que responda HTTP en localhost:30080 (hasta 120s)
-  wait_for_condition "curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 | grep -q '^2\|^3'" 120 5 || true
-}
-
-log_success() {
-    echo "✅ $1"
-}
-
-log_info() {
-    echo "💡 $1"
-}
-
-log_error() {
-    echo "❌ ERROR: $1" >&2
-}
-
-log_warning() {
-    echo "⚠️ WARNING: $1"
-}
-
-validate_prerequisites() {
-    log_step "Verificando prerequisitos"
-    
-    # Validar que estamos en el directorio correcto
-    if [[ ! -f "install.sh" ]]; then
-        log_error "Debes ejecutar este script desde la raíz del repositorio dotfiles"
-        exit 1
-    fi
-
-    # Validar permisos sudo
-    if ! id -nG | grep -qw "sudo"; then
-        log_error "Tu usuario necesita permisos sudo"
-        exit 1
-    fi
-
-    log_success "Prerequisitos verificados"
+  wait_for_condition "curl -fsS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 | grep -q '^2\|^3'" 120 5 || true
 }
 
 wait_for_condition() {
-    local condition="$1"
+    local condition_command="$1"
     local timeout="${2:-300}"
     local interval="${3:-10}"
-    
     local elapsed=0
-    while ! eval "$condition" >/dev/null 2>&1; do
-        if [[ $elapsed -ge $timeout ]]; then
-            log_error "Timeout esperando: $condition"
-            return 1
+
+    while [[ $elapsed -lt $timeout ]]; do
+        if eval "$condition_command"; then
+            return 0
         fi
         sleep "$interval"
         elapsed=$((elapsed + interval))
-        log_info "Esperando... (${elapsed}s/${timeout}s)"
     done
-    return 0
+
+    return 1
+}
+
+validate_prerequisites() {
+  log_step "Validando prerequisitos del entorno"
+
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    log_error "Este instalador está soportado solo en sistemas Linux."
+    exit 1
+  fi
+
+  if [[ ! -f "$DOTFILES_DIR/install.sh" ]]; then
+    log_error "Debes ejecutar este script desde la raíz del repositorio dotfiles"
+    exit 1
+  fi
+
+  if [[ $EUID -eq 0 ]]; then
+    log_warning "Se recomienda ejecutar el script como usuario normal con acceso a sudo."
+  fi
+
+  if ! id -nG "$USER" | grep -qw "sudo"; then
+    log_error "Tu usuario necesita pertenecer al grupo sudo"
+    exit 1
+  fi
+
+  local required=(sudo apt-get curl git openssl)
+  local missing=()
+  for cmd in "${required[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    log_warning "Herramientas faltantes: ${missing[*]}. Se instalarán en la fase siguiente si es posible."
+  else
+    log_info "Herramientas básicas detectadas correctamente."
+  fi
+
+  if ! id -nG "$USER" | grep -qw "docker"; then
+    log_warning "El usuario no pertenece al grupo docker. Se añadirá durante la instalación."
+  fi
+
+  log_success "Prerequisitos validados"
 }
 
 # =============================================================================
@@ -402,23 +558,11 @@ EOF
     # Instalar ArgoCD
     log_info "Instalando ArgoCD..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml >/dev/null
+  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false >/dev/null
 
     # Esperar a que ArgoCD esté listo
     log_info "Esperando a que ArgoCD esté listo..."
     kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
-
-  # Configurar ArgoCD sin autenticación para desarrollo local
-  log_info "Configurando ArgoCD sin autenticación..."
-  kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true","server.disable.auth":"true"}}' >/dev/null 2>&1 || true
-  kubectl rollout restart deployment argocd-server -n argocd >/dev/null 2>&1 || true
-  kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-server -n argocd --timeout=180s >/dev/null 2>&1 || true
-
-  # Configurar health check personalizado para Ingress (fix Dashboard health status)
-  log_info "Configurando health checks personalizados..."
-  kubectl patch configmap argocd-cm -n argocd --type merge -p '{"data":{"resource.customizations.health.networking.k8s.io_Ingress":"hs = {}\nhs.status = \"Healthy\"\nhs.message = \"Ingress is configured\"\nreturn hs"}}' >/dev/null 2>&1 || true
-  kubectl rollout restart statefulset argocd-application-controller -n argocd >/dev/null 2>&1 || true
-  kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-application-controller -n argocd --timeout=180s >/dev/null 2>&1 || true
 
   # Exponer y comprobar reachability NodePort 30080
   ensure_argocd_nodeport_and_reachability
@@ -435,16 +579,22 @@ EOF
 
 build_and_load_images() {
     log_step "Construyendo y cargando imágenes"
+
+  if [[ "$ENABLE_CUSTOM_APPS" != "true" ]]; then
+    log_info "Fase de imágenes de aplicaciones personalizadas deshabilitada (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})."
+    log_success "Imágenes personalizadas omitidas"
+    return 0
+  fi
     
     # Verificar si existe la estructura de repositorios
     local gitops_base_dir="$HOME/gitops-repos"
     local source_dir
     
-    if [[ -d "$gitops_base_dir/apps/hello-world-modern" ]]; then
-        source_dir="$gitops_base_dir/apps/hello-world-modern"
+  if [[ -d "$gitops_base_dir/sourcecode-apps/hello-world-modern" ]]; then
+    source_dir="$gitops_base_dir/sourcecode-apps/hello-world-modern"
         log_info "Usando código fuente desde: $source_dir"
-    else
-        source_dir="$DOTFILES_DIR/source-code/hello-world-modern"
+  else
+    source_dir="$DOTFILES_DIR/sourcecode-apps/hello-world-modern"
         log_info "Usando código fuente desde dotfiles: $source_dir"
     fi
     
@@ -471,11 +621,23 @@ setup_gitops() {
     log_step "Configurando GitOps completo"
     
     # Generar credenciales automáticamente
-    local gitea_password
+  local gitea_password=""
+  local existing_secret
+  existing_secret=$(kubectl -n "$GITEA_NAMESPACE" get secret gitea-admin-secret -o jsonpath="{.data.password}" 2>/dev/null || true)
+  if [[ -n "$existing_secret" ]]; then
+    gitea_password=$(echo "$existing_secret" | base64 -d 2>/dev/null || echo "")
+    if [[ -n "$gitea_password" ]]; then
+      log_info "Usando password existente para Gitea."
+    fi
+  fi
+
+  if [[ -z "$gitea_password" ]]; then
     gitea_password=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
-    export GITEA_ADMIN_PASSWORD="$gitea_password"
-    
     log_info "Password generado para Gitea: $gitea_password"
+  fi
+
+  export GITEA_ADMIN_PASSWORD="$gitea_password"
+  log_info "Password para Gitea: $gitea_password"
 
     # Instalar Gitea
     install_gitea
@@ -574,7 +736,7 @@ EOF
 
     # Esperar a que Gitea esté listo
     log_info "Esperando a que Gitea esté listo..."
-    wait_for_condition "kubectl get pods -n $GITEA_NAMESPACE --no-headers | grep -v Running | wc -l | grep -q '^0$'" 300
+  wait_for_condition "kubectl get pods -n $GITEA_NAMESPACE --no-headers | awk '{if(\$3 != \"Running\"){exit 1}} END {exit 0}'" 300
     sleep 30  # Tiempo adicional para que Gitea termine de inicializar
 }
 
@@ -586,7 +748,7 @@ create_gitops_repositories() {
     
     # Esperar a que Gitea API esté disponible
     log_info "Esperando a que Gitea API esté disponible..."
-    wait_for_condition "curl -s -f http://localhost:30083/api/v1/version" 120
+    wait_for_condition "curl -fsS --output /dev/null http://localhost:30083/api/v1/version" 120
     
     # Crear usuario gitops usando el endpoint de registro público
     curl -X POST "http://localhost:30083/user/sign_up" \
@@ -601,49 +763,60 @@ create_gitops_repositories() {
     mkdir -p "$gitops_base_dir"
     
     # Crear repositorios GitOps
-    for repo in infrastructure applications; do
-        log_info "Creando repositorio: $repo"
-        
-        # Crear repositorio en Gitea
-        curl -X POST "http://localhost:30083/api/v1/user/repos" \
-            -H "Content-Type: application/json" \
-            -u "gitops:$GITEA_ADMIN_PASSWORD" \
-            -d "{
-                \"name\": \"$repo\",
-                \"description\": \"GitOps $repo repository\",
-                \"auto_init\": true,
-                \"private\": false
-            }" >/dev/null 2>&1
+  local repo_definitions=(
+    "infrastructure|$DOTFILES_DIR/manifests/infrastructure|GitOps infrastructure manifests"
+    "applications|$DOTFILES_DIR/manifests/applications|GitOps applications manifests"
+    "argo-config|$DOTFILES_DIR/argo-config|GitOps ArgoCD configuration"
+  )
 
-        # Crear directorio de trabajo para el repositorio
-        local repo_dir="$gitops_base_dir/gitops-$repo"
-        rm -rf "$repo_dir"  # Limpiar si existe
-        mkdir -p "$repo_dir"
-        
-        # Copiar manifests desde dotfiles
-        if [[ "$repo" == "infrastructure" ]]; then
-            cp -r "$DOTFILES_DIR/manifests/infrastructure/"* "$repo_dir/"
-        else
-            cp -r "$DOTFILES_DIR/manifests/applications/"* "$repo_dir/"
-        fi
+  for definition in "${repo_definitions[@]}"; do
+    IFS='|' read -r repo src_dir description <<< "$definition"
+    log_info "Creando repositorio: $repo"
 
-        # Inicializar y subir repositorio
-        cd "$repo_dir"
-        git init -b main >/dev/null 2>&1
-        git config user.name "GitOps Setup"
-        git config user.email "gitops@localhost"
-        git add .
-        git commit -m "Initial GitOps $repo manifests with correct versions
+    curl -X POST "http://localhost:30083/api/v1/user/repos" \
+      -H "Content-Type: application/json" \
+      -u "gitops:${GITEA_ADMIN_PASSWORD}" \
+      -d "{\"name\": \"$repo\", \"description\": \"$description\", \"auto_init\": true, \"private\": false}" >/dev/null 2>&1 || true
 
-- argo-rollouts: v1.8.3 con argumentos correctos
-- sealed-secrets: docker.io registry 
-- RBAC: permisos completos
-- Manifests listos para producción" >/dev/null 2>&1
-        git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/$repo.git"
-        git push --set-upstream origin main --force >/dev/null 2>&1
-        
-        log_success "✅ $repo → $repo_dir"
-    done
+    local repo_dir
+    case "$repo" in
+      infrastructure)
+        repo_dir="$gitops_base_dir/gitops-infrastructure"
+        ;;
+      applications)
+        repo_dir="$gitops_base_dir/gitops-applications"
+        ;;
+      argo-config)
+        repo_dir="$gitops_base_dir/argo-config"
+        ;;
+      *)
+        repo_dir="$gitops_base_dir/$repo"
+        ;;
+    esac
+
+    local skip_disabled=true
+    if [[ "$repo" == "argo-config" ]]; then
+      skip_disabled=false
+    fi
+
+    bootstrap_local_repo "$src_dir" "$repo_dir" "Initial $repo contents" "$skip_disabled"
+
+    if [[ "$repo" == "argo-config" && "$ENABLE_CUSTOM_APPS" != "true" ]]; then
+      local custom_file="$repo_dir/applications/custom-apps.yaml"
+      if [[ -f "$custom_file" ]]; then
+        rm -f "$custom_file"
+        (
+          cd "$repo_dir" || exit 1
+          git add -u applications/custom-apps.yaml
+          git commit --amend --no-edit >/dev/null 2>&1 || true
+        )
+        log_info "   ApplicationSet custom-apps eliminado (ENABLE_CUSTOM_APPS=false)"
+      fi
+    fi
+
+    push_repo_to_gitea "$repo_dir" "$repo"
+    log_success "✅ $repo → $repo_dir"
+  done
 
     # Crear repositorios de código fuente para desarrollo
     create_source_repositories "$gitops_base_dir"
@@ -654,22 +827,29 @@ create_gitops_repositories() {
 create_source_repositories() {
     local base_dir="$1"
     log_info "Creando repositorios de código fuente para desarrollo..."
+
+  local apps_dir="$base_dir/sourcecode-apps"
+  mkdir -p "$apps_dir"
+
+  if [[ "$ENABLE_CUSTOM_APPS" != "true" ]]; then
+    log_info "Se omite la creación de repositorios de aplicaciones personalizadas (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})."
+    return 0
+  fi
     
-    # Directorio para aplicaciones de desarrollo
-    local apps_dir="$base_dir/apps"
-    mkdir -p "$apps_dir"
+  # Directorio para aplicaciones de desarrollo
     
     # Crear repositorio hello-world-modern para desarrollo
     local app_dir="$apps_dir/hello-world-modern"
     rm -rf "$app_dir"
     mkdir -p "$app_dir"
     
-    # Copiar código fuente desde dotfiles
-    cp -r "$DOTFILES_DIR/source-code/hello-world-modern/"* "$app_dir/"
+  # Copiar código fuente desde dotfiles
+  cp -r "$DOTFILES_DIR/sourcecode-apps/hello-world-modern/"* "$app_dir/"
     
     # Inicializar repositorio git para desarrollo
     cd "$app_dir"
     git init -b main >/dev/null 2>&1
+  git checkout -B main >/dev/null 2>&1
     git config user.name "Developer"
     git config user.email "dev@localhost"
     git add .
@@ -689,128 +869,54 @@ create_source_repositories() {
             \"description\": \"Hello World Modern Application Source Code\",
             \"auto_init\": false,
             \"private\": false
-        }" >/dev/null 2>&1
+    }" >/dev/null 2>&1 || true
 
     # Subir código fuente a Gitea
+  git remote remove origin >/dev/null 2>&1 || true
     git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/hello-world-modern.git"
     git push --set-upstream origin main >/dev/null 2>&1
     
     log_success "✅ hello-world-modern → $app_dir"
     log_info "📁 Estructura creada:"
-    log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
-    log_info "   $base_dir/gitops-applications/    (manifests apps)"
-    log_info "   $base_dir/apps/hello-world-modern/ (código fuente)"
+  log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
+  log_info "   $base_dir/gitops-applications/    (manifests apps)"
+  log_info "   $base_dir/sourcecode-apps/hello-world-modern/ (código fuente)"
 }
 
 setup_application_sets() {
-    log_info "Configurando ApplicationSets..."
-    
-    # ApplicationSet para infraestructura
-    kubectl apply -f - <<EOF
+  log_info "Registrando aplicaciones ArgoCD desde argo-config..."
+
+  cat <<'EOF' | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
+kind: Application
 metadata:
-  name: gitops-tools
+  name: argo-config
   namespace: argocd
 spec:
-  generators:
-  - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
-      revision: HEAD
-      directories:
-      - path: "*"
-  template:
-    metadata:
-      name: '{{path.basename}}'
-    spec:
-      project: infrastructure
-      source:
-        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
-        targetRevision: HEAD
-        path: '{{path}}'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: '{{path.basename}}'
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-        - CreateNamespace=true
-        - PrunePropagationPolicy=foreground
-        - PruneLast=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: custom-apps
-  namespace: argocd
-spec:
-  generators:
-  - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/applications.git
-      revision: HEAD
-      directories:
-      - path: "*"
-  template:
-    metadata:
-      name: '{{path.basename}}'
-    spec:
-      project: applications
-      source:
-        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/applications.git
-        targetRevision: HEAD
-        path: '{{path}}'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: '{{path.basename}}'
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-        - CreateNamespace=true
-        - PrunePropagationPolicy=foreground
-        - PruneLast=true
+  project: default
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+    targetRevision: HEAD
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
 EOF
 
-    # Proyectos ArgoCD
-    kubectl apply -f "$DOTFILES_DIR/gitops/projects/"
-    
-    # Configurar permisos de proyectos automáticamente
-    configure_argocd_permissions
-    
-    # Esperar y sincronizar aplicaciones automáticamente
-    wait_and_sync_applications
+  log_info "Esperando a que el Application 'argo-config' esté Synced/Healthy..."
+  wait_for_condition "kubectl -n argocd get app argo-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argo-config todavía no está totalmente sincronizado"
 
-    # Configurar servicios como NodePort para acceso directo
-    configure_services_nodeports
-}
+  wait_and_sync_applications
 
-configure_argocd_permissions() {
-    log_info "Configurando permisos de proyectos ArgoCD..."
-    
-    # Esperar a que ArgoCD esté completamente listo
-    wait_for_condition "kubectl get pods -n argocd --no-headers | grep -v Running | wc -l | grep -q '^0$'" 300
-    sleep 10
-    
-    # Actualizar proyecto infrastructure con todos los namespaces necesarios
-    kubectl patch appproject infrastructure -n argocd --type merge -p '{
-        "spec": {
-            "destinations": [
-                {"namespace": "monitoring", "server": "https://kubernetes.default.svc"},
-                {"namespace": "kubernetes-dashboard", "server": "https://kubernetes.default.svc"},
-                {"namespace": "ingress-nginx", "server": "https://kubernetes.default.svc"},
-                {"namespace": "argo-rollouts", "server": "https://kubernetes.default.svc"},
-                {"namespace": "sealed-secrets", "server": "https://kubernetes.default.svc"},
-                {"namespace": "dashboard", "server": "https://kubernetes.default.svc"},
-                {"namespace": "grafana", "server": "https://kubernetes.default.svc"},
-                {"namespace": "prometheus", "server": "https://kubernetes.default.svc"}
-            ]
-        }
-    }' >/dev/null 2>&1
-    
-    log_success "✅ Permisos de proyectos configurados"
+  configure_services_nodeports
 }
 
 configure_services_nodeports() {
@@ -831,7 +937,7 @@ configure_services_nodeports() {
     }' >/dev/null 2>&1 || log_warning "No se pudo configurar argocd-server NodePort"
     
   # grafana - usar nodePort 30093 (alineado con manifests)
-    kubectl patch svc grafana -n monitoring --type merge -p '{
+  kubectl patch svc grafana -n grafana --type merge -p '{
         "spec": {
             "type": "NodePort",
             "ports": [{
@@ -845,7 +951,7 @@ configure_services_nodeports() {
     }' >/dev/null 2>&1 || log_warning "No se pudo configurar grafana NodePort"
     
     # prometheus - usar nodePort 30092 (ya está en manifests)
-    kubectl patch svc prometheus -n monitoring --type merge -p '{
+  kubectl patch svc prometheus -n prometheus --type merge -p '{
         "spec": {
             "type": "NodePort",
             "ports": [{
@@ -871,33 +977,37 @@ configure_services_nodeports() {
         }
     }' >/dev/null 2>&1 || log_warning "No se pudo configurar argo-rollouts-dashboard NodePort"
     
-    # kubernetes-dashboard - usar nodePort 30085 (ya está en manifests)
-    kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard --type merge -p '{
-        "spec": {
-            "type": "NodePort",
-            "ports": [{
-                "name": "https",
-                "port": 443,
-                "protocol": "TCP",
-                "targetPort": 8443,
-                "nodePort": 30085
-            }]
-        }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar kubernetes-dashboard NodePort"
-
-  # hello-world-canary - usar nodePort 30082 (ya está en manifests)
-  kubectl patch svc hello-world-canary -n hello-world --type merge -p '{
+  # kubernetes-dashboard - usar nodePort 30085 (HTTP plano)
+  kubectl patch svc kubernetes-dashboard -n dashboard --type merge -p '{
     "spec": {
       "type": "NodePort",
       "ports": [{
         "name": "http",
-        "port": 3000,
+        "port": 80,
         "protocol": "TCP",
-        "targetPort": 3000,
-        "nodePort": 30082
+        "targetPort": 9090,
+        "nodePort": 30085
       }]
     }
-  }' >/dev/null 2>&1 || log_warning "No se pudo configurar hello-world-canary NodePort"
+  }' >/dev/null 2>&1 || log_warning "No se pudo configurar kubernetes-dashboard NodePort"
+
+  if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
+    # hello-world-canary - usar nodePort 30082 (ya está en manifests)
+    kubectl patch svc hello-world-canary -n hello-world --type merge -p '{
+      "spec": {
+        "type": "NodePort",
+        "ports": [{
+          "name": "http",
+          "port": 3000,
+          "protocol": "TCP",
+          "targetPort": 3000,
+          "nodePort": 30082
+        }]
+      }
+    }' >/dev/null 2>&1 || log_warning "No se pudo configurar hello-world-canary NodePort"
+  else
+    log_info "NodePort para hello-world-canary omitido (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})."
+  fi
     
     log_success "✅ Servicios configurados como NodePort"
 }
@@ -933,15 +1043,44 @@ wait_and_sync_applications() {
   log_info "Sincronizando aplicaciones de infraestructura..."
   # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
   wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
-  kubectl exec -n argocd deployment/argocd-server -- argocd app sync argo-rollouts sealed-secrets dashboard grafana prometheus hello-world gatekeeper --insecure --server localhost:8080 >/dev/null 2>&1 || true
+
+  local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus)
+  if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
+    desired_apps+=(hello-world)
+  fi
+
+  local apps_to_sync=()
+  for app in "${desired_apps[@]}"; do
+    if kubectl -n argocd get app "$app" >/dev/null 2>&1; then
+      apps_to_sync+=("$app")
+    fi
+  done
+
+  if ((${#apps_to_sync[@]} > 0)); then
+    kubectl exec -n argocd deployment/argocd-server -- argocd app sync "${apps_to_sync[@]}" --insecure --server localhost:8080 >/dev/null 2>&1 || true
+  else
+    log_warning "No se encontraron aplicaciones de infraestructura para sincronizar."
+  fi
 
   # Esperar a que las aplicaciones alcancen estado saludable
   log_info "Esperando a que las aplicaciones alcancen estado saludable..."
   sleep 30
 
     # Esperar a que apps clave estén Healthy
-    log_info "Esperando a que apps estén Synced+Healthy (dashboard, grafana, prometheus, argo-rollouts, sealed-secrets, hello-world, gatekeeper)..."
-    local apps=(dashboard grafana prometheus argo-rollouts sealed-secrets hello-world gatekeeper)
+  local apps=()
+  for app in "${desired_apps[@]}"; do
+    if kubectl -n argocd get app "$app" >/dev/null 2>&1; then
+      apps+=("$app")
+    fi
+  done
+
+  if ((${#apps[@]} > 0)); then
+    local apps_list
+    apps_list=$(printf "%s, " "${apps[@]}" | sed 's/, $//')
+    log_info "Esperando a que apps estén Synced+Healthy (${apps_list})..."
+  else
+    log_warning "No hay aplicaciones ArgoCD que monitorear."
+  fi
     local timeout=300
     local interval=5
   local start_ts
@@ -978,136 +1117,151 @@ wait_and_sync_applications() {
 }
 
 create_access_scripts() {
-    log_step "Configurando scripts de acceso"
-    
-    # Script de dashboard
-    cat > "$DOTFILES_DIR/dashboard.sh" << 'EOF'
-#!/bin/bash
-set -euo pipefail
-URL="https://localhost:30085"
-echo "🚀 Abriendo Kubernetes Dashboard en $URL"
-echo "💡 En la pantalla de login, pulsa 'SKIP'"
-if command -v cmd.exe >/dev/null 2>&1; then
-  cmd.exe /c start "$URL" 2>/dev/null || true
-else
-  xdg-open "$URL" 2>/dev/null || echo "Dashboard disponible en: $URL"
-fi
-EOF
+  log_step "Configurando accesos rápidos"
 
-    chmod +x "$DOTFILES_DIR/dashboard.sh"
-    
-    # Aliases en .zshrc
-    if [[ -f "$HOME/.zshrc" ]]; then
-        local gitea_url="http://localhost:30083"
-        if grep -q "alias gitea=" "$HOME/.zshrc"; then
-            sed -i "s|alias gitea=.*|alias gitea='echo \"Gitea: $gitea_url\"'|" "$HOME/.zshrc"
-        else
-            echo "alias gitea='echo \"Gitea: $gitea_url\"'" >> "$HOME/.zshrc"
-        fi
-    fi
+  local open_command
+  open_command="${DOTFILES_DIR}/install.sh --open"
 
-    log_success "Scripts de acceso configurados"
+  for shell_file in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    ensure_shell_alias "$shell_file" "argocd" "${open_command} argocd"
+    ensure_shell_alias "$shell_file" "gitea" "${open_command} gitea"
+    ensure_shell_alias "$shell_file" "dashboard" "${open_command} dashboard"
+    ensure_shell_alias "$shell_file" "grafana" "${open_command} grafana"
+    ensure_shell_alias "$shell_file" "prometheus" "${open_command} prometheus"
+    ensure_shell_alias "$shell_file" "rollouts" "${open_command} rollouts"
+  done
+
+  log_success "Aliases de acceso actualizados"
+  log_info "Usa 'dashboard', 'argocd', 'gitea', etc. para abrir los servicios"
 }
 
 # =============================================================================
-# FUNCIÓN PRINCIPAL
+# CONTROL DE FASES Y UTILIDADES CLI
 # =============================================================================
 
-main() {
-    # Modo desatendido si se pasa argumento --unattended
-    local unattended=false
-    if [[ "$1" == "--unattended" ]]; then
-        unattended=true
-    fi
-    
-    echo "🚀 INSTALADOR MASTER GITOPS"
-    echo "=============================================="
-    echo "Este script instalará un entorno GitOps completo:"
-    echo ""
-    echo "📋 Componentes a instalar:"
-    echo "  🔧 Sistema base (zsh, git, herramientas)"
-    echo "  🐳 Docker + kubectl + kind"
-    echo "  🏗️ Cluster Kubernetes + ArgoCD"
-    echo "  🚀 GitOps (Gitea + aplicaciones)"
-    echo ""
-    echo "📊 Stack de observabilidad:"
-    echo "  📈 Prometheus (métricas)"
-    echo "  📊 Grafana (dashboards)"
-    echo "  🎯 Hello World moderna (con métricas)"
-    echo "  📱 Kubernetes Dashboard"
-    echo ""
-    echo "🔒 Seguridad y Políticas:"
-    echo "  🛡️ OPA Gatekeeper (Policy as Code)"
-    echo ""
-    echo "⏱️ Tiempo estimado: 15-20 minutos"
-    echo ""
-    
-    if [[ "$unattended" == "false" ]]; then
-        read -p "¿Continuar con la instalación? (y/N): " -r
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Instalación cancelada"
-            exit 0
-        fi
-    else
-        echo "🤖 MODO DESATENDIDO ACTIVADO - Instalando automáticamente..."
-    fi
+declare -ar STAGE_ORDER=(
+  prereqs
+  system
+  docker
+  cluster
+  images
+  gitops
+  access
+)
 
-    # Ejecutar pasos de instalación
-    validate_prerequisites
-    install_system_base
-    install_docker_and_tools
-    create_cluster
-    build_and_load_images
-    setup_gitops
-    create_access_scripts
+declare -Ar STAGE_FUNCS=(
+  [prereqs]=validate_prerequisites
+  [system]=install_system_base
+  [docker]=install_docker_and_tools
+  [cluster]=create_cluster
+  [images]=build_and_load_images
+  [gitops]=setup_gitops
+  [access]=create_access_scripts
+)
 
-    # Mostrar información final
-    echo ""
-    echo "🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE"
-    echo "====================================="
-    echo ""
-    echo "� VERIFICACIÓN AUTOMÁTICA DEL ESTADO:"
-    echo "====================================="
-    
-    # Verificar pods de ArgoCD
-    local argocd_pods_ready
-    argocd_pods_ready=$(kubectl get pods -n argocd --no-headers 2>/dev/null | awk '{if($2 ~ /\/.*/ && $3=="Running") print $1}' | wc -l || echo "0")
-    echo "🔵 ArgoCD: $argocd_pods_ready/7 pods Running"
-    
-    # Verificar aplicaciones GitOps
-    echo "🔵 Aplicaciones GitOps:"
-    kubectl get applications -n argocd --no-headers 2>/dev/null | while read -r app sync health _; do
-        local status_icon="⏳"
-        if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then
-            status_icon="✅"
-        elif [[ "$sync" == "Synced" ]]; then
-            status_icon="🟡"
-        fi
-        echo "   $status_icon $app: $sync + $health"
-    done 2>/dev/null || echo "   ⏳ Aplicaciones iniciándose..."
-    
-    # Verificar infraestructura desplegada
-    echo "🔵 Infraestructura desplegada:"
-  for ns in argo-rollouts sealed-secrets kubernetes-dashboard gatekeeper; do
+declare -Ar STAGE_TITLES=(
+  [prereqs]="Prerequisitos del entorno"
+  [system]="Instalación de herramientas base"
+  [docker]="Docker + kubectl + kind"
+  [cluster]="Creación de cluster y ArgoCD"
+  [images]="Preparación de imágenes GitOps"
+  [gitops]="Configuración completa GitOps"
+  [access]="Accesos rápidos"
+)
+
+print_stage_list() {
+  echo ""
+  echo "🧩 Fases disponibles:"
+  for stage in "${STAGE_ORDER[@]}"; do
+    printf "  %-12s %s\n" "$stage" "${STAGE_TITLES[$stage]}"
+  done
+  echo ""
+}
+
+stage_exists() {
+  local stage="$1"
+  [[ -n "${STAGE_FUNCS[$stage]:-}" ]]
+}
+
+run_stage() {
+  local stage="$1"
+  local func="${STAGE_FUNCS[$stage]}"
+  local title="${STAGE_TITLES[$stage]}"
+  local start_ts
+  start_ts=$(date +%s)
+
+  log_step "▶️  [${stage}] $title"
+  "$func"
+
+  local end_ts
+  end_ts=$(date +%s)
+  local elapsed=$(( end_ts - start_ts ))
+  log_success "✅  [${stage}] completado en ${elapsed}s"
+}
+
+print_usage() {
+  cat <<'EOF'
+Uso: ./install.sh [opciones]
+
+Opciones:
+  --unattended           Ejecuta todas las fases sin pedir confirmación
+  --stage <fase>         Ejecuta solo la fase indicada (ver --list-stages)
+  --start-from <fase>    Ejecuta desde la fase indicada hasta el final
+  --open <servicio>      Abre rápidamente la URL de un servicio (argocd, dashboard, gitea...)
+  --list-stages          Muestra las fases disponibles y termina (si no se especifican fases)
+  -h, --help             Muestra esta ayuda y termina
+
+Ejemplos:
+  ./install.sh --stage gitops
+  ./install.sh --open dashboard
+  ./install.sh --start-from gitops --unattended
+  ./install.sh --list-stages
+EOF
+}
+
+show_final_report() {
+  echo ""
+  echo "🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE"
+  echo "====================================="
+  echo ""
+  echo "🧪 VERIFICACIÓN AUTOMÁTICA DEL ESTADO:"
+  echo "====================================="
+
+  local argocd_pods_ready
+  argocd_pods_ready=$(kubectl get pods -n argocd --no-headers 2>/dev/null | awk '{if($2 ~ /\/.*/ && $3=="Running") print $1}' | wc -l || echo "0")
+  echo "🔵 ArgoCD: $argocd_pods_ready/7 pods Running"
+
+  echo "🔵 Aplicaciones GitOps:"
+  kubectl get applications -n argocd --no-headers 2>/dev/null | while read -r app sync health _; do
+    local status_icon="⏳"
+    if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then
+      status_icon="✅"
+    elif [[ "$sync" == "Synced" ]]; then
+      status_icon="🟡"
+    fi
+    echo "   $status_icon $app: $sync + $health"
+  done 2>/dev/null || echo "   ⏳ Aplicaciones iniciándose..."
+
+  echo "🔵 Infraestructura desplegada:"
+  for ns in argo-rollouts sealed-secrets kubernetes-dashboard grafana prometheus; do
     local pod_count
     pod_count=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -c Running || echo 0)
     pod_count=$(echo "$pod_count" | tr -d '[:space:]')
-    if [ "${pod_count:-0}" -gt 0 ]; then
-            echo "   ✅ $ns: $pod_count pods Running"
-        else
-            echo "   ⏳ $ns: iniciándose..."
-        fi
-    done
-    
-    echo ""
-  echo "� Servicios disponibles (verificando accesibilidad):"
-  # Obtener credenciales desde secretos/configmaps
+    if [[ "${pod_count:-0}" -gt 0 ]]; then
+      echo "   ✅ $ns: $pod_count pods Running"
+    else
+      echo "   ⏳ $ns: iniciándose..."
+    fi
+  done
+
+  echo ""
+  echo "🌐 Servicios disponibles (verificando accesibilidad):"
   local argocd_password
   argocd_password=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo "[obteniendo...]")
   local gitea_pw="${GITEA_ADMIN_PASSWORD:-[obteniendo...]}"
-    local grafana_admin_pw
-    grafana_admin_pw=$(kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
-  # Helper para chequear una URL (con soporte HTTPS -k y follow redirects)
+  local grafana_admin_pw
+  grafana_admin_pw=$(kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+
   check_url() {
     local url="$1"; local name="$2"; local expected_http="${3:-200}"
     local curl_opts=("-sS" "-o" "/dev/null" "-w" "%{http_code}" "--max-time" "10" "-L")
@@ -1126,7 +1280,7 @@ main() {
   wait_url() {
     local url="$1"; local name="$2"; local expected_http="${3:-200}"; local timeout="${4:-120}"; local interval=6
     local elapsed=0
-  while [ $elapsed -lt "$timeout" ]; do
+    while [[ $elapsed -lt "$timeout" ]]; do
       if check_url "$url" "$name" "$expected_http"; then return 0; fi
       sleep $interval
       elapsed=$((elapsed + interval))
@@ -1134,46 +1288,175 @@ main() {
     check_url "$url" "$name" "$expected_http" || return 1
   }
 
-  # Chequeos activos con espera (hostPorts expuestos por kind)
   wait_url "http://localhost:30080" "ArgoCD (admin/${argocd_password})" 200 60 || true
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
   wait_url "http://localhost:30092" "Prometheus" 200 240 || true
   wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
-  wait_url "https://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
-  wait_url "http://localhost:30082" "App Demo (Hello World)" 200 240 || true
-  wait_url "http://localhost:30000" "OPA Gatekeeper Dashboard" 200 120 || true
-  wait_url "http://localhost:30181" "OPA API (Policy Engine)" 200 120 || true
+  wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
+  if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
+    wait_url "http://localhost:30082" "App Demo (Hello World)" 200 240 || true
+  else
+    echo "   ℹ️  App Demo omitida (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})"
+  fi
+
+  echo ""
+  echo "📂 Estructura de repositorios creada:"
+  echo "   ~/gitops-repos/gitops-infrastructure/      (Manifests de infraestructura)"
+  echo "   ~/gitops-repos/gitops-applications/        (Manifests de aplicaciones)"
+  echo "   ~/gitops-repos/argo-config/                (Configuración de ArgoCD)"
+  if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
+    echo "   ~/gitops-repos/sourcecode-apps/hello-world-modern/    (Código fuente demo)"
+  else
+    echo "   ~/gitops-repos/sourcecode-apps/                      (Aplicaciones personalizadas deshabilitadas)"
+  fi
+  echo ""
+  echo "🔧 Flujo de trabajo sugerido:"
+  echo "   1. Editar manifests en los repos GitOps locales"
+  echo "   2. Git commit + push hacia Gitea"
+  echo "   3. ArgoCD sincroniza automáticamente"
+  echo ""
+  echo "📋 Comandos útiles:"
+  echo "   ./install.sh --open <servicio>  - Abre el servicio indicado (argocd, dashboard, gitea, grafana, prometheus, rollouts)"
+  echo "   Aliases disponibles tras reabrir tu shell: 'dashboard', 'argocd', 'gitea', ..."
+  echo ""
+  echo "🔍 Para verificar el estado manualmente:"
+  echo "   kubectl get applications -n argocd"
+  echo "   kubectl get pods --all-namespaces"
+  echo ""
+  echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
+  echo ""
+  log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
+}
+
+# =============================================================================
+# FUNCIÓN PRINCIPAL
+# =============================================================================
+
+main() {
+  local unattended=false
+  local single_stage=""
+  local start_from=""
+  local list_stages=false
+  local open_service_name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --unattended)
+        unattended=true
+        ;;
+      --stage)
+        shift || { log_error "Falta el nombre de la fase tras --stage"; exit 1; }
+        single_stage="$1"
+        ;;
+      --start-from)
+        shift || { log_error "Falta el nombre de la fase tras --start-from"; exit 1; }
+        start_from="$1"
+        ;;
+      --open)
+        shift || { log_error "Falta el nombre del servicio tras --open"; exit 1; }
+        open_service_name="$1"
+        ;;
+      --list-stages)
+        list_stages=true
+        ;;
+      -h|--help)
+        print_usage
+        print_stage_list
+        exit 0
+        ;;
+      *)
+        log_error "Opción no reconocida: $1"
+        print_usage
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "$open_service_name" ]]; then
+    if [[ -n "$single_stage" || -n "$start_from" || "$list_stages" == true ]]; then
+      log_error "La opción --open no se puede combinar con ejecución de fases"
+      exit 1
+    fi
+    open_service "$open_service_name"
+    exit $?
+  fi
+
+  if [[ "$list_stages" == true ]]; then
+    print_stage_list
+    if [[ -z "$single_stage" && -z "$start_from" ]]; then
+      exit 0
+    fi
+  fi
+
+  local stages_to_run=()
+  if [[ -n "$single_stage" ]]; then
+    if ! stage_exists "$single_stage"; then
+      log_error "La fase '$single_stage' no existe"
+      print_stage_list
+      exit 1
+    fi
+    stages_to_run=("$single_stage")
+  elif [[ -n "$start_from" ]]; then
+    if ! stage_exists "$start_from"; then
+      log_error "La fase '$start_from' no existe"
+      print_stage_list
+      exit 1
+    fi
+    local found=false
+    for stage in "${STAGE_ORDER[@]}"; do
+      if [[ "$stage" == "$start_from" ]]; then
+        found=true
+      fi
+      if [[ "$found" == true ]]; then
+        stages_to_run+=("$stage")
+      fi
+    done
+  else
+    stages_to_run=("${STAGE_ORDER[@]}")
+  fi
+
+  local total_stages=${#stages_to_run[@]}
+
+  echo "🚀 SETUP MASTER GITOPS"
+  echo "=============================================="
+  echo "Este script prepara un entorno GitOps completo con kind + ArgoCD + observabilidad."
+  echo ""
+  echo "🧩 Fases seleccionadas ($total_stages):"
+  local idx=1
+  for stage in "${stages_to_run[@]}"; do
+    printf "  %d/%d %-10s %s\n" "$idx" "$total_stages" "$stage" "${STAGE_TITLES[$stage]}"
+    ((idx++))
+  done
+  echo ""
+
+  if [[ "$unattended" == false ]]; then
+    read -p "¿Continuar con la ejecución? (y/N): " -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      echo "Instalación cancelada"
+      exit 0
+    fi
+  else
+    echo "🤖 MODO DESATENDIDO ACTIVADO - Ejecutando fases seleccionadas..."
+  fi
+
+  local report_needed=false
+  for stage in "${stages_to_run[@]}"; do
+    run_stage "$stage"
+    case "$stage" in
+      gitops|access)
+        report_needed=true
+        ;;
+    esac
+  done
+
+  if [[ "$report_needed" == true ]]; then
+    show_final_report
+  else
     echo ""
-    echo "� Estructura de repositorios creada:"
-    echo "   ~/gitops-repos/gitops-infrastructure/   (Kubernetes manifests)"
-    echo "   ~/gitops-repos/gitops-applications/     (Application manifests)"
-    echo "   ~/gitops-repos/apps/hello-world-modern/ (Source code)"
-    echo ""
-    echo "🔧 Flujo de desarrollo:"
-    echo "   1. Modificar código en: ~/gitops-repos/apps/hello-world-modern/"
-    echo "   2. Build + push imagen: cd ~/gitops-repos/apps/hello-world-modern && docker build -t hello-world-modern:latest ."
-    echo "   3. Cargar en kind: kind load docker-image hello-world-modern:latest --name $CLUSTER_NAME"
-    echo "   4. Modificar manifests en: ~/gitops-repos/gitops-applications/"
-    echo "   5. Git push → ArgoCD sync automático"
-    echo ""
-    echo "�📋 Comandos útiles:"
-    echo "   ./dashboard.sh     - Abrir Dashboard K8s"
-    echo "   gitea             - Ver URL de Gitea"
-    echo ""
-    echo "� Endpoints de Seguridad:"
-    echo "   http://localhost:30000 - OPA Gatekeeper Dashboard (Policy Testing)"
-    echo "   http://localhost:30181 - OPA API (Policy Queries)"
-    echo ""
-    echo "�🔍 Para verificar el estado:"
-    echo "   kubectl get applications -n argocd"
-    echo "   kubectl get pods --all-namespaces"
-    echo "   kubectl get constrainttemplate -A  # Ver políticas OPA"
-    echo ""
-    echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
-    echo "💡 Gatekeeper incluye UI web para testing de políticas en tiempo real"
-    echo ""
-    log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
+    log_info "Ejecución finalizada. Usa --stage gitops o --start-from gitops para desplegar todo el stack."
+  fi
 }
 
 # Ejecutar si es llamado directamente

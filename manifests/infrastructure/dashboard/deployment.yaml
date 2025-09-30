@@ -4,7 +4,7 @@ metadata:
   labels:
     k8s-app: kubernetes-dashboard
   name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
+  namespace: dashboard
 spec:
   replicas: 1
   revisionHistoryLimit: 10
@@ -21,30 +21,29 @@ spec:
           image: kubernetesui/dashboard:v2.7.0
           imagePullPolicy: Always
           ports:
-            - containerPort: 8443
+            - containerPort: 9090
+              name: http
               protocol: TCP
           args:
-            - --auto-generate-certificates
-            - --namespace=kubernetes-dashboard
+            - --namespace=dashboard
             - --enable-skip-login
             - --disable-settings-authorizer
+            - --port=0
+            - --insecure-bind-address=0.0.0.0
+            - --insecure-port=9090
           volumeMounts:
-            - name: kubernetes-dashboard-certs
-              mountPath: /certs
             - mountPath: /tmp
               name: tmp-volume
           livenessProbe:
             httpGet:
-              scheme: HTTPS
               path: /
-              port: 8443
+              port: 9090
             initialDelaySeconds: 30
             timeoutSeconds: 30
           readinessProbe:
             httpGet:
-              scheme: HTTPS
               path: /
-              port: 8443
+              port: 9090
             initialDelaySeconds: 10
             periodSeconds: 10
           securityContext:
@@ -53,8 +52,6 @@ spec:
             runAsUser: 1001
             runAsGroup: 2001
       volumes:
-        - name: kubernetes-dashboard-certs
-          emptyDir: {}
         - name: tmp-volume
           emptyDir: {}
       securityContext:

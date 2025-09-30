@@ -74,7 +74,7 @@ cd gitops-learning- ✅ **Hello World Modern** - Aplicación Go con observabilid
 - Gitea: http://localhost:30083
 - Prometheus: http://localhost:30092
 - Grafana: http://localhost:30093 (admin/admin123)
-- Kubernetes Dashboard: https://localhost:30085 (skip login)
+- Kubernetes Dashboard: http://localhost:30085 (skip login)
 - Argo Rollouts: http://localhost:30084
 - App Demo: http://localhost:30082
 
@@ -88,6 +88,19 @@ cd ~/dotfiles && chmod +x install.sh && ./install.sh
 **¡Eso es todo!** En ~10-15 minutos tendrás un entorno GitOps completo funcionando.
 
 ---
+
+## 🔗 Accesos rápidos integrados
+
+- Usa `./install.sh --open <servicio>` para abrir ArgoCD, Gitea, Dashboard, Grafana, Prometheus o Argo Rollouts desde cualquier terminal.
+- El instalador añade aliases (`dashboard`, `argocd`, `gitea`, `grafana`, `prometheus`, `rollouts`) a tu shell para accesos rápidos.
+- El Dashboard expone HTTP plano en `http://localhost:30085`, pensado para uso personal en entornos de laboratorio.
+
+## 📁 Repos GitOps generados
+
+- `~/gitops-repos/gitops-infrastructure/` → Manifests de infraestructura gestionados por ArgoCD.
+- `~/gitops-repos/gitops-applications/` → Plantillas para aplicaciones personalizadas (opcional).
+- `~/gitops-repos/argo-config/` → Configuración declarativa de ArgoCD (AppProjects, ApplicationSets, ConfigMaps).
+- `~/gitops-repos/sourcecode-apps/` → Código fuente de aplicaciones de desarrollo (por defecto `hello-world-modern`).
 
 ---
 
@@ -109,7 +122,7 @@ gitops-learning/
 
 │   └── install-cluster.sh       # Solo cluster + ArgoCD básico| **Gitea** | `http://IP_WSL:30083` | `gitops` / `[SECURE_PASSWORD]` |
 
-├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `https://IP_WSL:30085` | Click "SKIP" o usar token |
+├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `http://IP_WSL:30085` | Click "SKIP" o usar token |
 
 │   ├── bootstrap/               # ArgoCD bootstrap + scripts| **Hello World** | `http://IP_WSL:30082` | Sin credenciales (con métricas) |
 
@@ -167,7 +180,7 @@ gitops-learning/
 
 │   ├── check-status.sh         # Verificar estado del sistema## 📋 Verificación del Sistema
 
-│   └── dashboard.sh            # Acceso rápido con skip-login
+│   └── (usa ./install.sh --open <servicio>)  # Accesos rápidos integrados
 
 ├── ⚙️ config/                   # Configuraciones del entorno### **1. Verificar Estado General:**
 
@@ -295,9 +308,9 @@ grafana         # Dashboards├── verify-setup.sh              # ✅ Verific
 
 check-gitops    # Estado completo├── check-windows-access.sh      # 🌐 URLs para acceso desde Windows
 
-```├── dashboard.sh                 # 🚀 Acceso rápido al Dashboard  
+```├── (usa ./install.sh --open dashboard)   # 🚀 Acceso rápido al Dashboard  
 
-├── open-dashboard.sh            # 🔑 Dashboard con token automático
+├── (aliases en tu shell)        # 🔑 Usa 'dashboard', 'argocd', 'gitea', ...
 
 ### **🔄 Workflow de Desarrollo**├── kind-config.yaml             # ⚙️ Configuración del cluster
 

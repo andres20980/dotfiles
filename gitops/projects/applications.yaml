@@ -3,36 +3,16 @@ kind: AppProject
 metadata:
   name: applications
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  description: Business applications and custom workloads
-  sourceRepos: 
-  - '*'
+  description: "Aplicaciones personalizadas desplegadas mediante ArgoCD"
+  sourceRepos:
+    - '*'
   destinations:
-  - namespace: 'hello-world'
-    server: https://kubernetes.default.svc
-  - namespace: 'default'
-    server: https://kubernetes.default.svc
+    - namespace: '*'
+      server: https://kubernetes.default.svc
   clusterResourceWhitelist:
-  - group: ''
-    kind: 'Namespace'
-  - group: 'apps'
-    kind: 'Deployment'
-  - group: ''
-    kind: 'Service'
-  - group: ''
-    kind: 'ConfigMap'
-  - group: 'networking.k8s.io'
-    kind: 'Ingress'
+    - group: '*'
+      kind: '*'
   namespaceResourceWhitelist:
-  - group: '*'
-    kind: '*'
-  roles:
-  - name: developer
-    description: Application developer access
-    policies:
-    - p, proj:applications:developer, applications, *, applications/*, allow
-    - p, proj:applications:developer, repositories, *, *, allow
-    groups:
-    - developers
+    - group: '*'
+      kind: '*'

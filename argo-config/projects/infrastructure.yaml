@@ -3,6 +3,8 @@ kind: AppProject
 metadata:
   name: infrastructure
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   description: "Infraestructura y herramientas GitOps gestionadas por ArgoCD"
   sourceRepos:
@@ -12,7 +14,7 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: monitoring
       server: https://kubernetes.default.svc
-    - namespace: kubernetes-dashboard
+    - namespace: dashboard
       server: https://kubernetes.default.svc
     - namespace: argo-rollouts
       server: https://kubernetes.default.svc

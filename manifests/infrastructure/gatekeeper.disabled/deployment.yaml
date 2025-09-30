@@ -1,0 +1,78 @@
+---
+# Ultra Simple OPA Policy Checker - Local Demo Only
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app: opa-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa-demo
+  template:
+    metadata:
+      labels:
+        app: opa-demo
+    spec:
+      serviceAccountName: gatekeeper-admin
+      containers:
+      - name: opa
+        image: openpolicyagent/opa:1.9.0
+        args:
+        - "run"
+        - "--server" 
+        - "--addr=0.0.0.0:8181"
+        - "--log-level=debug"
+        - "--log-format=json"
+        ports:
+        - containerPort: 8181
+          name: http-api
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 1000
+          runAsGroup: 1000
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+# OPA Demo Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  labels:
+    app: opa-demo
+spec:
+  ports:
+  - name: http-api
+    port: 8181
+    targetPort: 8181
+    nodePort: 30181
+  selector:
+    app: opa-demo
+  type: NodePort
