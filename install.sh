@@ -195,6 +195,41 @@ push_repo_to_gitea() {
   )
 }
 
+create_kargo_secret_workaround() {
+  log_info "Creando Secret temporal para Kargo (workaround Sealed Secrets)..."
+  
+  # Esperar a que el namespace kargo exista
+  local retries=30
+  while [[ $retries -gt 0 ]]; do
+    if kubectl get namespace kargo >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+    retries=$((retries - 1))
+  done
+  
+  if [[ $retries -eq 0 ]]; then
+    log_warning "Namespace kargo no encontrado, saltando creación de Secret"
+    return 0
+  fi
+  
+  # Generar hash para admin/admin123
+  local password_hash
+  password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))" 2>/dev/null || echo '$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC')
+  
+  # Crear Secret si no existe
+  if ! kubectl get secret kargo-api -n kargo >/dev/null 2>&1; then
+    kubectl create secret generic kargo-api -n kargo \
+      --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
+      --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
+      >/dev/null 2>&1
+    
+    log_success "Secret kargo-api creado (usuario: admin, contraseña: admin123)"
+  else
+    log_info "Secret kargo-api ya existe"
+  fi
+}
+
 check_mapping_sanity() {
   log_step "Comprobando mapeos de puertos (sanity)"
 
@@ -673,6 +708,9 @@ setup_gitops() {
     
     # Configurar ApplicationSets
     setup_application_sets
+    
+    # Crear Secret temporal para Kargo (workaround Sealed Secrets)
+    create_kargo_secret_workaround
 
     log_success "GitOps configurado completamente"
 }
@@ -1390,7 +1428,7 @@ show_final_report() {
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
   wait_url "http://localhost:30092" "Prometheus" 200 240 || true
   wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
-  wait_url "http://localhost:30091" "Kargo (admin/admin)" 200 240 || true
+  wait_url "http://localhost:30094" "Kargo (admin/admin123)" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
   wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
