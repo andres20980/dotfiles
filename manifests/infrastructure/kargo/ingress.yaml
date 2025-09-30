@@ -13,7 +13,7 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   rules:
-  - host: kargo.local
+  - host: localhost
     http:
       paths:
       - path: /
@@ -22,4 +22,4 @@ spec:
           service:
             name: kargo
             port:
-              number: 8080
+              number: 80

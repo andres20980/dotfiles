@@ -12,6 +12,7 @@ spec:
       revision: HEAD
       directories:
       - path: '*'
+        exclude: '*.disabled'
   template:
     metadata:
       name: '{{path.basename}}'
