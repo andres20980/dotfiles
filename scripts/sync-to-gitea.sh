@@ -17,17 +17,26 @@ sync_subtree() {
   mkdir -p "$temp_dir"
   
   # Clonar repo de Gitea
-  git clone "$remote" "$temp_dir" >/dev/null 2>&1
+  if ! git clone "$remote" "$temp_dir" >/dev/null 2>&1; then
+    log_error "Error clonando $remote"
+    return 1
+  fi
   
   # Copiar archivos actuales
   cp -r "$prefix"/* "$temp_dir/"
   
   # Commit y push
   cd "$temp_dir"
+  git config user.name "GitOps Sync"
+  git config user.email "gitops@localhost"
   git add .
   if git commit -m "sync: update from local development" >/dev/null 2>&1; then
-    git push >/dev/null 2>&1
-    log_success "$prefix sincronizado ✅"
+    if git push >/dev/null 2>&1; then
+      log_success "$prefix sincronizado ✅"
+    else
+      log_error "Error haciendo push a $prefix"
+      return 1
+    fi
   else
     log_info "$prefix sin cambios"
   fi

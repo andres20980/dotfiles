@@ -4,3 +4,4 @@ metadata:
   name: kargo
   labels:
     name: kargo
+    environment: gitops-demo
