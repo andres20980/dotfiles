@@ -1224,6 +1224,99 @@ Ejemplos:
 EOF
 }
 
+configure_gitops_remotes() {
+  log_info "Configurando remotos GitOps para flujo local → Gitea → ArgoCD..."
+  
+  # Verificar si ya existen los remotos de Gitea
+  local has_gitea_remotes=false
+  if git remote | grep -q "gitea-"; then
+    has_gitea_remotes=true
+    log_info "Remotos de Gitea ya configurados."
+  else
+    log_info "Configurando remotos de Gitea..."
+    
+    # Configurar remotos para el flujo GitOps
+    git remote add gitea-argo-config "http://gitops:${GITEA_ADMIN_PASSWORD}@localhost:30083/gitops/argo-config.git" 2>/dev/null || true
+    git remote add gitea-infrastructure "http://gitops:${GITEA_ADMIN_PASSWORD}@localhost:30083/gitops/infrastructure.git" 2>/dev/null || true
+    
+    log_info "✅ Remotos configurados:"
+    log_info "   - gitea-argo-config: Configuración de ArgoCD"
+    log_info "   - gitea-infrastructure: Manifests de infraestructura"
+  fi
+  
+  # Crear script de sincronización
+  cat > "${BASE_DIR}/scripts/sync-to-gitea.sh" << 'EOF'
+#!/bin/bash
+# Script para sincronizar cambios locales con Gitea (flujo GitOps)
+set -euo pipefail
+
+log_info() { echo "ℹ️  $*"; }
+log_success() { echo "✅ $*"; }
+log_error() { echo "❌ $*"; }
+
+sync_subtree() {
+  local prefix="$1"
+  local remote="$2"
+  
+  log_info "Sincronizando $prefix con $remote..."
+  
+  # Crear directorio temporal
+  local temp_dir="/tmp/gitops-sync-$$"
+  mkdir -p "$temp_dir"
+  
+  # Clonar repo de Gitea
+  git clone "$remote" "$temp_dir" >/dev/null 2>&1
+  
+  # Copiar archivos actuales
+  cp -r "$prefix"/* "$temp_dir/"
+  
+  # Commit y push
+  cd "$temp_dir"
+  git add .
+  if git commit -m "sync: update from local development" >/dev/null 2>&1; then
+    git push >/dev/null 2>&1
+    log_success "$prefix sincronizado ✅"
+  else
+    log_info "$prefix sin cambios"
+  fi
+  
+  # Cleanup
+  rm -rf "$temp_dir"
+}
+
+main() {
+  log_info "🔄 Sincronizando cambios locales con Gitea..."
+  
+  # Verificar que estemos en el directorio correcto
+  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/infrastructure" ]]; then
+    log_error "Ejecutar desde el directorio raíz del proyecto (donde están argo-config/ y manifests/)"
+    exit 1
+  fi
+  
+  # Obtener password de Gitea
+  local gitea_password
+  gitea_password=$(kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "")
+  
+  if [[ -z "$gitea_password" ]]; then
+    log_error "No se pudo obtener la contraseña de Gitea. ¿Está el cluster funcionando?"
+    exit 1
+  fi
+  
+  # Sincronizar ambos repos
+  sync_subtree "argo-config" "http://gitops:${gitea_password}@localhost:30083/gitops/argo-config.git"
+  sync_subtree "manifests/infrastructure" "http://gitops:${gitea_password}@localhost:30083/gitops/infrastructure.git"
+  
+  log_success "🎉 Sincronización completada. ArgoCD detectará los cambios automáticamente."
+  log_info "💡 Puedes verificar en: http://localhost:30080"
+}
+
+main "$@"
+EOF
+  
+  chmod +x "${BASE_DIR}/scripts/sync-to-gitea.sh"
+  log_success "Script de sincronización creado: ./scripts/sync-to-gitea.sh"
+}
+
 show_final_report() {
   echo ""
   echo "🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE"
@@ -1317,10 +1410,20 @@ show_final_report() {
     echo "   ~/gitops-repos/sourcecode-apps/                      (Aplicaciones personalizadas deshabilitadas)"
   fi
   echo ""
-  echo "🔧 Flujo de trabajo sugerido:"
-  echo "   1. Editar manifests en los repos GitOps locales"
-  echo "   2. Git commit + push hacia Gitea"
-  echo "   3. ArgoCD sincroniza automáticamente"
+  echo "🔧 Flujo GitOps configurado:"
+  echo "   ✅ ArgoCD lee de repositorios Gitea locales"
+  echo "   ✅ Remotos configurados para desarrollo:"
+  echo "      - origin (GitHub): para backup y compartir código"
+  echo "      - gitea-* (Gitea local): para el flujo GitOps"
+  echo ""
+  echo "🔄 Flujo de trabajo recomendado:"
+  echo "   1. Trabajar en el repo local clonado de GitHub"
+  echo "   2. Editar manifests (argo-config/, manifests/infrastructure/)"
+  echo "   3. git commit -m \"feat: nueva funcionalidad\""
+  echo "   4. git push origin main  (backup a GitHub)"
+  echo "   5. ./scripts/sync-to-gitea.sh  (sincronizar a Gitea → ArgoCD detecta cambios)"
+  echo ""
+  configure_gitops_remotes
   echo ""
   echo "📋 Comandos útiles:"
   echo "   ./install.sh --open <servicio>  - Abre el servicio indicado (argocd, dashboard, gitea, grafana, prometheus, kargo, rollouts)"
