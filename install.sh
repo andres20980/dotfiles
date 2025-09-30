@@ -292,6 +292,7 @@ nodes:
   - containerPort: 30080
     hostPort: 30080
     protocol: TCP
+  # OPA Gatekeeper Dashboard (Policy Testing UI)
   - containerPort: 30000
     hostPort: 30000
     protocol: TCP
@@ -932,15 +933,15 @@ wait_and_sync_applications() {
   log_info "Sincronizando aplicaciones de infraestructura..."
   # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
   wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
-  kubectl exec -n argocd deployment/argocd-server -- argocd app sync argo-rollouts sealed-secrets dashboard grafana prometheus hello-world --insecure --server localhost:8080 >/dev/null 2>&1 || true
+  kubectl exec -n argocd deployment/argocd-server -- argocd app sync argo-rollouts sealed-secrets dashboard grafana prometheus hello-world gatekeeper --insecure --server localhost:8080 >/dev/null 2>&1 || true
 
   # Esperar a que las aplicaciones alcancen estado saludable
   log_info "Esperando a que las aplicaciones alcancen estado saludable..."
   sleep 30
 
     # Esperar a que apps clave estén Healthy
-    log_info "Esperando a que apps estén Synced+Healthy (dashboard, grafana, prometheus, argo-rollouts, sealed-secrets, hello-world)..."
-    local apps=(dashboard grafana prometheus argo-rollouts sealed-secrets hello-world)
+    log_info "Esperando a que apps estén Synced+Healthy (dashboard, grafana, prometheus, argo-rollouts, sealed-secrets, hello-world, gatekeeper)..."
+    local apps=(dashboard grafana prometheus argo-rollouts sealed-secrets hello-world gatekeeper)
     local timeout=300
     local interval=5
   local start_ts
@@ -1035,6 +1036,9 @@ main() {
     echo "  🎯 Hello World moderna (con métricas)"
     echo "  📱 Kubernetes Dashboard"
     echo ""
+    echo "🔒 Seguridad y Políticas:"
+    echo "  🛡️ OPA Gatekeeper (Policy as Code)"
+    echo ""
     echo "⏱️ Tiempo estimado: 15-20 minutos"
     echo ""
     
@@ -1084,7 +1088,7 @@ main() {
     
     # Verificar infraestructura desplegada
     echo "🔵 Infraestructura desplegada:"
-  for ns in argo-rollouts sealed-secrets kubernetes-dashboard; do
+  for ns in argo-rollouts sealed-secrets kubernetes-dashboard gatekeeper; do
     local pod_count
     pod_count=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -c Running || echo 0)
     pod_count=$(echo "$pod_count" | tr -d '[:space:]')
@@ -1138,6 +1142,8 @@ main() {
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
   wait_url "https://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   wait_url "http://localhost:30082" "App Demo (Hello World)" 200 240 || true
+  wait_url "http://localhost:30000" "OPA Gatekeeper Dashboard" 200 120 || true
+  wait_url "http://localhost:30181" "OPA API (Policy Engine)" 200 120 || true
     echo ""
     echo "� Estructura de repositorios creada:"
     echo "   ~/gitops-repos/gitops-infrastructure/   (Kubernetes manifests)"
@@ -1155,11 +1161,17 @@ main() {
     echo "   ./dashboard.sh     - Abrir Dashboard K8s"
     echo "   gitea             - Ver URL de Gitea"
     echo ""
-    echo "🔍 Para verificar el estado:"
+    echo "� Endpoints de Seguridad:"
+    echo "   http://localhost:30000 - OPA Gatekeeper Dashboard (Policy Testing)"
+    echo "   http://localhost:30181 - OPA API (Policy Queries)"
+    echo ""
+    echo "�🔍 Para verificar el estado:"
     echo "   kubectl get applications -n argocd"
     echo "   kubectl get pods --all-namespaces"
+    echo "   kubectl get constrainttemplate -A  # Ver políticas OPA"
     echo ""
     echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
+    echo "💡 Gatekeeper incluye UI web para testing de políticas en tiempo real"
     echo ""
     log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
 }
