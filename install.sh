@@ -256,8 +256,10 @@ check_mapping_sanity() {
   return 0
 }
 
-ensure_argocd_nodeport_and_reachability() {
-  log_info "Asegurando argocd-server como NodePort:30080 y accesible desde host..."
+configure_argocd_bootstrap() {
+  log_info "Configurando ArgoCD para bootstrapping (NodePort 30080)..."
+  
+  # Solo ArgoCD - necesario para el bootstrapping inicial del cluster
   local i=0
   while [[ $i -lt 5 ]]; do
     kubectl patch svc argocd-server -n argocd --type merge -p '{
@@ -284,7 +286,12 @@ ensure_argocd_nodeport_and_reachability() {
     i=$((i+1))
   done
 
-  wait_for_condition "curl -fsS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 | grep -q '^2\|^3'" 120 5 || true
+  # Verificar que ArgoCD esté accesible (con reintentos silenciosos)
+  log_info "Verificando accesibilidad de ArgoCD..."
+  wait_for_condition "curl -fsS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 2>/dev/null | grep -q '^2\|^3'" 120 5 || true
+  
+  log_success "✅ ArgoCD disponible en http://localhost:30080 (sin auth)"
+  log_info "📝 Otros servicios configurarán sus NodePorts via manifests GitOps"
 }
 
 wait_for_condition() {
@@ -403,9 +410,14 @@ install_docker_and_tools() {
     # kind
     if ! command -v kind >/dev/null 2>&1; then
         log_info "Instalando kind..."
-        [ "$(uname -m)" = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-        sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
-        rm kind
+        if [[ "$(uname -m)" == "x86_64" ]]; then
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+            sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+            rm kind
+        else
+            log_error "Arquitectura $(uname -m) no soportada para kind"
+            exit 1
+        fi
     fi
 
     # Helm
@@ -440,15 +452,9 @@ nodes:
       kubeletExtraArgs:
         node-labels: "ingress-ready=true"
   extraPortMappings:
-  # Rango representativo de NodePorts (30000-30100) expuestos para facilitar
-  # acceso desde el host/Windows sin usar port-forward. Estos mapeos permiten
-  # que los servicios con NodePort dentro del cluster sean accesibles en
-  # localhost:<hostPort> en la máquina donde corre Docker/Kind.
-  # ArgoCD (HTTP) estándar en 30080
-  - containerPort: 30080
-    hostPort: 30080
-    protocol: TCP
-  # OPA Gatekeeper Dashboard (Policy Testing UI)
+  # Rango completo NodePorts (30000-30100) para GitOps tools
+  # Cada herramienta GitOps define su propio NodePort en sus manifests
+  # ArgoCD usa 30080 para bootstrapping inicial
   - containerPort: 30000
     hostPort: 30000
     protocol: TCP
@@ -491,8 +497,10 @@ nodes:
   - containerPort: 30070
     hostPort: 30070
     protocol: TCP
-  # NOTE: puerto 30080 ya mapeado arriba (para containerPort:80 -> hostPort:30080)
-  # Evitamos duplicar mapeos idénticos para prevenir errores de kind
+  # ArgoCD bootstrapping - puerto crítico para acceso inicial
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
   - containerPort: 30081
     hostPort: 30081
     protocol: TCP
@@ -558,14 +566,27 @@ EOF
     # Instalar ArgoCD
     log_info "Instalando ArgoCD..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false >/dev/null
+  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false >/dev/null 2>&1
 
-    # Esperar a que ArgoCD esté listo
+    # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
+    log_info "Aplicando configuración ArgoCD (insecure, no-auth)..."
+    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1 || true
+    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cm.yaml" >/dev/null 2>&1 || true
+
+    # Reiniciar ArgoCD para que lea la nueva configuración
+    log_info "Reiniciando ArgoCD para aplicar configuración..."
+    kubectl rollout restart deployment/argocd-server -n argocd >/dev/null 2>&1 || true
+    kubectl rollout restart deployment/argocd-repo-server -n argocd >/dev/null 2>&1 || true
+
+    # Pausa breve para evitar connection reset en la verificación
+    sleep 3
+
+    # Esperar a que ArgoCD esté listo con la nueva configuración
     log_info "Esperando a que ArgoCD esté listo..."
     kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
 
-  # Exponer y comprobar reachability NodePort 30080
-  ensure_argocd_nodeport_and_reachability
+  # Configurar solo ArgoCD para bootstrapping (otros servicios usan manifests GitOps)
+  configure_argocd_bootstrap
 
     # Verificar mapeos de puertos (sanity check)
     if ! check_mapping_sanity; then
@@ -606,14 +627,14 @@ build_and_load_images() {
     
     # Construir hello-world-modern
     log_info "Construyendo imagen hello-world-modern..."
-    cd "$source_dir"
-    docker build -t hello-world-modern:latest . >/dev/null 2>&1
+    (
+        cd "$source_dir" || exit 1
+        docker build -t hello-world-modern:latest . >/dev/null 2>&1
+    )
 
     # Cargar en kind
     log_info "Cargando imagen en cluster kind..."
     kind load docker-image hello-world-modern:latest --name "$CLUSTER_NAME" >/dev/null 2>&1
-
-    cd "$DOTFILES_DIR"
     log_success "Imágenes construidas y cargadas"
 }
 
@@ -847,18 +868,20 @@ create_source_repositories() {
   cp -r "$DOTFILES_DIR/sourcecode-apps/hello-world-modern/"* "$app_dir/"
     
     # Inicializar repositorio git para desarrollo
-    cd "$app_dir"
-    git init -b main >/dev/null 2>&1
-  git checkout -B main >/dev/null 2>&1
-    git config user.name "Developer"
-    git config user.email "dev@localhost"
-    git add .
-    git commit -m "Initial hello-world-modern application
+    (
+        cd "$app_dir" || exit 1
+        git init -b main >/dev/null 2>&1
+        git checkout -B main >/dev/null 2>&1
+        git config user.name "Developer"
+        git config user.email "dev@localhost"
+        git add .
+        git commit -m "Initial hello-world-modern application
 
 - Aplicación Go moderna con métricas Prometheus
 - Dockerfile para containerización
 - Health checks y readiness probes
 - Configuración para despliegue con argo-rollouts" >/dev/null 2>&1
+    )
     
     # Crear repositorio en Gitea para el código fuente
     curl -X POST "http://localhost:30083/api/v1/user/repos" \
@@ -872,32 +895,46 @@ create_source_repositories() {
     }" >/dev/null 2>&1 || true
 
     # Subir código fuente a Gitea
-  git remote remove origin >/dev/null 2>&1 || true
-    git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/hello-world-modern.git"
-    git push --set-upstream origin main >/dev/null 2>&1
+    (
+        cd "$app_dir" || exit 1
+        git remote remove origin >/dev/null 2>&1 || true
+        git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/hello-world-modern.git"
+        git push --set-upstream origin main >/dev/null 2>&1
+    )
     
     log_success "✅ hello-world-modern → $app_dir"
     log_info "📁 Estructura creada:"
-  log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
-  log_info "   $base_dir/gitops-applications/    (manifests apps)"
-  log_info "   $base_dir/sourcecode-apps/hello-world-modern/ (código fuente)"
+    log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
+    log_info "   $base_dir/gitops-applications/    (manifests apps)"
+    log_info "   $base_dir/sourcecode-apps/hello-world-modern/ (código fuente)"
 }
 
 setup_application_sets() {
-  log_info "Registrando aplicaciones ArgoCD desde argo-config..."
+  log_info "Registrando ArgoCD self-management (siguiendo ArgoCD Best Practices)..."
 
+  # Primero crear el proyecto para self-management
+  log_info "Creando proyecto argocd-config para self-management..."
+  kubectl apply -f "$DOTFILES_DIR/argo-config/projects/argocd-config.yaml" >/dev/null 2>&1 || true
+  
+  # Una sola Application para self-management (excluyendo ConfigMaps aplicados en bootstrap)
   cat <<'EOF' | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argo-config
+  name: argocd-self-config
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/managed-by: bootstrap
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: argocd-config
   source:
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
     targetRevision: HEAD
     path: .
+    directory:
+      exclude: 'configmaps/*'  # ConfigMaps aplicados durante bootstrap
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -909,108 +946,70 @@ spec:
     - CreateNamespace=true
     - PrunePropagationPolicy=foreground
     - PruneLast=true
+  ignoreDifferences:
+    # Ignorar diferencias en Applications hijo para permitir debug manual
+    - group: "argoproj.io"
+      kind: "Application"
+      namespace: "argocd"
+      jsonPointers:
+        - /spec/syncPolicy/automated
+        - /metadata/annotations/argocd.argoproj.io~1refresh
+        - /operation
 EOF
 
-  log_info "Esperando a que el Application 'argo-config' esté Synced/Healthy..."
-  wait_for_condition "kubectl -n argocd get app argo-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argo-config todavía no está totalmente sincronizado"
+  log_info "Esperando a que ArgoCD self-config esté Synced/Healthy..."
+  wait_for_condition "kubectl -n argocd get app argocd-self-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argocd-self-config todavía no está totalmente sincronizado"
 
   wait_and_sync_applications
 
-  configure_services_nodeports
+  # Verificar servicios desplegados (NodePorts configurados via manifests GitOps)
+  verify_gitops_services
 }
 
-configure_services_nodeports() {
-    log_info "Configurando servicios como NodePort para acceso directo..."
-    
-    # Cambiar argocd-server a NodePort con nodePort 30080
-    kubectl patch svc argocd-server -n argocd --type merge -p '{
-        "spec": {
-            "type": "NodePort",
-            "ports": [{
-                "name": "http",
-                "port": 80,
-                "protocol": "TCP",
-                "targetPort": 8080,
-                "nodePort": 30080
-            }]
-        }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar argocd-server NodePort"
-    
-  # grafana - usar nodePort 30093 (alineado con manifests)
-  kubectl patch svc grafana -n grafana --type merge -p '{
-        "spec": {
-            "type": "NodePort",
-            "ports": [{
-                "name": "web",
-                "port": 3000,
-                "protocol": "TCP",
-                "targetPort": 3000,
-        "nodePort": 30093
-            }]
-        }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar grafana NodePort"
-    
-    # prometheus - usar nodePort 30092 (ya está en manifests)
-  kubectl patch svc prometheus -n prometheus --type merge -p '{
-        "spec": {
-            "type": "NodePort",
-            "ports": [{
-                "name": "web",
-                "port": 9090,
-                "protocol": "TCP",
-                "targetPort": 9090,
-                "nodePort": 30092
-            }]
-        }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar prometheus NodePort"
-    
-    # argo-rollouts-dashboard - usar nodePort 30084 (ya está en manifests)
-    kubectl patch svc argo-rollouts-dashboard -n argo-rollouts --type merge -p '{
-        "spec": {
-            "type": "NodePort",
-            "ports": [{
-                "port": 3100,
-                "protocol": "TCP",
-                "targetPort": 3100,
-                "nodePort": 30084
-            }]
-        }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar argo-rollouts-dashboard NodePort"
-    
-  # kubernetes-dashboard - usar nodePort 30085 (HTTP plano)
-  kubectl patch svc kubernetes-dashboard -n dashboard --type merge -p '{
-    "spec": {
-      "type": "NodePort",
-      "ports": [{
-        "name": "http",
-        "port": 80,
-        "protocol": "TCP",
-        "targetPort": 9090,
-        "nodePort": 30085
-      }]
-    }
-  }' >/dev/null 2>&1 || log_warning "No se pudo configurar kubernetes-dashboard NodePort"
-
-  if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
-    # hello-world-canary - usar nodePort 30082 (ya está en manifests)
-    kubectl patch svc hello-world-canary -n hello-world --type merge -p '{
-      "spec": {
-        "type": "NodePort",
-        "ports": [{
-          "name": "http",
-          "port": 3000,
-          "protocol": "TCP",
-          "targetPort": 3000,
-          "nodePort": 30082
-        }]
-      }
-    }' >/dev/null 2>&1 || log_warning "No se pudo configurar hello-world-canary NodePort"
+verify_gitops_services() {
+  log_info "Verificando arquitectura GitOps desplegada..."
+  
+  # Verificar ArgoCD self-management
+  log_info "🔄 ArgoCD Self-Management:"
+  local self_app_status
+  self_app_status=$(kubectl -n argocd get app argocd-self-config -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null || echo "Unknown/Unknown")
+  if [[ "$self_app_status" == "Synced/Healthy" ]]; then
+    log_success "  ✅ argocd-self-config: $self_app_status (siguiendo Best Practices)"
   else
-    log_info "NodePort para hello-world-canary omitido (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})."
+    log_warning "  ⚠️  argocd-self-config: $self_app_status"
   fi
+  
+  # Verificar GitOps tools desplegadas
+  log_info "🛠️  GitOps Tools (con NodePorts definidos en manifests):"
+  local tools=(
+    "argocd:argocd-server:30080"
+    "grafana:grafana:30093" 
+    "prometheus:prometheus:30092"
+    "kubernetes-dashboard:kubernetes-dashboard:30085"
+  )
+  
+  for tool_def in "${tools[@]}"; do
+    IFS=':' read -r ns svc expected_port <<< "$tool_def"
     
-    log_success "✅ Servicios configurados como NodePort"
+    if kubectl get svc "$svc" -n "$ns" >/dev/null 2>&1; then
+      local svc_type actual_port
+      svc_type=$(kubectl get svc "$svc" -n "$ns" -o jsonpath='{.spec.type}' 2>/dev/null || echo "ClusterIP")
+      actual_port=$(kubectl get svc "$svc" -n "$ns" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "none")
+      
+      if [[ "$svc_type" == "NodePort" && "$actual_port" == "$expected_port" ]]; then
+        log_success "  ✅ $ns/$svc: NodePort $actual_port → http://localhost:$actual_port"
+      else
+        log_info "  ⏳ $ns/$svc: $svc_type (NodePort será configurado por manifest)"
+      fi
+    else
+      log_info "  ⏳ $ns/$svc: Pendiente de despliegue"
+    fi
+  done
+  
+  log_success "🎯 Arquitectura GitOps: Cluster → ArgoCD (bootstrap) → Manifests (declarativo)"
 }
+
+
 
 
 

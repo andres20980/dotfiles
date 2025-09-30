@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: argocd-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "ArgoCD self-management configuration (Admin only)"
+  sourceRepos:
+    - '*'
+  destinations:
+    # Solo puede desplegar en el namespace de ArgoCD
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  # Permisos completos en el namespace argocd (necesario para self-management)
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  # Sin roles - solo admins pueden gestionar este proyecto
+  roles: []
