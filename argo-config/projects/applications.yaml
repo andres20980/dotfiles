@@ -10,21 +10,11 @@ spec:
   sourceRepos: 
   - '*'
   destinations:
-  - namespace: 'hello-world'
-    server: https://kubernetes.default.svc
-  - namespace: 'default'
+  - namespace: '*'  # 🎯 Permitir cualquier namespace para aplicaciones dinámicas
     server: https://kubernetes.default.svc
   clusterResourceWhitelist:
-  - group: ''
-    kind: 'Namespace'
-  - group: 'apps'
-    kind: 'Deployment'
-  - group: ''
-    kind: 'Service'
-  - group: ''
-    kind: 'ConfigMap'
-  - group: 'networking.k8s.io'
-    kind: 'Ingress'
+  - group: '*'  # 🎯 Permitir recursos de cluster según necesidades de aplicaciones
+    kind: '*'
   namespaceResourceWhitelist:
   - group: '*'
     kind: '*'

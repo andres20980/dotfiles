@@ -10,23 +10,9 @@ spec:
   sourceRepos:
     - '*'
   destinations:
-    - namespace: argocd
+    - namespace: '*'  # 🎯 Permitir cualquier namespace para máxima flexibilidad GitOps
       server: https://kubernetes.default.svc
-    - namespace: monitoring
-      server: https://kubernetes.default.svc
-    - namespace: dashboard
-      server: https://kubernetes.default.svc
-    - namespace: argo-rollouts
-      server: https://kubernetes.default.svc
-    - namespace: sealed-secrets
-      server: https://kubernetes.default.svc
-    - namespace: ingress-nginx
-      server: https://kubernetes.default.svc
-    - namespace: grafana
-      server: https://kubernetes.default.svc
-    - namespace: prometheus
-      server: https://kubernetes.default.svc
-    - namespace: gitea
+    - namespace: kargo
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:
     - group: '*'

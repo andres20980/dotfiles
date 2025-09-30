@@ -1,0 +1,181 @@
+---
+# Kargo Project CRD (simplified version)
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: projects.kargo.akuity.io
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: crd
+spec:
+  group: kargo.akuity.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              description:
+                type: string
+          status:
+            type: object
+    additionalPrinterColumns:
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Cluster
+  names:
+    plural: projects
+    singular: project
+    kind: Project
+---
+# Kargo Stage CRD (simplified version)  
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stages.kargo.akuity.io
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: crd
+spec:
+  group: kargo.akuity.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              requestedFreight:
+                type: array
+                items:
+                  type: object
+          status:
+            type: object
+    additionalPrinterColumns:
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: stages
+    singular: stage
+    kind: Stage
+---
+# Kargo Warehouse CRD (simplified version)
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: warehouses.kargo.akuity.io
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: crd
+spec:
+  group: kargo.akuity.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              subscriptions:
+                type: array
+                items:
+                  type: object
+          status:
+            type: object
+    additionalPrinterColumns:
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: warehouses
+    singular: warehouse
+    kind: Warehouse
+---
+# Kargo Freight CRD (simplified version)
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: freight.kargo.akuity.io
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: crd
+spec:
+  group: kargo.akuity.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+          status:
+            type: object
+    additionalPrinterColumns:
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: freight
+    singular: freight
+    kind: Freight
+---
+# Kargo Promotion CRD (required by API server)
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: promotions.kargo.akuity.io
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: crd
+spec:
+  group: kargo.akuity.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              stage:
+                type: string
+              freight:
+                type: string
+          status:
+            type: object
+    additionalPrinterColumns:
+    - name: Stage
+      type: string
+      jsonPath: .spec.stage
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: promotions
+    singular: promotion
+    kind: Promotion

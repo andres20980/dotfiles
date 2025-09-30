@@ -125,6 +125,11 @@ open_service() {
       url="http://localhost:30084"
       label="Argo Rollouts"
       ;;
+    kargo)
+      url="http://localhost:30091"
+      label="Kargo"
+      note="Default credentials: admin/admin"
+      ;;
     *)
       log_error "Servicio desconocido: $service"
       return 1
@@ -986,6 +991,7 @@ verify_gitops_services() {
     "grafana:grafana:30093" 
     "prometheus:prometheus:30092"
     "kubernetes-dashboard:kubernetes-dashboard:30085"
+    "kargo:kargo:30091"
   )
   
   for tool_def in "${tools[@]}"; do
@@ -1043,7 +1049,7 @@ wait_and_sync_applications() {
   # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
   wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
 
-  local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus)
+  local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus kargo)
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
     desired_apps+=(hello-world)
   fi
@@ -1206,7 +1212,7 @@ Opciones:
   --unattended           Ejecuta todas las fases sin pedir confirmación
   --stage <fase>         Ejecuta solo la fase indicada (ver --list-stages)
   --start-from <fase>    Ejecuta desde la fase indicada hasta el final
-  --open <servicio>      Abre rápidamente la URL de un servicio (argocd, dashboard, gitea...)
+  --open <servicio>      Abre rápidamente la URL de un servicio (argocd, dashboard, gitea, kargo...)
   --list-stages          Muestra las fases disponibles y termina (si no se especifican fases)
   -h, --help             Muestra esta ayuda y termina
 
@@ -1291,6 +1297,7 @@ show_final_report() {
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
   wait_url "http://localhost:30092" "Prometheus" 200 240 || true
   wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
+  wait_url "http://localhost:30091" "Kargo (admin/admin)" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
   wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
@@ -1316,7 +1323,7 @@ show_final_report() {
   echo "   3. ArgoCD sincroniza automáticamente"
   echo ""
   echo "📋 Comandos útiles:"
-  echo "   ./install.sh --open <servicio>  - Abre el servicio indicado (argocd, dashboard, gitea, grafana, prometheus, rollouts)"
+  echo "   ./install.sh --open <servicio>  - Abre el servicio indicado (argocd, dashboard, gitea, grafana, prometheus, kargo, rollouts)"
   echo "   Aliases disponibles tras reabrir tu shell: 'dashboard', 'argocd', 'gitea', ..."
   echo ""
   echo "🔍 Para verificar el estado manualmente:"
