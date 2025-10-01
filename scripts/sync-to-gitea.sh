@@ -12,34 +12,39 @@ sync_subtree() {
   
   log_info "Sincronizando $prefix con $remote..."
   
-  # Crear directorio temporal
-  local temp_dir="/tmp/gitops-sync-$$"
-  mkdir -p "$temp_dir"
+  # Crear directorio temporal único
+  local temp_dir
+  temp_dir=$(mktemp -d /tmp/gitops-sync-XXXXXX)
   
   # Clonar repo de Gitea
-  if ! git clone "$remote" "$temp_dir" >/dev/null 2>&1; then
+  if ! git clone "$remote" "$temp_dir" 2>&1 | grep -v "Cloning into"; then
     log_error "Error clonando $remote"
+    rm -rf "$temp_dir"
     return 1
   fi
   
   # Copiar archivos actuales
-  cp -r "$prefix"/* "$temp_dir/"
+  rsync -a --delete --exclude='.git' "$prefix/" "$temp_dir/" 2>/dev/null || cp -r "$prefix"/* "$temp_dir/" 2>/dev/null || true
   
   # Commit y push
-  cd "$temp_dir"
-  git config user.name "GitOps Sync"
-  git config user.email "gitops@localhost"
-  git add .
-  if git commit -m "sync: update from local development" >/dev/null 2>&1; then
-    if git push >/dev/null 2>&1; then
-      log_success "$prefix sincronizado ✅"
+  (
+    cd "$temp_dir"
+    git config user.name "GitOps Sync"
+    git config user.email "gitops@localhost"
+    git add -A
+    if git diff --staged --quiet; then
+      log_info "$prefix sin cambios"
     else
-      log_error "Error haciendo push a $prefix"
-      return 1
+      git commit -m "sync: update from local development" >/dev/null 2>&1
+      if git push >/dev/null 2>&1; then
+        log_success "$prefix sincronizado ✅"
+      else
+        log_error "Error haciendo push a $prefix"
+        rm -rf "$temp_dir"
+        return 1
+      fi
     fi
-  else
-    log_info "$prefix sin cambios"
-  fi
+  )
   
   # Cleanup
   rm -rf "$temp_dir"

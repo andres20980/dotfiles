@@ -126,9 +126,9 @@ open_service() {
       label="Argo Rollouts"
       ;;
     kargo)
-      url="http://localhost:30091"
+      url="http://localhost:30094"
       label="Kargo"
-      note="Default credentials: admin/admin"
+      note="Default credentials: admin/admin123"
       ;;
     *)
       log_error "Servicio desconocido: $service"
@@ -196,7 +196,7 @@ push_repo_to_gitea() {
 }
 
 create_kargo_secret_workaround() {
-  log_info "Creando Secret temporal para Kargo (workaround Sealed Secrets)..."
+  log_info "Creando Secret para Kargo (reemplazando SealedSecret problemático)..."
   
   # Esperar a que el namespace kargo exista
   local retries=30
@@ -216,6 +216,9 @@ create_kargo_secret_workaround() {
   # Generar hash para admin/admin123
   local password_hash
   password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))" 2>/dev/null || echo '$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC')
+  
+  # Eliminar SealedSecret problemático si existe
+  kubectl delete sealedsecret kargo-api -n kargo >/dev/null 2>&1 || true
   
   # Crear Secret si no existe
   if ! kubectl get secret kargo-api -n kargo >/dev/null 2>&1; then
@@ -608,6 +611,10 @@ EOF
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false >/dev/null 2>&1
 
+    # Instalar Sealed Secrets CRD (requerido para kargo y otras apps)
+    log_info "Instalando Sealed Secrets CRD..."
+    kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/controller.yaml >/dev/null 2>&1
+
     # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
     log_info "Aplicando configuración ArgoCD (insecure, no-auth)..."
     kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1 || true
@@ -621,9 +628,16 @@ EOF
     # Pausa breve para evitar connection reset en la verificación
     sleep 3
 
-    # Esperar a que ArgoCD esté listo con la nueva configuración
-    log_info "Esperando a que ArgoCD esté listo..."
-    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
+  # Esperar a que ArgoCD esté listo con la nueva configuración (robusto)
+  log_info "Esperando a que ArgoCD esté listo (rollout status de deployments y statefulset)..."
+  # Espera específica por cada componente estable para evitar carreras con nombres de pods
+  kubectl -n argocd rollout status deploy/argocd-server --timeout=600s || true
+  kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=600s || true
+  kubectl -n argocd rollout status deploy/argocd-applicationset-controller --timeout=600s || true
+  kubectl -n argocd rollout status deploy/argocd-dex-server --timeout=600s || true
+  kubectl -n argocd rollout status deploy/argocd-notifications-controller --timeout=600s || true
+  kubectl -n argocd rollout status deploy/argocd-redis --timeout=600s || true
+  kubectl -n argocd rollout status sts/argocd-application-controller --timeout=600s || true
 
   # Configurar solo ArgoCD para bootstrapping (otros servicios usan manifests GitOps)
   configure_argocd_bootstrap
@@ -709,7 +723,7 @@ setup_gitops() {
     # Configurar ApplicationSets
     setup_application_sets
     
-    # Crear Secret temporal para Kargo (workaround Sealed Secrets)
+    # Crear Secret para Kargo (reemplaza SealedSecret problemático)
     create_kargo_secret_workaround
 
     log_success "GitOps configurado completamente"
@@ -977,6 +991,7 @@ spec:
     targetRevision: HEAD
     path: .
     directory:
+      recurse: true  # Leer subdirectorios applications/, projects/, repositories/
       exclude: 'configmaps/*'  # ConfigMaps aplicados durante bootstrap
   destination:
     server: https://kubernetes.default.svc
