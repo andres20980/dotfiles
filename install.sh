@@ -195,13 +195,32 @@ push_repo_to_gitea() {
   )
 }
 
-create_kargo_secret_workaround() {
-  log_info "Creando Secret para Kargo (reemplazando SealedSecret problemático)..."
+install_kubeseal() {
+  if command -v kubeseal >/dev/null 2>&1; then
+    log_info "kubeseal ya está instalado"
+    return 0
+  fi
   
-  # Esperar a que el namespace kargo exista
+  log_info "Instalando kubeseal CLI..."
+  local kubeseal_version="v0.27.1"
+  local kubeseal_url="https://github.com/bitnami-labs/sealed-secrets/releases/download/${kubeseal_version}/kubeseal-0.27.1-linux-amd64.tar.gz"
+  
+  curl -sL "$kubeseal_url" | tar -xz -C /tmp/
+  sudo mv /tmp/kubeseal /usr/local/bin/kubeseal
+  chmod +x /usr/local/bin/kubeseal
+  log_success "kubeseal instalado correctamente"
+}
+
+create_kargo_secret_workaround() {
+  log_info "Generando SealedSecret para Kargo con clave del cluster actual..."
+  
+  # Instalar kubeseal si no existe
+  install_kubeseal
+  
+  # Esperar a que el namespace kargo y sealed-secrets controller estén listos
   local retries=30
   while [[ $retries -gt 0 ]]; do
-    if kubectl get namespace kargo >/dev/null 2>&1; then
+    if kubectl get namespace kargo >/dev/null 2>&1 && kubectl get pods -n sealed-secrets -l name=sealed-secrets-controller --field-selector=status.phase=Running | grep -q Running 2>/dev/null; then
       break
     fi
     sleep 2
@@ -209,7 +228,7 @@ create_kargo_secret_workaround() {
   done
   
   if [[ $retries -eq 0 ]]; then
-    log_warning "Namespace kargo no encontrado, saltando creación de Secret"
+    log_warning "Namespace kargo o sealed-secrets controller no están listos"
     return 0
   fi
   
@@ -217,20 +236,42 @@ create_kargo_secret_workaround() {
   local password_hash
   password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))" 2>/dev/null || echo '$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC')
   
-  # Eliminar SealedSecret problemático si existe
-  kubectl delete sealedsecret kargo-api -n kargo >/dev/null 2>&1 || true
+  # Crear Secret temporal y convertir a SealedSecret
+  kubectl create secret generic kargo-api -n kargo \
+    --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
+    --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
+    --dry-run=client -o yaml | kubeseal -o yaml > /tmp/kargo-sealed-secret.yaml
   
-  # Crear Secret si no existe
-  if ! kubectl get secret kargo-api -n kargo >/dev/null 2>&1; then
-    kubectl create secret generic kargo-api -n kargo \
-      --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
-      --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
-      >/dev/null 2>&1
-    
-    log_success "Secret kargo-api creado (usuario: admin, contraseña: admin123)"
-  else
-    log_info "Secret kargo-api ya existe"
+  # Aplicar el SealedSecret
+  kubectl apply -f /tmp/kargo-sealed-secret.yaml >/dev/null 2>&1
+  
+  # Actualizar el archivo en el repo local para futuras sincronizaciones
+  cp /tmp/kargo-sealed-secret.yaml "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
+  
+  log_success "SealedSecret kargo-api generado y aplicado (usuario: admin, contraseña: admin123)"
+}
+
+sync_sealedsecret_to_gitea() {
+  log_info "Sincronizando SealedSecret actualizado a Gitea..."
+  
+  # Verificar que el archivo exista
+  if [[ ! -f "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml" ]]; then
+    log_warning "SealedSecret no encontrado, saltando sincronización"
+    return 0
   fi
+  
+  # Push directo del directorio infrastructure actualizado
+  (
+    cd "$DOTFILES_DIR/manifests/infrastructure" || exit 1
+    git add kargo/sealed-secret.yaml
+    git commit -m "feat: update kargo SealedSecret with cluster key" >/dev/null 2>&1 || true
+    git remote remove gitea 2>/dev/null || true
+    git remote add gitea "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/infrastructure.git"
+    git push gitea HEAD:main --force >/dev/null 2>&1
+  )
+  
+  log_success "SealedSecret sincronizado a Gitea"
 }
 
 check_mapping_sanity() {
@@ -722,9 +763,6 @@ setup_gitops() {
     
     # Configurar ApplicationSets
     setup_application_sets
-    
-    # Crear Secret para Kargo (reemplaza SealedSecret problemático)
-    create_kargo_secret_workaround
 
     log_success "GitOps configurado completamente"
 }
@@ -898,6 +936,12 @@ create_gitops_repositories() {
 
     # Crear repositorios de código fuente para desarrollo
     create_source_repositories "$gitops_base_dir"
+    
+    # Generar SealedSecret para Kargo con clave del cluster actual
+    create_kargo_secret_workaround
+    
+    # Sincronizar SealedSecret actualizado a Gitea
+    sync_sealedsecret_to_gitea
     
     cd "$DOTFILES_DIR"
 }
