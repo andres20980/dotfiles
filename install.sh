@@ -310,6 +310,7 @@ create_kargo_secret_workaround() {
     password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8'))")
     log_info "Password hash generado dinámicamente"
   else
+    # shellcheck disable=SC2016  # bcrypt hash debe usar comillas simples
     password_hash='$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC'
     log_warning "Usando password hash estático (bcrypt no disponible)"
   fi
