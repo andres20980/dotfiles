@@ -19,17 +19,46 @@ readonly SCRIPT_DIR
 readonly DOTFILES_DIR="$SCRIPT_DIR"
 readonly CLUSTER_NAME="mini-cluster"
 readonly GITEA_NAMESPACE="gitea"
+readonly BASE_DIR="$SCRIPT_DIR"
 
 # Controla si se gestionan aplicaciones personalizadas (hello-world-modern, etc.)
 # Por defecto deshabilitado para centrarse en herramientas GitOps.
 ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
 readonly ENABLE_CUSTOM_APPS
 
+# Variables de configuración adicionales
+readonly INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-1800}" # 30 minutos por defecto
+readonly VERBOSE_LOGGING="${VERBOSE_LOGGING:-false}"
+readonly SKIP_SYSTEM_CHECK="${SKIP_SYSTEM_CHECK:-false}"
+
 export DEBIAN_FRONTEND=noninteractive
 
 # =============================================================================
 # FUNCIONES DE UTILIDAD
 # =============================================================================
+
+# Limpieza en caso de error crítico
+cleanup_on_error() {
+    local exit_code="$?"
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Instalación interrumpida con código de salida: $exit_code"
+        log_info "Iniciando limpieza..."
+        
+        # Limpiar cluster kind si existe
+        if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+            log_info "Eliminando cluster kind incompleto..."
+            kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
+        fi
+        
+        # Limpiar archivos temporales
+        rm -rf /tmp/gitops-sync-* /tmp/kargo-sealed-secret.yaml /tmp/kubeseal 2>/dev/null || true
+        
+        log_info "Limpieza completada. Puedes volver a ejecutar el script."
+    fi
+}
+
+# Configurar trap para limpieza automática
+trap 'cleanup_on_error' EXIT
 
 log_step() {
     local message="$1"
@@ -57,6 +86,25 @@ log_warning() {
 log_error() {
     local message="$1"
     echo "   ❌ $message" >&2
+}
+
+log_verbose() {
+    local message="$1"
+    if [[ "$VERBOSE_LOGGING" == "true" ]]; then
+        echo "   🔍 [DEBUG] $message" >&2
+    fi
+}
+
+# Ejecutar comando kubectl con manejo de errores mejorado
+kubectl_safe() {
+    local description="$1"
+    shift
+    if kubectl "$@" >/dev/null 2>&1; then
+        return 0
+    else
+        log_warning "$description falló: kubectl $*"
+        return 1
+    fi
 }
 
 open_url() {
@@ -205,10 +253,34 @@ install_kubeseal() {
   local kubeseal_version="v0.27.1"
   local kubeseal_url="https://github.com/bitnami-labs/sealed-secrets/releases/download/${kubeseal_version}/kubeseal-0.27.1-linux-amd64.tar.gz"
   
-  curl -sL "$kubeseal_url" | tar -xz -C /tmp/
-  sudo mv /tmp/kubeseal /usr/local/bin/kubeseal
-  chmod +x /usr/local/bin/kubeseal
-  log_success "kubeseal instalado correctamente"
+  # Retry lógic para descarga con verificación
+  local max_retries=3
+  local retry=0
+  local temp_file="/tmp/kubeseal-$$.tar.gz"
+  
+  while [[ $retry -lt $max_retries ]]; do
+    if curl -fsSL --max-time 30 "$kubeseal_url" -o "$temp_file"; then
+      # Verificar que el archivo no esté vacío
+      if [[ -s "$temp_file" ]] && tar -tzf "$temp_file" >/dev/null 2>&1; then
+        tar -xzf "$temp_file" -C /tmp/
+        sudo mv /tmp/kubeseal /usr/local/bin/kubeseal
+        chmod +x /usr/local/bin/kubeseal
+        rm -f "$temp_file"
+        log_success "kubeseal instalado correctamente"
+        return 0
+      else
+        log_warning "Archivo descargado inválido o corrupto"
+      fi
+    fi
+    retry=$((retry + 1))
+    log_warning "Intento $retry/$max_retries falló, reintentando..."
+    sleep 2
+  done
+  
+  rm -f "$temp_file"
+  
+  log_error "No se pudo instalar kubeseal después de $max_retries intentos"
+  return 1
 }
 
 create_kargo_secret_workaround() {
@@ -232,18 +304,45 @@ create_kargo_secret_workaround() {
     return 0
   fi
   
-  # Generar hash para admin/admin123
+  # Generar hash seguro para admin/admin123
   local password_hash
-  password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))" 2>/dev/null || echo '$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC')
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import bcrypt" >/dev/null 2>&1; then
+    password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8'))")
+    log_info "Password hash generado dinámicamente"
+  else
+    password_hash='$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC'
+    log_warning "Usando password hash estático (bcrypt no disponible)"
+  fi
   
-  # Crear Secret temporal y convertir a SealedSecret
+  # Crear Secret temporal y convertir a SealedSecret con validación
+  local temp_secret_file="/tmp/kargo-temp-secret-$$.yaml"
+  local sealed_secret_file="/tmp/kargo-sealed-secret-$$.yaml"
+  
   kubectl create secret generic kargo-api -n kargo \
     --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
     --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
-    --dry-run=client -o yaml | kubeseal -o yaml > /tmp/kargo-sealed-secret.yaml
+    --dry-run=client -o yaml > "$temp_secret_file"
+  
+  # Validar que kubeseal funciona correctamente
+  if ! kubeseal -o yaml < "$temp_secret_file" > "$sealed_secret_file" 2>/dev/null; then
+    log_error "No se pudo generar SealedSecret con kubeseal"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
+  
+  # Validar que el SealedSecret generado es válido
+  if ! kubectl apply --dry-run=client -f "$sealed_secret_file" >/dev/null 2>&1; then
+    log_error "SealedSecret generado inválido"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
   
   # Aplicar el SealedSecret
-  kubectl apply -f /tmp/kargo-sealed-secret.yaml >/dev/null 2>&1
+  if ! kubectl apply -f "$sealed_secret_file" >/dev/null 2>&1; then
+    log_error "No se pudo aplicar SealedSecret"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
   
   # Actualizar el archivo en el repo local para futuras sincronizaciones
   cp /tmp/kargo-sealed-secret.yaml "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
@@ -381,18 +480,52 @@ configure_argocd_bootstrap() {
 wait_for_condition() {
     local condition_command="$1"
     local timeout="${2:-300}"
-    local interval="${3:-10}"
+    local initial_interval="${3:-2}"
+    local max_interval="${4:-10}"
     local elapsed=0
+    local interval="$initial_interval"
+    local attempt=1
 
     while [[ $elapsed -lt $timeout ]]; do
         if eval "$condition_command"; then
             return 0
         fi
+        
+        # Exponential backoff con límite
+        if [[ $attempt -gt 3 && $interval -lt $max_interval ]]; then
+            interval=$((interval * 2))
+            if [[ $interval -gt $max_interval ]]; then
+                interval=$max_interval
+            fi
+        fi
+        
         sleep "$interval"
         elapsed=$((elapsed + interval))
+        attempt=$((attempt + 1))
     done
 
+    log_warning "Condición no cumplida después de ${timeout}s: $condition_command"
     return 1
+}
+
+# Validación de recursos del sistema
+check_system_resources() {
+    local min_memory_gb=4
+    local min_disk_gb=10
+    
+    # Verificar memoria disponible
+    local available_memory_gb
+    available_memory_gb=$(awk '/MemAvailable/ {printf "%.0f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo "0")
+    if [[ $available_memory_gb -lt $min_memory_gb ]]; then
+        log_warning "Memoria disponible: ${available_memory_gb}GB. Recomendado: ${min_memory_gb}GB+"
+    fi
+    
+    # Verificar espacio en disco
+    local available_disk_gb
+    available_disk_gb=$(df -BG . | awk 'NR==2 {print int($4)}')
+    if [[ $available_disk_gb -lt $min_disk_gb ]]; then
+        log_warning "Espacio disponible: ${available_disk_gb}GB. Recomendado: ${min_disk_gb}GB+"
+    fi
 }
 
 validate_prerequisites() {
@@ -417,7 +550,14 @@ validate_prerequisites() {
     exit 1
   fi
 
-  local required=(sudo apt-get curl git openssl)
+  # Verificar recursos del sistema (si no está deshabilitado)
+  if [[ "$SKIP_SYSTEM_CHECK" != "true" ]]; then
+    check_system_resources
+  else
+    log_verbose "Verificación de recursos del sistema omitida (SKIP_SYSTEM_CHECK=true)"
+  fi
+
+  local required=(sudo apt-get curl git openssl python3)
   local missing=()
   for cmd in "${required[@]}"; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -658,8 +798,12 @@ EOF
 
     # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
     log_info "Aplicando configuración ArgoCD (insecure, no-auth)..."
-    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1 || true
-    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cm.yaml" >/dev/null 2>&1 || true
+    if ! kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1; then
+        log_warning "No se pudo aplicar argocd-cmd-params-cm.yaml"
+    fi
+    if ! kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cm.yaml" >/dev/null 2>&1; then
+        log_warning "No se pudo aplicar argocd-cm.yaml"
+    fi
 
     # Reiniciar ArgoCD para que lea la nueva configuración
     log_info "Reiniciando ArgoCD para aplicar configuración..."
@@ -853,7 +997,20 @@ EOF
     # Esperar a que Gitea esté listo
     log_info "Esperando a que Gitea esté listo..."
   wait_for_condition "kubectl get pods -n $GITEA_NAMESPACE --no-headers | awk '{if(\$3 != \"Running\"){exit 1}} END {exit 0}'" 300
-    sleep 30  # Tiempo adicional para que Gitea termine de inicializar
+    # Esperar a que Gitea esté completamente listo para crear repos
+    log_info "Esperando a que Gitea API esté completamente funcional..."
+    local gitea_ready_retries=15
+    while [[ $gitea_ready_retries -gt 0 ]]; do
+        if curl -fsS --max-time 5 "http://localhost:30083/api/v1/version" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+        gitea_ready_retries=$((gitea_ready_retries - 1))
+    done
+    
+    if [[ $gitea_ready_retries -eq 0 ]]; then
+        log_warning "Gitea API no responde después de 30s, continuando..."
+    fi
 }
 
 create_gitops_repositories() {
@@ -1291,14 +1448,24 @@ run_stage() {
   local title="${STAGE_TITLES[$stage]}"
   local start_ts
   start_ts=$(date +%s)
+  
+  # Progress indicator
+  local current_stage_idx=0
+  local total_stages=${#STAGE_ORDER[@]}
+  for i in "${!STAGE_ORDER[@]}"; do
+    if [[ "${STAGE_ORDER[$i]}" == "$stage" ]]; then
+      current_stage_idx=$((i + 1))
+      break
+    fi
+  done
 
-  log_step "▶️  [${stage}] $title"
+  log_step "▶️  [$current_stage_idx/$total_stages] [${stage}] $title"
   "$func"
 
   local end_ts
   end_ts=$(date +%s)
   local elapsed=$(( end_ts - start_ts ))
-  log_success "✅  [${stage}] completado en ${elapsed}s"
+  log_success "✅  [$current_stage_idx/$total_stages] [${stage}] completado en ${elapsed}s"
 }
 
 print_usage() {
@@ -1325,9 +1492,7 @@ configure_gitops_remotes() {
   log_info "Configurando remotos GitOps para flujo local → Gitea → ArgoCD..."
   
   # Verificar si ya existen los remotos de Gitea
-  local has_gitea_remotes=false
   if git remote | grep -q "gitea-"; then
-    has_gitea_remotes=true
     log_info "Remotos de Gitea ya configurados."
   else
     log_info "Configurando remotos de Gitea..."
@@ -1342,7 +1507,7 @@ configure_gitops_remotes() {
   fi
   
   # Crear script de sincronización
-  cat > "${BASE_DIR}/scripts/sync-to-gitea.sh" << 'EOF'
+  cat > "${SCRIPT_DIR}/scripts/sync-to-gitea.sh" << 'EOF'
 #!/bin/bash
 # Script para sincronizar cambios locales con Gitea (flujo GitOps)
 set -euo pipefail
@@ -1531,6 +1696,18 @@ show_final_report() {
   echo "   kubectl get pods --all-namespaces"
   echo ""
   echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
+  echo ""
+  echo ""
+  echo "🎆 PRÓXIMOS PASOS RECOMENDADOS:"
+  echo "   1. Explora ArgoCD UI: http://localhost:30080"
+  echo "   2. Configura Kargo pipelines: http://localhost:30094"
+  echo "   3. Revisa métricas: http://localhost:30093 (Grafana)"
+  echo "   4. Edita manifests y usa: ./scripts/sync-to-gitea.sh"
+  echo ""
+  echo "📚 DOCUMENTACIÓN:"
+  echo "   - ArgoCD: https://argo-cd.readthedocs.io/"
+  echo "   - Kargo: https://docs.kargo.io/"
+  echo "   - Sealed Secrets: https://sealed-secrets.netlify.app/"
   echo ""
   log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
 }
