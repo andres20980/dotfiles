@@ -1,7 +1,7 @@
-# Este directorio está listo para recibir manifests de aplicaciones custom
-# Por ahora está vacío para enfocar la instalación en las herramientas GitOps core
+# Este directorio contiene las aplicaciones personalizadas gestionadas por ArgoCD.
+# Por defecto incluye `demo-api/`, la aplicación Node.js utilizada en la demo GitOps.
 # 
-# Para desplegar hello-world:
-# 1. Renombrar hello-world.disabled a hello-world
-# 2. Hacer git push al repositorio manifests-apps en Gitea
-# 3. ArgoCD lo detectará y desplegará automáticamente
+# Para añadir nuevas apps:
+# 1. Crea un subdirectorio con los manifests K8s (deployment, service, ingress, etc.).
+# 2. Haz commit y push al repositorio `applications` en Gitea.
+# 3. ArgoCD detectará el nuevo directorio y desplegará la aplicación automáticamente.

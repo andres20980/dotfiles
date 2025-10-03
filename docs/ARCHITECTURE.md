@@ -79,9 +79,9 @@ graph TD
 
 ### **📋 Flujo Paso a Paso:**
 
-1. **👨‍💻 Developer** modifica código en `source-code/hello-world-modern/`
+1. **👨‍💻 Developer** modifica código en `source-code/demo-api/`
 2. **🐳 Build** de nueva imagen Docker con tag actualizado
-3. **📦 Update** del image tag en `manifests/applications/hello-world/deployment.yaml`  
+3. **📦 Update** del image tag en `manifests/applications/demo-api/deployment.yaml`  
 4. **📝 Commit** del cambio al repositorio Git
 5. **🔍 ArgoCD** detecta el cambio automáticamente (polling o webhook)
 6. **🚀 Deploy** automático al cluster Kubernetes
@@ -98,7 +98,7 @@ graph TD
 # gitops/bootstrap/app-of-apps.yaml
 # Una aplicación que gestiona otras aplicaciones
 bootstrap-infrastructure → dashboard + prometheus + grafana
-bootstrap-applications  → hello-world + future-apps
+bootstrap-applications  → demo-api + future-apps
 ```
 
 **Beneficios:**
@@ -109,7 +109,7 @@ bootstrap-applications  → hello-world + future-apps
 ### **2. Repository Per Environment**
 ```
 infrastructure.git  → Herramientas compartidas (Prometheus, Grafana)
-applications.git    → Apps de negocio (Hello World)  
+applications.git    → Apps de negocio (Demo API)  
 bootstrap.git       → ArgoCD configuration
 ```
 
@@ -141,14 +141,14 @@ manifests/applications/    → Business workloads (team-owned)
 - **Users**: Platform team, SREs
 
 #### **Project: applications**  
-- **Scope**: Business applications (Hello World, future apps)
+- **Scope**: Business applications (Demo API, future apps)
 - **Permissions**: Application namespaces only
 - **Users**: Development teams
 
 ### **RBAC Matrix**
 | Resource | Infrastructure Project | Applications Project |
 |----------|----------------------|---------------------|
-| Namespaces | monitoring, kubernetes-dashboard | hello-world, app-* |
+| Namespaces | monitoring, kubernetes-dashboard | demo-api, app-* |
 | ClusterRoles | ✅ Full access | ❌ Limited |
 | PVs/Storage | ✅ Can create | ✅ Can create |
 | Network Policies | ✅ Can manage | ❌ Read-only |
@@ -162,7 +162,7 @@ manifests/applications/    → Business workloads (team-owned)
 ```
 Applications → /metrics endpoint → Prometheus → Grafana
     ↓              ↓                    ↓           ↓
-hello-world    HTTP scrape         Storage    Dashboards
+demo-api    HTTP scrape         Storage    Dashboards
 kubernetes     Service discovery   Queries    Alerts
 ```
 

@@ -20,10 +20,12 @@ readonly DOTFILES_DIR="$SCRIPT_DIR"
 readonly CLUSTER_NAME="mini-cluster"
 readonly GITEA_NAMESPACE="gitea"
 readonly BASE_DIR="$SCRIPT_DIR"
+readonly SKIP_CLEANUP_ON_ERROR="${SKIP_CLEANUP_ON_ERROR:-false}"
 
-# Controla si se gestionan aplicaciones personalizadas (hello-world-modern, etc.)
-# Por defecto deshabilitado para centrarse en herramientas GitOps.
-ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
+# Controla si se gestionan aplicaciones personalizadas (demo-api, etc.)
+# Por defecto habilitado para una experiencia de demo completa (puedes deshabilitar
+# exportando ENABLE_CUSTOM_APPS=false antes de ejecutar).
+ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-true}"
 readonly ENABLE_CUSTOM_APPS
 
 # Variables de configuración adicionales
@@ -42,6 +44,14 @@ cleanup_on_error() {
     local exit_code="$?"
     if [[ $exit_code -ne 0 ]]; then
         log_error "Instalación interrumpida con código de salida: $exit_code"
+
+    rm -rf /tmp/gitops-sync-* /tmp/kargo-sealed-secret.yaml /tmp/kubeseal 2>/dev/null || true
+
+    if [[ "$SKIP_CLEANUP_ON_ERROR" == "true" ]]; then
+      log_warning "SKIP_CLEANUP_ON_ERROR=true: se preserva el cluster kind para diagnóstico manual"
+      return
+    fi
+
         log_info "Iniciando limpieza..."
         
         # Limpiar cluster kind si existe
@@ -49,10 +59,7 @@ cleanup_on_error() {
             log_info "Eliminando cluster kind incompleto..."
             kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
         fi
-        
-        # Limpiar archivos temporales
-        rm -rf /tmp/gitops-sync-* /tmp/kargo-sealed-secret.yaml /tmp/kubeseal 2>/dev/null || true
-        
+
         log_info "Limpieza completada. Puedes volver a ejecutar el script."
     fi
 }
@@ -63,9 +70,9 @@ trap 'cleanup_on_error' EXIT
 log_step() {
     local message="$1"
     echo ""
-    echo "============================================================"
-    echo "➡️  $message"
-    echo "============================================================"
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║  ➡️  $message"
+    echo "╚══════════════════════════════════════════════════════════╝"
 }
 
 log_info() {
@@ -346,8 +353,10 @@ create_kargo_secret_workaround() {
   fi
   
   # Actualizar el archivo en el repo local para futuras sincronizaciones
-  cp /tmp/kargo-sealed-secret.yaml "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  cp "$sealed_secret_file" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  cp "$sealed_secret_file" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
   rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
+  rm -f "$temp_secret_file" "$sealed_secret_file"
   
   log_success "SealedSecret kargo-api generado y aplicado (usuario: admin, contraseña: admin123)"
 }
@@ -474,7 +483,7 @@ configure_argocd_bootstrap() {
   log_info "Verificando accesibilidad de ArgoCD..."
   wait_for_condition "curl -fsS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:30080 2>/dev/null | grep -q '^2\|^3'" 120 5 || true
   
-  log_success "✅ ArgoCD disponible en http://localhost:30080 (sin auth)"
+  log_success "ArgoCD disponible en http://localhost:30080 (sin auth)"
   log_info "📝 Otros servicios configurarán sus NodePorts via manifests GitOps"
 }
 
@@ -507,6 +516,78 @@ wait_for_condition() {
 
     log_warning "Condición no cumplida después de ${timeout}s: $condition_command"
     return 1
+}
+
+wait_for_gitea_readiness() {
+  log_info "Esperando a que Gitea esté listo..."
+  if ! kubectl -n "$GITEA_NAMESPACE" rollout status deployment/gitea --timeout=300s >/dev/null 2>&1; then
+    log_error "El deployment de Gitea no alcanzó el estado Ready en el tiempo esperado"
+    return 1
+  fi
+
+  log_info "Esperando a que Gitea API esté completamente funcional..."
+  if ! wait_for_condition "curl -fsS --max-time 5 http://localhost:30083/api/v1/version >/dev/null 2>&1" 240 5 20; then
+    log_error "Gitea API no respondió a tiempo tras el despliegue"
+    return 1
+  fi
+
+  log_success "Gitea responde correctamente en http://localhost:30083"
+}
+
+generate_gitea_actions_token() {
+  local token
+
+  # Usar el CLI de Gitea directamente para generar el token (más confiable que REST API en 1.22)
+  token=$(kubectl -n "$GITEA_NAMESPACE" exec deployment/gitea -- su git -c "gitea --work-path /data/gitea actions generate-runner-token" 2>/dev/null | grep -oE '[A-Za-z0-9]{40}' | head -1)
+
+  if [[ -z "$token" || "$token" == "null" ]]; then
+    log_warning "No se pudo generar token de registro para Actions via CLI"
+    return 1
+  fi
+
+  echo "$token"
+  return 0
+}
+
+cleanup_existing_gitea_runner() {
+  local runner_name="$1"
+  local runners_json
+
+  runners_json=$(curl -fsS -u "gitops:${GITEA_ADMIN_PASSWORD}" "http://localhost:30083/api/v1/admin/actions/runners" 2>/dev/null || true)
+
+  if [[ -z "$runners_json" ]]; then
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warning "python3 no disponible; no se puede limpiar runners antiguos"
+    return 0
+  fi
+
+  mapfile -t runner_ids < <(printf '%s' "$runners_json" | TARGET_RUNNER_NAME="$runner_name" python3 - <<'PY'
+import json, os, sys
+
+name = os.environ.get("TARGET_RUNNER_NAME")
+try:
+  data = json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+
+for item in data:
+  if item.get("name") == name and item.get("id") is not None:
+    print(item["id"])
+PY
+  )
+
+  if [[ ${#runner_ids[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  for runner_id in "${runner_ids[@]}"; do
+    curl -fsS -X DELETE -u "gitops:${GITEA_ADMIN_PASSWORD}" \
+      "http://localhost:30083/api/v1/admin/actions/runners/${runner_id}" >/dev/null 2>&1 || true
+    log_info "Runner existente eliminado (ID ${runner_id})"
+  done
 }
 
 # Validación de recursos del sistema
@@ -569,7 +650,13 @@ validate_prerequisites() {
   if (( ${#missing[@]} > 0 )); then
     log_warning "Herramientas faltantes: ${missing[*]}. Se instalarán en la fase siguiente si es posible."
   else
-    log_info "Herramientas básicas detectadas correctamente."
+    local detected_tools=()
+    for cmd in "${required[@]}"; do
+      if command -v "$cmd" >/dev/null 2>&1; then
+        detected_tools+=("✓ $cmd")
+      fi
+    done
+    log_info "Sistema validado - Herramientas: ${detected_tools[*]}"
   fi
 
   if ! id -nG "$USER" | grep -qw "docker"; then
@@ -616,40 +703,48 @@ install_docker_and_tools() {
     log_step "Instalando Docker y herramientas Kubernetes"
     
     # Docker
-    if ! command -v docker >/dev/null 2>&1; then
-        log_info "Instalando Docker..."
-        curl -fsSL https://get.docker.com -o get-docker.sh
-        sudo sh get-docker.sh >/dev/null 2>&1
-        sudo usermod -aG docker "$USER"
-        rm get-docker.sh
-    fi
+  if ! command -v docker >/dev/null 2>&1; then
+    log_info "Instalando Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh >/dev/null 2>&1
+    sudo usermod -aG docker "$USER"
+    rm get-docker.sh
+  else
+    log_info "Docker ya está instalado"
+  fi
 
     # kubectl
-    if ! command -v kubectl >/dev/null 2>&1; then
-        log_info "Instalando kubectl..."
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-        rm kubectl
-    fi
+  if ! command -v kubectl >/dev/null 2>&1; then
+    log_info "Instalando kubectl..."
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    rm kubectl
+  else
+    log_info "kubectl ya está instalado"
+  fi
 
     # kind
-    if ! command -v kind >/dev/null 2>&1; then
-        log_info "Instalando kind..."
-        if [[ "$(uname -m)" == "x86_64" ]]; then
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-            sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
-            rm kind
-        else
-            log_error "Arquitectura $(uname -m) no soportada para kind"
-            exit 1
-        fi
+  if ! command -v kind >/dev/null 2>&1; then
+    log_info "Instalando kind..."
+    if [[ "$(uname -m)" == "x86_64" ]]; then
+      curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+      sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+      rm kind
+    else
+      log_error "Arquitectura $(uname -m) no soportada para kind"
+      exit 1
     fi
+  else
+    log_info "kind ya está instalado"
+  fi
 
     # Helm
-    if ! command -v helm >/dev/null 2>&1; then
-        log_info "Instalando Helm..."
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null 2>&1
-    fi
+  if ! command -v helm >/dev/null 2>&1; then
+    log_info "Instalando Helm..."
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null 2>&1
+  else
+    log_info "Helm ya está instalado"
+  fi
 
     log_success "Docker y herramientas Kubernetes instaladas"
 }
@@ -815,15 +910,27 @@ EOF
     sleep 3
 
   # Esperar a que ArgoCD esté listo con la nueva configuración (robusto)
-  log_info "Esperando a que ArgoCD esté listo (rollout status de deployments y statefulset)..."
-  # Espera específica por cada componente estable para evitar carreras con nombres de pods
-  kubectl -n argocd rollout status deploy/argocd-server --timeout=600s || true
-  kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=600s || true
-  kubectl -n argocd rollout status deploy/argocd-applicationset-controller --timeout=600s || true
-  kubectl -n argocd rollout status deploy/argocd-dex-server --timeout=600s || true
-  kubectl -n argocd rollout status deploy/argocd-notifications-controller --timeout=600s || true
-  kubectl -n argocd rollout status deploy/argocd-redis --timeout=600s || true
-  kubectl -n argocd rollout status sts/argocd-application-controller --timeout=600s || true
+  log_info "Esperando a que ArgoCD esté listo (rollout de cada componente)..."
+  local argocd_components=(
+    "deploy/argocd-server"
+    "deploy/argocd-repo-server"
+    "deploy/argocd-applicationset-controller"
+    "deploy/argocd-dex-server"
+    "deploy/argocd-notifications-controller"
+    "deploy/argocd-redis"
+    "sts/argocd-application-controller"
+  )
+
+  for component in "${argocd_components[@]}"; do
+    local component_name
+    component_name=${component#*/}
+    log_info "↳ Rollout ${component_name}"
+    if kubectl -n argocd rollout status "$component" --timeout=600s >/dev/null 2>&1; then
+      log_success "${component_name} listo"
+    else
+      log_warning "Timeout esperando ${component_name}. Revisa 'kubectl -n argocd get pods'."
+    fi
+  done
 
   # Configurar solo ArgoCD para bootstrapping (otros servicios usan manifests GitOps)
   configure_argocd_bootstrap
@@ -839,7 +946,7 @@ EOF
 
 
 build_and_load_images() {
-    log_step "Construyendo y cargando imágenes"
+    log_step "Construyendo imagen y publicando en registry local"
 
   if [[ "$ENABLE_CUSTOM_APPS" != "true" ]]; then
     log_info "Fase de imágenes de aplicaciones personalizadas deshabilitada (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})."
@@ -851,11 +958,11 @@ build_and_load_images() {
     local gitops_base_dir="$HOME/gitops-repos"
     local source_dir
     
-  if [[ -d "$gitops_base_dir/sourcecode-apps/hello-world-modern" ]]; then
-    source_dir="$gitops_base_dir/sourcecode-apps/hello-world-modern"
+  if [[ -d "$gitops_base_dir/sourcecode-apps/demo-api" ]]; then
+    source_dir="$gitops_base_dir/sourcecode-apps/demo-api"
         log_info "Usando código fuente desde: $source_dir"
   else
-    source_dir="$DOTFILES_DIR/sourcecode-apps/hello-world-modern"
+    source_dir="$DOTFILES_DIR/sourcecode-apps/demo-api"
         log_info "Usando código fuente desde dotfiles: $source_dir"
     fi
     
@@ -865,17 +972,78 @@ build_and_load_images() {
         return 1
     fi
     
-    # Construir hello-world-modern
-    log_info "Construyendo imagen hello-world-modern..."
-    (
-        cd "$source_dir" || exit 1
-        docker build -t hello-world-modern:latest . >/dev/null 2>&1
-    )
+  # Determinar tag de la imagen en base a package.json (si existe)
+  local image_name="demo-api"
+  local version=""
+  if [[ -f "$source_dir/package.json" ]]; then
+    version=$(jq -r '.version // empty' "$source_dir/package.json" 2>/dev/null || echo "")
+    if [[ -z "$version" || "$version" == "null" ]]; then
+      version="1.0.0"
+    fi
+  else
+    version="1.0.0"
+  fi
 
-    # Cargar en kind
-    log_info "Cargando imagen en cluster kind..."
-    kind load docker-image hello-world-modern:latest --name "$CLUSTER_NAME" >/dev/null 2>&1
-    log_success "Imágenes construidas y cargadas"
+  local registry_host="localhost:30500"
+  local local_tag="${image_name}:v${version}"
+  local registry_tag="${registry_host}/${local_tag}"
+
+  log_info "Construyendo imagen ${local_tag}..."
+  (
+    cd "$source_dir" || exit 1
+    docker build -t "$local_tag" -t "$registry_tag" . >/dev/null 2>&1
+  )
+
+  # Verificar que el registry está disponible
+  log_info "Verificando registry en ${registry_host}..."
+  # Primero esperar a que el Deployment del registry tenga al menos 1 ready replica
+  if ! wait_for_condition "kubectl -n registry get deploy docker-registry -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '^1$'" 180 5 10; then
+    log_warning "El Deployment del registry no parece tener réplicas listas aún"
+  fi
+
+  # Luego comprobar el endpoint HTTP del registry (tolerante a race conditions)
+  if ! wait_for_condition "curl -fsS --max-time 5 http://${registry_host}/v2/ >/dev/null 2>&1" 180 5 10; then
+    log_error "Registry no está disponible en ${registry_host} después de esperar"
+    return 1
+  fi
+
+  # Push a registry local
+  log_info "Publicando ${registry_tag} en registry..."
+  if ! docker push "$registry_tag" >/dev/null 2>&1; then
+    log_error "No se pudo publicar la imagen en el registry"
+    return 1
+  fi
+
+  log_success "Imagen construida y publicada: ${registry_tag}"
+
+  # Actualizar manifest de demo-api con el nuevo tag
+  local manifest_dir="$gitops_base_dir/gitops-applications/demo-api"
+  if [[ -d "$manifest_dir" ]]; then
+    log_info "Actualizando manifest de demo-api con tag: ${registry_tag}"
+    
+    # Buscar y actualizar la referencia de imagen en deployment.yaml
+    if [[ -f "$manifest_dir/deployment.yaml" ]]; then
+  # Actualizar referencia de imagen y policy si existe
+  sed -i "s|image:.*demo-api.*|image: ${registry_tag}|g" "$manifest_dir/deployment.yaml" || true
+  sed -i "s|imagePullPolicy:.*|imagePullPolicy: IfNotPresent|g" "$manifest_dir/deployment.yaml" || true
+      
+      # Commit y push del cambio
+      (
+        cd "$manifest_dir/.." || exit 1
+        git add demo-api/deployment.yaml
+        git commit -m "chore: update demo-api image to ${registry_tag}" >/dev/null 2>&1 || true
+        git push >/dev/null 2>&1 || true
+      )
+      
+      log_success "Manifest actualizado y sincronizado con Gitea"
+    else
+      log_warning "No se encontró deployment.yaml en $manifest_dir"
+    fi
+  else
+    log_warning "Directorio de manifests no encontrado: $manifest_dir"
+  fi
+
+  log_success "Proceso de construcción e integración completado"
 }
 
 setup_gitops() {
@@ -900,8 +1068,15 @@ setup_gitops() {
   export GITEA_ADMIN_PASSWORD="$gitea_password"
   log_info "Password para Gitea: $gitea_password"
 
-    # Instalar Gitea
-    install_gitea
+  # Instalar Gitea
+  install_gitea
+
+    # Configurar e instalar Gitea Actions con runner
+    if install_gitea_actions; then
+      log_success "Gitea Actions instalado/configurado correctamente"
+    else
+      log_warning "Gitea Actions: instalación/config con advertencias; revisa la configuración"
+    fi
     
     # Crear repositorios y subir manifests
     create_gitops_repositories
@@ -956,7 +1131,7 @@ spec:
     spec:
       containers:
       - name: gitea
-        image: gitea/gitea:1.21
+        image: gitea/gitea:1.22
         ports:
         - containerPort: 3000
         - containerPort: 22
@@ -967,6 +1142,10 @@ spec:
           value: "true"
         - name: GITEA__service__DISABLE_REGISTRATION
           value: "false"
+        - name: GITEA__actions__ENABLED
+          value: "true"
+        - name: GITEA__actions__DEFAULT_ACTIONS_URL
+          value: "github"
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
@@ -995,23 +1174,129 @@ spec:
     app: gitea
 EOF
 
-    # Esperar a que Gitea esté listo
-    log_info "Esperando a que Gitea esté listo..."
-  wait_for_condition "kubectl get pods -n $GITEA_NAMESPACE --no-headers | awk '{if(\$3 != \"Running\"){exit 1}} END {exit 0}'" 300
-    # Esperar a que Gitea esté completamente listo para crear repos
-    log_info "Esperando a que Gitea API esté completamente funcional..."
-    local gitea_ready_retries=15
-    while [[ $gitea_ready_retries -gt 0 ]]; do
-        if curl -fsS --max-time 5 "http://localhost:30083/api/v1/version" >/dev/null 2>&1; then
-            break
-        fi
-        sleep 2
-        gitea_ready_retries=$((gitea_ready_retries - 1))
-    done
+  wait_for_gitea_readiness
+}
+
+### Gitea Actions support - enable in app.ini and deploy a simple runner
+install_gitea_actions() {
+  log_step "Configurando Gitea Actions (habilitar y desplegar runner)"
+
+  # Actions ya está habilitado via env vars en el deployment
+  log_info "Gitea Actions habilitado via variables de entorno (Gitea 1.22)"
+
+  local runner_token=""
+  if runner_token=$(generate_gitea_actions_token); then
+    log_success "Token de registro de Actions generado via CLI"
+    deploy_actions_runner "$runner_token" || {
+      log_warning "No se pudo desplegar runner de Actions. Revisa manualmente."
+      return 1
+    }
     
-    if [[ $gitea_ready_retries -eq 0 ]]; then
-        log_warning "Gitea API no responde después de 30s, continuando..."
+    # Verificar que el runner quedó registrado correctamente
+    log_info "Verificando que el runner esté operativo..."
+    sleep 10  # Dar tiempo al runner para registrarse
+    
+    if kubectl -n "$GITEA_NAMESPACE" get pods -l app=gitea-actions-runner --field-selector=status.phase=Running | grep -q Running; then
+      log_success "✅ Gitea Actions configurado - Runner operativo y listo para ejecutar workflows"
+      return 0
+    else
+      log_warning "Runner desplegado pero puede necesitar más tiempo para estar operativo"
+      return 1
     fi
+  else
+    log_error "No se pudo generar token de registro para Actions"
+    return 1
+  fi
+}
+
+deploy_actions_runner() {
+  local runner_token="$1"
+  log_info "Desplegando runner básico para Gitea Actions (pod en cluster)"
+
+  if [[ -z "$runner_token" ]]; then
+    log_warning "Token de registro vacío; no se desplegará runner"
+    return 0
+  fi
+
+  # Creamos un ServiceAccount y un Deployment que ejecute un runner ligero (imagen oficial o community)
+  # Nota: En entornos offline, el usuario debe proveer la imagen del runner
+
+  if [[ -n "$runner_token" ]]; then
+    kubectl -n "$GITEA_NAMESPACE" create secret generic gitea-actions-runner-token \
+      --from-literal=token="$runner_token" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+  fi
+
+  cleanup_existing_gitea_runner "kind-runner-1"
+
+  kubectl -n "$GITEA_NAMESPACE" apply -f - <<EOF >/dev/null 2>&1
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-actions-runner
+  namespace: $GITEA_NAMESPACE
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-actions-runner
+  namespace: $GITEA_NAMESPACE
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea-actions-runner
+  template:
+    metadata:
+      labels:
+        app: gitea-actions-runner
+    spec:
+      serviceAccountName: gitea-actions-runner
+      containers:
+      - name: runner
+        image: gitea/act_runner:nightly
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -eo pipefail
+          act_runner register \
+            --no-interactive \
+            --instance "\$GITEA_URL" \
+            --token "\$RUNNER_TOKEN" \
+            --name "\$RUNNER_NAME" \
+            --labels "\$RUNNER_LABELS"
+          exec act_runner daemon
+        env:
+        - name: GITEA_URL
+          value: "http://gitea.gitea.svc.cluster.local:3000"
+        - name: RUNNER_NAME
+          value: "kind-runner-1"
+        - name: RUNNER_LABELS
+          value: "self-hosted,kubernetes"
+        - name: RUNNER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: gitea-actions-runner-token
+              key: token
+              optional: true
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+      restartPolicy: Always
+EOF
+
+  if ! kubectl -n "$GITEA_NAMESPACE" rollout status deployment/gitea-actions-runner --timeout=180s >/dev/null 2>&1; then
+    log_warning "El runner no alcanzó estado Ready; revisa los logs con: kubectl logs -n $GITEA_NAMESPACE deployment/gitea-actions-runner"
+    return 1
+  fi
+
+  log_success "Runner registrado y desplegado"
+  return 0
 }
 
 create_gitops_repositories() {
@@ -1022,7 +1307,10 @@ create_gitops_repositories() {
     
     # Esperar a que Gitea API esté disponible
     log_info "Esperando a que Gitea API esté disponible..."
-    wait_for_condition "curl -fsS --output /dev/null http://localhost:30083/api/v1/version" 120
+  if ! wait_for_condition "curl -fsS --output /dev/null http://localhost:30083/api/v1/version" 180 3 15; then
+    log_error "Gitea API no respondió a tiempo. Revisa el estado con: kubectl logs -n $GITEA_NAMESPACE deployment/gitea"
+    return 1
+  fi
     
     # Crear usuario gitops usando el endpoint de registro público
     curl -X POST "http://localhost:30083/user/sign_up" \
@@ -1089,7 +1377,7 @@ create_gitops_repositories() {
     fi
 
     push_repo_to_gitea "$repo_dir" "$repo"
-    log_success "✅ $repo → $repo_dir"
+  log_success "$repo → $repo_dir"
   done
 
     # Crear repositorios de código fuente para desarrollo
@@ -1118,13 +1406,13 @@ create_source_repositories() {
     
   # Directorio para aplicaciones de desarrollo
     
-    # Crear repositorio hello-world-modern para desarrollo
-    local app_dir="$apps_dir/hello-world-modern"
+  # Crear repositorio demo-api para desarrollo
+  local app_dir="$apps_dir/demo-api"
     rm -rf "$app_dir"
     mkdir -p "$app_dir"
     
   # Copiar código fuente desde dotfiles
-  cp -r "$DOTFILES_DIR/sourcecode-apps/hello-world-modern/"* "$app_dir/"
+  cp -r "$DOTFILES_DIR/sourcecode-apps/demo-api/"* "$app_dir/"
     
     # Inicializar repositorio git para desarrollo
     (
@@ -1134,12 +1422,12 @@ create_source_repositories() {
         git config user.name "Developer"
         git config user.email "dev@localhost"
         git add .
-        git commit -m "Initial hello-world-modern application
+  git commit -m "Initial demo-api application
 
-- Aplicación Go moderna con métricas Prometheus
-- Dockerfile para containerización
+- API Node.js demo para GitOps
+- Dockerfile listo para pipelines CI/CD
 - Health checks y readiness probes
-- Configuración para despliegue con argo-rollouts" >/dev/null 2>&1
+- Configuración preparada para ArgoCD" >/dev/null 2>&1
     )
     
     # Crear repositorio en Gitea para el código fuente
@@ -1147,8 +1435,8 @@ create_source_repositories() {
         -H "Content-Type: application/json" \
         -u "gitops:$GITEA_ADMIN_PASSWORD" \
         -d "{
-            \"name\": \"hello-world-modern\",
-            \"description\": \"Hello World Modern Application Source Code\",
+            \"name\": \"demo-api\",
+            \"description\": \"Demo API Application Source Code\",
             \"auto_init\": false,
             \"private\": false
     }" >/dev/null 2>&1 || true
@@ -1157,15 +1445,15 @@ create_source_repositories() {
     (
         cd "$app_dir" || exit 1
         git remote remove origin >/dev/null 2>&1 || true
-        git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/hello-world-modern.git"
-        git push --set-upstream origin main >/dev/null 2>&1
+  git remote add origin "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/demo-api.git"
+    git push --set-upstream origin main --force >/dev/null 2>&1
     )
     
-    log_success "✅ hello-world-modern → $app_dir"
+  log_success "demo-api → $app_dir"
     log_info "📁 Estructura creada:"
     log_info "   $base_dir/gitops-infrastructure/  (manifests K8s)"
     log_info "   $base_dir/gitops-applications/    (manifests apps)"
-    log_info "   $base_dir/sourcecode-apps/hello-world-modern/ (código fuente)"
+  log_info "   $base_dir/sourcecode-apps/demo-api/ (código fuente)"
 }
 
 setup_application_sets() {
@@ -1187,14 +1475,13 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: argocd-config
+  project: default
   source:
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
     targetRevision: HEAD
-    path: .
+    path: projects/
     directory:
-      recurse: true  # Leer subdirectorios applications/, projects/, repositories/
-      exclude: 'configmaps/*'  # ConfigMaps aplicados durante bootstrap
+      recurse: true  # Leer subdirectorios de projects/
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -1284,7 +1571,7 @@ wait_and_sync_applications() {
         local app_count
         app_count=$(kubectl get applications -n argocd --no-headers 2>/dev/null | wc -l || echo "0")
         if [ "$app_count" -gt 0 ]; then
-            log_success "✅ $app_count aplicaciones generadas"
+            log_success "$app_count aplicaciones generadas"
             break
         fi
         sleep 5
@@ -1306,7 +1593,7 @@ wait_and_sync_applications() {
 
   local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus kargo)
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
-    desired_apps+=(hello-world)
+    desired_apps+=(demo-api)
   fi
 
   local apps_to_sync=()
@@ -1404,8 +1691,8 @@ declare -ar STAGE_ORDER=(
   system
   docker
   cluster
-  images
   gitops
+  images
   access
 )
 
@@ -1424,8 +1711,8 @@ declare -Ar STAGE_TITLES=(
   [system]="Instalación de herramientas base"
   [docker]="Docker + kubectl + kind"
   [cluster]="Creación de cluster y ArgoCD"
-  [images]="Preparación de imágenes GitOps"
   [gitops]="Configuración completa GitOps"
+  [images]="Construcción y publicación de imágenes"
   [access]="Accesos rápidos"
 )
 
@@ -1466,7 +1753,8 @@ run_stage() {
   local end_ts
   end_ts=$(date +%s)
   local elapsed=$(( end_ts - start_ts ))
-  log_success "✅  [$current_stage_idx/$total_stages] [${stage}] completado en ${elapsed}s"
+  local end_time=$(date '+%H:%M:%S')
+  log_success "[$current_stage_idx/$total_stages] [${stage}] completado en ${elapsed}s ($end_time)"
 }
 
 print_usage() {
@@ -1623,30 +1911,55 @@ show_final_report() {
   local grafana_admin_pw
   grafana_admin_pw=$(kubectl -n monitoring get secret grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
 
+  CHECK_URL_LAST_CODE="000"
+
   check_url() {
-    local url="$1"; local name="$2"; local expected_http="${3:-200}"
+    local url="$1"; local name="$2"; local expected_http="${3:-200}"; local quiet="${4:-false}"
     local curl_opts=("-sS" "-o" "/dev/null" "-w" "%{http_code}" "--max-time" "10" "-L")
     case "$url" in https://*) curl_opts+=("-k");; esac
     local code
-    code=$(curl "${curl_opts[@]}" "$url" || echo "000")
+  code=$(curl "${curl_opts[@]}" "$url" 2>/dev/null || echo "000")
+    CHECK_URL_LAST_CODE="$code"
+
     if echo "$code" | grep -q "^$expected_http\|^30"; then
-      echo "   ✅ $name reachable: $url"
+      if [[ "$quiet" != "true" ]]; then
+        echo "   ✅ $name reachable: $url"
+      fi
       return 0
-    else
-      echo "   ❌ $name NOT reachable yet: $url (got $code)"
-      return 1
     fi
+
+    if [[ "$quiet" != "true" ]]; then
+      echo "   ❌ $name NOT reachable yet: $url (got $code)"
+    fi
+    return 1
   }
 
   wait_url() {
     local url="$1"; local name="$2"; local expected_http="${3:-200}"; local timeout="${4:-120}"; local interval=6
     local elapsed=0
+    local notified=false
+    local last_code="000"
+
     while [[ $elapsed -lt "$timeout" ]]; do
-      if check_url "$url" "$name" "$expected_http"; then return 0; fi
+      if check_url "$url" "$name" "$expected_http" true; then
+        echo "   ✅ $name reachable: $url"
+        return 0
+      fi
+
+      last_code="$CHECK_URL_LAST_CODE"
+      if [[ "$notified" == "false" ]]; then
+        echo "   ⏳ $name todavía no responde (HTTP $last_code). Reintentando..."
+        notified=true
+      fi
+
       sleep $interval
       elapsed=$((elapsed + interval))
     done
-    check_url "$url" "$name" "$expected_http" || return 1
+
+    check_url "$url" "$name" "$expected_http" true
+    last_code="$CHECK_URL_LAST_CODE"
+    echo "   ❌ $name NOT reachable tras ${timeout}s: $url (último código $last_code)"
+    return 1
   }
 
   wait_url "http://localhost:30080" "ArgoCD (admin/${argocd_password})" 200 60 || true
@@ -1657,7 +1970,7 @@ show_final_report() {
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
   wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
-    wait_url "http://localhost:30082" "App Demo (Hello World)" 200 240 || true
+    wait_url "http://localhost:30070" "Demo API" 200 240 || true
   else
     echo "   ℹ️  App Demo omitida (ENABLE_CUSTOM_APPS=${ENABLE_CUSTOM_APPS})"
   fi
@@ -1668,7 +1981,7 @@ show_final_report() {
   echo "   ~/gitops-repos/gitops-applications/        (Manifests de aplicaciones)"
   echo "   ~/gitops-repos/argo-config/                (Configuración de ArgoCD)"
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
-    echo "   ~/gitops-repos/sourcecode-apps/hello-world-modern/    (Código fuente demo)"
+  echo "   ~/gitops-repos/sourcecode-apps/demo-api/              (Código fuente demo)"
   else
     echo "   ~/gitops-repos/sourcecode-apps/                      (Aplicaciones personalizadas deshabilitadas)"
   fi
@@ -1803,26 +2116,34 @@ main() {
 
   local total_stages=${#stages_to_run[@]}
 
-  echo "🚀 SETUP MASTER GITOPS"
-  echo "=============================================="
+  echo ""
+  echo "╔════════════════════════════════════════════════════════════╗"
+  echo "║              🚀 SETUP MASTER GITOPS                        ║"
+  echo "╚════════════════════════════════════════════════════════════╝"
   echo "Este script prepara un entorno GitOps completo con kind + ArgoCD + observabilidad."
   echo ""
-  echo "🧩 Fases seleccionadas ($total_stages):"
+  echo "╔══════════════════════════════════════════════════════════╗"
+  echo "║  🧩 Fases seleccionadas ($total_stages):"
   local idx=1
   for stage in "${stages_to_run[@]}"; do
-    printf "  %d/%d %-10s %s\n" "$idx" "$total_stages" "$stage" "${STAGE_TITLES[$stage]}"
+    printf "║  %d/%d %-10s %s\n" "$idx" "$total_stages" "$stage" "${STAGE_TITLES[$stage]}"
     ((idx++))
   done
+  echo "╚══════════════════════════════════════════════════════════╝"
   echo ""
 
-  if [[ "$unattended" == false ]]; then
-    read -p "¿Continuar con la ejecución? (y/N): " -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-      echo "Instalación cancelada"
+  if [[ "$unattended" != true ]]; then
+    echo "┌─────────────────────────────────────────────┐"
+    echo "│  ❓ ¿Continuar con la ejecución? (y/N): │"
+    echo "└─────────────────────────────────────────────┘"
+    read -r response
+    if [[ "$response" != "y" && "$response" != "Y" ]]; then
+      echo "   ❌ Instalación cancelada por el usuario."
       exit 0
     fi
+    echo "   ✅ Iniciando instalación..."
   else
-    echo "🤖 MODO DESATENDIDO ACTIVADO - Ejecutando fases seleccionadas..."
+    echo "   🤖 MODO DESATENDIDO ACTIVADO - Ejecutando fases seleccionadas..."
   fi
 
   local report_needed=false
@@ -1839,7 +2160,28 @@ main() {
     show_final_report
   else
     echo ""
-    log_info "Ejecución finalizada. Usa --stage gitops o --start-from gitops para desplegar todo el stack."
+    echo "   🎯 Ejecución finalizada exitosamente"
+    
+    # Determinar siguiente stage lógico
+    local last_stage="${stages_to_run[-1]}"
+    local next_stage=""
+    local next_desc=""
+    
+    case "$last_stage" in
+      "prereqs") next_stage="system"; next_desc="herramientas base" ;;
+      "system") next_stage="docker"; next_desc="Docker + kubectl + kind" ;;
+      "docker") next_stage="cluster"; next_desc="cluster Kubernetes" ;;
+      "cluster") next_stage="gitops"; next_desc="GitOps completo" ;;
+      "gitops") next_stage="images"; next_desc="construcción y push de imágenes" ;;
+      *) next_stage="images"; next_desc="construcción y push de imágenes" ;;
+    esac
+    
+    if [[ -n "$next_stage" ]]; then
+      echo "   ➡️  Siguiente: ./install.sh --stage $next_stage ($next_desc)"
+      echo "   🚀 O completo: ./install.sh --start-from $next_stage --unattended"
+    else
+      echo "   🎉 ¡Instalación completa! Usa ./install.sh --stage access para accesos rápidos"
+    fi
   fi
 }
 

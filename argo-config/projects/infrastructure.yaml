@@ -4,7 +4,7 @@ metadata:
   name: infrastructure
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+    - argocd.argoproj.io/resources-finalizer
 spec:
   description: "Infraestructura y herramientas GitOps gestionadas por ArgoCD"
   sourceRepos:

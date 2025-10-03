@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    test-gitops-flow: "verification-1759313848"
   name: prometheus
   labels:
     app: prometheus
@@ -11,6 +13,8 @@ spec:
       app: prometheus
   template:
     metadata:
+      annotations:
+        test-gitops-flow: "verification-1759313848"
       labels:
         app: prometheus
     spec:

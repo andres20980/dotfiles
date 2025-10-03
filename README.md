@@ -52,7 +52,7 @@
 
 git clone https://github.com/tuusuario/gitops-learning.git- ✅ **Dashboard** - UI de administración de Kubernetes
 
-cd gitops-learning- ✅ **Hello World Modern** - Aplicación Go con observabilidad completa
+cd gitops-learning- ✅ **Demo API Modern** - Aplicación Go con observabilidad completa
 
 
 
@@ -100,7 +100,7 @@ cd ~/dotfiles && chmod +x install.sh && ./install.sh
 - `~/gitops-repos/gitops-infrastructure/` → Manifests de infraestructura gestionados por ArgoCD.
 - `~/gitops-repos/gitops-applications/` → Plantillas para aplicaciones personalizadas (opcional).
 - `~/gitops-repos/argo-config/` → Configuración declarativa de ArgoCD (AppProjects, ApplicationSets, ConfigMaps).
-- `~/gitops-repos/sourcecode-apps/` → Código fuente de aplicaciones de desarrollo (por defecto `hello-world-modern`).
+- `~/gitops-repos/sourcecode-apps/` → Código fuente de aplicaciones de desarrollo (por defecto `demo-api`).
 
 ---
 
@@ -110,63 +110,33 @@ cd ~/dotfiles && chmod +x install.sh && ./install.sh
 
 ### **📁 Estructura Perfecta**
 
-```Una vez instalado, podrás acceder a todos los servicios desde Windows usando estas URLs:
+```text
+dotfiles/
+├── install.sh                  # Instalador maestro que orquesta todo
+├── argo-config/                # Config declarativa de ArgoCD (projects, appsets, configmaps)
+├── manifests/
+│   ├── infrastructure/         # Stack de herramientas (ArgoCD, Grafana, Prometheus, Dashboard, Kargo, etc.)
+│   └── applications/
+│       └── demo-api/           # Manifests de la aplicación demo Node.js
+├── sourcecode-apps/
+│   └── demo-api/               # Código fuente de la app demo (Node.js)
+├── scripts/                    # Utilidades (check-status, open dashboards, etc.)
+├── config/                     # Configuración auxiliar (kind-config, etc.)
+└── docs/                       # Documentación (arquitectura, troubleshooting, learning path)
+```
 
-gitops-learning/
-
-├── 🔧 setup/                    # Instalación modular del sistema| Servicio | URL | Credenciales |
-
-│   ├── install-system.sh        # Solo herramientas Linux/WSL|----------|-----|--------------|
-
-│   ├── install-docker.sh        # Solo Docker + Kubernetes tools  | **ArgoCD** | `http://IP_WSL:30080` | `admin` / `admin123` |
-
-│   └── install-cluster.sh       # Solo cluster + ArgoCD básico| **Gitea** | `http://IP_WSL:30083` | `gitops` / `[SECURE_PASSWORD]` |
-
-├── 🚀 gitops/                   # Lógica GitOps pura| **Dashboard** | `http://IP_WSL:30085` | Click "SKIP" o usar token |
-
-│   ├── bootstrap/               # ArgoCD bootstrap + scripts| **Hello World** | `http://IP_WSL:30082` | Sin credenciales (con métricas) |
-
-│   │   ├── install-gitops.sh    # Deploys GitOps completo| **Prometheus** | `http://IP_WSL:30090` | Sin credenciales (métricas) |
-
-│   │   └── app-of-apps.yaml     # Patrón App-of-Apps| **Grafana** | `http://IP_WSL:30091` | `admin` / `admin123` (dashboards) |
-
-│   ├── applications/            # Definiciones ArgoCD Applications
-
-│   │   ├── dashboard.yaml       # K8s Dashboard> **💡 Tip:** Usa `./check-windows-access.sh` para obtener las URLs exactas con tu IP de WSL.
-
-│   │   ├── hello-world.yaml     # App demo
-
-│   │   ├── prometheus.yaml      # Métricas---
-
-│   │   └── grafana.yaml         # Dashboards
-
-│   ├── projects/                # ArgoCD Projects (RBAC)## 🚀 Comandos de Acceso Rápido
-
-│   │   ├── infrastructure.yaml  # Proyecto infra
-
-│   │   └── applications.yaml    # Proyecto appsDespués de la instalación, tendrás estos **aliases automáticos**:
-
-│   └── repositories/            # Secrets de repositorios Git
-
-│       └── gitea-repos.yaml     # Credenciales Gitea```bash
-
-├── 📦 manifests/                # Kubernetes manifests organizados  # Acceso súper rápido al Dashboard (recomendado)
-
-│   ├── infrastructure/          # Herramientas de infraestructuradashboard         # Abre Dashboard - haz clic en "SKIP" 
-
-│   │   ├── dashboard/           # K8s Dashboard completo
-
+> 💡 Consejo: Usa `./scripts/check-windows-access.sh` para obtener las URLs exactas si accedes desde Windows/WSL.
 │   │   ├── prometheus/          # Stack de métricas# Acceso con token automático
 
 │   │   └── grafana/            # Visualizacióndashboard-full    # Abre Dashboard + token en clipboard
 
 │   └── applications/            # Aplicaciones de negocio
 
-│       └── hello-world/         # App demo con observabilidad# Otros servicios
+│       └── demo-api/         # App demo con observabilidad# Otros servicios
 
 ├── 💻 source-code/              # Código fuente puro (developer workflow)argocd           # Abre ArgoCD UI directamente
 
-│   └── hello-world-modern/      # App Go con métricas Prometheusgitea            # Abre Gitea UI directamente
+│   └── demo-api/      # App Go con métricas Prometheusgitea            # Abre Gitea UI directamente
 
 │       ├── main.go             # Aplicación con /metrics endpointk8s-dash         # Alias corto para dashboard
 
@@ -230,7 +200,7 @@ gitops-learning/
 
 - **Immutable Deployments**: Despliegues inmutables y rastreableskubectl patch application dashboard -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
-kubectl patch application hello-world -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+kubectl patch application demo-api -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
 ### **2. 🚀 Continuous Deployment** kubectl patch application prometheus -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
@@ -318,7 +288,7 @@ check-gitops    # Estado completo├── check-windows-access.sh      # 🌐 U
 
 # 1. Modificar código fuente├── argo-apps/                   # 📦 Definiciones de aplicaciones ArgoCD
 
-cd source-code/hello-world-modern/│   ├── gitops-tools/           # Dashboard y herramientas
+cd source-code/demo-api/│   ├── gitops-tools/           # Dashboard y herramientas
 
 # ... hacer cambios ...│   └── custom-apps/            # Aplicaciones personalizadas
 
@@ -326,9 +296,9 @@ cd source-code/hello-world-modern/│   ├── gitops-tools/           # Dash
 
 # 2. Build + deploy automático```
 
-docker build -t hello-world-modern:v2 .
+docker build -t demo-api:v2 .
 
-kind load docker-image hello-world-modern:v2 --name mini-cluster---
+kind load docker-image demo-api:v2 --name mini-cluster---
 
 
 
@@ -364,7 +334,7 @@ kind load docker-image hello-world-modern:v2 --name mini-cluster---
 
 | **Dashboard** | latest | K8s UI | 30085 |
 
-| **Hello World** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
+| **Demo API** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
 
 - Configura credenciales admin/admin123
 
@@ -396,9 +366,9 @@ kind load docker-image hello-world-modern:v2 --name mini-cluster---
 
 ```bash- Crea repositorio `gitops-tools` (Dashboard)
 
-# Forzar refresh de ArgoCD- Crea repositorio `custom-apps` (Hello World)
+# Forzar refresh de ArgoCD- Crea repositorio `custom-apps` (Demo API)
 
-kubectl patch application hello-world -n argocd --type merge \- Sube manifests iniciales a Gitea
+kubectl patch application demo-api -n argocd --type merge \- Sube manifests iniciales a Gitea
 
   -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
@@ -408,7 +378,7 @@ kubectl patch application hello-world -n argocd --type merge \- Sube manifests i
 
 ### **❌ "No puedo acceder desde Windows"**- Instala Grafana con datasource automático
 
-```bash- Construye aplicación Hello World moderna con métricas
+```bash- Construye aplicación Demo API moderna con métricas
 
 # Verificar IP de WSL- Configura RBAC para monitoreo de cluster
 
@@ -420,7 +390,7 @@ hostname -I | awk '{print $1}'
 
 # http://localhost:30080 en lugar de http://IP:30080- Configura secrets de autenticación de repositorios
 
-```- Despliega aplicaciones Dashboard, Hello World, Prometheus y Grafana
+```- Despliega aplicaciones Dashboard, Demo API, Prometheus y Grafana
 
 - Configura sincronización automática
 
@@ -456,7 +426,7 @@ curl http://localhost:30082/metrics
 
 2. **Explorar ArgoCD UI** (http://localhost:30080)- **Todos los Pods:** `Running` 
 
-3. **Ver aplicaciones sincronizadas** (Dashboard, Hello World)- **Servicios:** Accesibles desde Windows
+3. **Ver aplicaciones sincronizadas** (Dashboard, Demo API)- **Servicios:** Accesibles desde Windows
 
 4. **Modificar replicas** en manifests y ver auto-sync- **Git Repositories:** Configurados y funcionando
 
@@ -544,7 +514,7 @@ MIT License - Ver [LICENSE](LICENSE) para detalles.---
 
 - **Kubernetes Community**: Por kind y toda la toolchain- **Métricas de Kubernetes:** CPU, memoria, red de todos los pods
 
-- **Prometheus/Grafana**: Por observability de clase mundial- **Métricas de Aplicaciones:** Hello World expone métricas HTTP automáticamente
+- **Prometheus/Grafana**: Por observability de clase mundial- **Métricas de Aplicaciones:** Demo API expone métricas HTTP automáticamente
 
 - **GitOps Working Group**: Por definir los estándares- **Métricas del Cluster:** Estado de nodos, eventos, recursos
 
@@ -564,7 +534,7 @@ MIT License - Ver [LICENSE](LICENSE) para detalles.---
 
 ---
 
-#### **🔍 Hello World Moderna - Métricas de Aplicación:**
+#### **🔍 Demo API Moderna - Métricas de Aplicación:**
 
 ## 🔗 **Enlaces Útiles**- **Endpoint Métricas:** `/metrics` - Formato Prometheus nativo
 

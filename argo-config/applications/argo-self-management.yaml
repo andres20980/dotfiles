@@ -11,7 +11,8 @@ spec:
       repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
       revision: HEAD
       directories:
-      - path: '*'
+      - path: applications/*
+      - path: repositories/*
   template:
     metadata:
       name: 'argo-{{path.basename}}'

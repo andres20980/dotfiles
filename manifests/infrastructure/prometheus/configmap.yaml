@@ -67,10 +67,9 @@ data:
           - source_labels: [__meta_kubernetes_pod_name]
             action: replace
             target_label: kubernetes_pod_name
-
-      # Hello World Modern application
-      - job_name: 'hello-world-modern'
-        static_configs:
-          - targets: ['hello-world.hello-world.svc.cluster.local:3000']
-        metrics_path: '/metrics-prometheus'
-        scrape_interval: 10s
+      # Añade aquí jobs adicionales para tus aplicaciones (p.ej. demo-api)
+      # - job_name: 'demo-api'
+      #   static_configs:
+      #     - targets: ['demo-api.demo-api.svc.cluster.local:9100']
+      #   metrics_path: '/metrics'
+      #   scrape_interval: 30s

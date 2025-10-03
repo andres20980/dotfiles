@@ -4,7 +4,7 @@ metadata:
   name: argocd-config
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+    - argocd.argoproj.io/resources-finalizer
 spec:
   description: "ArgoCD self-management configuration (Admin only)"
   sourceRepos:
