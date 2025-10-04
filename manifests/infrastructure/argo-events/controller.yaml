@@ -112,7 +112,7 @@ metadata:
   name: controller-config
   namespace: argo-events
 data:
-  config.yaml: |
+  controller-config: |
     instanceID: default
 ---
 apiVersion: apps/v1
