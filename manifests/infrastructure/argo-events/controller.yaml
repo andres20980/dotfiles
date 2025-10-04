@@ -106,6 +106,15 @@ subjects:
   name: argo-events-controller
   namespace: argo-events
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: controller-config
+  namespace: argo-events
+data:
+  config.yaml: |
+    instanceID: default
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -156,5 +165,13 @@ spec:
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+        - name: controller-config
+          mountPath: /etc/argo-events
+          readOnly: true
       securityContext: {}
       serviceAccountName: argo-events-controller
+      volumes:
+      - name: controller-config
+        configMap:
+          name: controller-config
