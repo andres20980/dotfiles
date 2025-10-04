@@ -1437,14 +1437,16 @@ verify_gitops_services() {
     log_warning "  ⚠️  argocd-self-config: $self_app_status"
   fi
   
-  # Verificar GitOps tools desplegadas
+  # Verificar GitOps tools desplegadas - 100% configuración funcional
   log_info "🛠️  GitOps Tools (con NodePorts definidos en manifests):"
   local tools=(
     "argocd:argocd-server:30080"
-    "grafana:grafana:30093" 
-    "prometheus:prometheus:30092"
-    "kubernetes-dashboard:kubernetes-dashboard:30085"
-    "kargo:kargo:30091"
+    "argo-workflows:argo-server:30089"
+    "grafana:grafana:30082" 
+    "prometheus:prometheus:30081"
+    "dashboard:kubernetes-dashboard:30084"
+    "kargo:kargo-api:30085"
+    "registry:docker-registry:30087"
   )
   
   for tool_def in "${tools[@]}"; do
@@ -1502,7 +1504,20 @@ wait_and_sync_applications() {
   # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
   wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
 
-  local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus kargo)
+  # Lista completa de aplicaciones del ecosistema GitOps 100%
+  local desired_apps=(
+    argo-events
+    argo-image-updater
+    argo-rollouts
+    argo-workflows
+    dashboard
+    grafana
+    kargo
+    prometheus
+    redis
+    registry
+    sealed-secrets
+  )
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
     desired_apps+=(demo-api)
   fi
@@ -1572,6 +1587,77 @@ wait_and_sync_applications() {
     # Mostrar estado final
     log_success "📊 Estado final de aplicaciones:"
     kubectl get applications -n argocd 2>/dev/null | grep -E "NAME|Synced|Healthy" || true
+    
+    # Verificación final del ecosistema 100% completo
+    verify_complete_gitops_ecosystem
+}
+
+verify_complete_gitops_ecosystem() {
+  log_info "🎯 Verificación final del ecosistema GitOps 100% completo..."
+  
+  # Lista de las 12 aplicaciones que deben estar Synced/Healthy
+  local expected_apps=(
+    "argocd-self-config"
+    "argo-events"
+    "argo-image-updater" 
+    "argo-rollouts"
+    "argo-workflows"
+    "dashboard"
+    "grafana"
+    "kargo"
+    "prometheus"
+    "redis"
+    "registry"
+    "sealed-secrets"
+  )
+  
+  local synced_healthy=0
+  local total_apps=0
+  
+  log_info "Estado de las 12 aplicaciones del ecosistema GitOps:"
+  for app in "${expected_apps[@]}"; do
+    if kubectl -n argocd get app "$app" >/dev/null 2>&1; then
+      local sync_status health_status
+      sync_status=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+      health_status=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+      
+      total_apps=$((total_apps + 1))
+      if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+        synced_healthy=$((synced_healthy + 1))
+        log_success "  ✅ $app: $sync_status/$health_status"
+      else
+        log_warning "  ⚠️  $app: $sync_status/$health_status"
+      fi
+    else
+      log_info "  ⏳ $app: Pendiente"
+    fi
+  done
+  
+  # Verificación de external links
+  log_info "🔗 Enlaces externos configurados:"
+  local ui_links=(
+    "ArgoCD:http://localhost:30080"
+    "Argo Workflows:http://localhost:30089"
+    "Grafana:http://localhost:30082"
+    "Prometheus:http://localhost:30081"
+    "Dashboard:http://localhost:30084"
+    "Kargo:http://localhost:30085"
+    "Registry:http://localhost:30087"
+  )
+  
+  for link in "${ui_links[@]}"; do
+    IFS=':' read -r name url <<< "$link"
+    log_success "  🌐 $name: $url"
+  done
+  
+  # Resultado final
+  if [[ $synced_healthy -eq 12 && $total_apps -eq 12 ]]; then
+    log_success "🎉 ¡ECOSISTEMA GITOPS 100% COMPLETO! ($synced_healthy/$total_apps aplicaciones Synced/Healthy)"
+    log_success "💪 ¡o 100% o nada! - OBJETIVO CUMPLIDO"
+  else
+    log_warning "⏳ Ecosistema GitOps: $synced_healthy/$total_apps aplicaciones Synced/Healthy"
+    log_info "Las aplicaciones restantes se sincronizarán automáticamente"
+  fi
 }
 
 create_access_scripts() {

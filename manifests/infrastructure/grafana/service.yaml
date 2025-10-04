@@ -6,7 +6,7 @@ metadata:
   labels:
     app: grafana
   annotations:
-    link.argocd.argoproj.io/external-link: http://localhost:30093
+    link.argocd.argoproj.io/external-link: http://localhost:30082
 spec:
   selector:
     app: grafana
@@ -15,4 +15,4 @@ spec:
   - name: web
     port: 3000
     targetPort: 3001
-    nodePort: 30093
+    nodePort: 30082
