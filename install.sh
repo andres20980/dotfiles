@@ -290,98 +290,9 @@ install_kubeseal() {
   return 1
 }
 
-create_kargo_secret_workaround() {
-  log_info "Generando SealedSecret para Kargo con clave del cluster actual..."
-  
-  # Instalar kubeseal si no existe
-  install_kubeseal
-  
-  # Esperar a que el namespace kargo y sealed-secrets controller estén listos
-  local retries=30
-  while [[ $retries -gt 0 ]]; do
-    if kubectl get namespace kargo >/dev/null 2>&1 && kubectl get pods -n sealed-secrets -l name=sealed-secrets-controller --field-selector=status.phase=Running | grep -q Running 2>/dev/null; then
-      break
-    fi
-    sleep 2
-    retries=$((retries - 1))
-  done
-  
-  if [[ $retries -eq 0 ]]; then
-    log_warning "Namespace kargo o sealed-secrets controller no están listos"
-    return 0
-  fi
-  
-  # Generar hash seguro para admin/admin123
-  local password_hash
-  if command -v python3 >/dev/null 2>&1 && python3 -c "import bcrypt" >/dev/null 2>&1; then
-    password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8'))")
-    log_info "Password hash generado dinámicamente"
-  else
-    # shellcheck disable=SC2016  # bcrypt hash debe usar comillas simples
-    password_hash='$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC'
-    log_warning "Usando password hash estático (bcrypt no disponible)"
-  fi
-  
-  # Crear Secret temporal y convertir a SealedSecret con validación
-  local temp_secret_file="/tmp/kargo-temp-secret-$$.yaml"
-  local sealed_secret_file="/tmp/kargo-sealed-secret-$$.yaml"
-  
-  kubectl create secret generic kargo-api -n kargo \
-    --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
-    --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
-    --dry-run=client -o yaml > "$temp_secret_file"
-  
-  # Validar que kubeseal funciona correctamente
-  if ! kubeseal -o yaml < "$temp_secret_file" > "$sealed_secret_file" 2>/dev/null; then
-    log_error "No se pudo generar SealedSecret con kubeseal"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
-    return 1
-  fi
-  
-  # Validar que el SealedSecret generado es válido
-  if ! kubectl apply --dry-run=client -f "$sealed_secret_file" >/dev/null 2>&1; then
-    log_error "SealedSecret generado inválido"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
-    return 1
-  fi
-  
-  # Aplicar el SealedSecret
-  if ! kubectl apply -f "$sealed_secret_file" >/dev/null 2>&1; then
-    log_error "No se pudo aplicar SealedSecret"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
-    return 1
-  fi
-  
-  # Actualizar el archivo en el repo local para futuras sincronizaciones
-  cp "$sealed_secret_file" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
-  cp "$sealed_secret_file" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
-  rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
-  rm -f "$temp_secret_file" "$sealed_secret_file"
-  
-  log_success "SealedSecret kargo-api generado y aplicado (usuario: admin, contraseña: admin123)"
-}
+# NOTA: Función create_kargo_secret_workaround eliminada - ahora Kargo usa Secret normal
 
-sync_sealedsecret_to_gitea() {
-  log_info "Sincronizando SealedSecret actualizado a Gitea..."
-  
-  # Verificar que el archivo exista
-  if [[ ! -f "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml" ]]; then
-    log_warning "SealedSecret no encontrado, saltando sincronización"
-    return 0
-  fi
-  
-  # Push directo del directorio infrastructure actualizado
-  (
-    cd "$DOTFILES_DIR/manifests/infrastructure" || exit 1
-    git add kargo/sealed-secret.yaml
-    git commit -m "feat: update kargo SealedSecret with cluster key" >/dev/null 2>&1 || true
-    git remote remove gitea 2>/dev/null || true
-    git remote add gitea "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/infrastructure.git"
-    git push gitea HEAD:main --force >/dev/null 2>&1
-  )
-  
-  log_success "SealedSecret sincronizado a Gitea"
-}
+# NOTA: Función sync_sealedsecret_to_gitea eliminada - ahora Kargo usa Secret normal
 
 check_mapping_sanity() {
   log_step "Comprobando mapeos de puertos (sanity)"
@@ -1383,11 +1294,8 @@ create_gitops_repositories() {
     # Crear repositorios de código fuente para desarrollo
     create_source_repositories "$gitops_base_dir"
     
-    # Generar SealedSecret para Kargo con clave del cluster actual
-    create_kargo_secret_workaround
-    
-    # Sincronizar SealedSecret actualizado a Gitea
-    sync_sealedsecret_to_gitea
+    # NOTA: El SealedSecret para Kargo se generará DESPUÉS del sync de aplicaciones
+    # para asegurar que el cluster tenga las claves correctas del sealed-secrets controller
     
     cd "$DOTFILES_DIR"
 }
@@ -1508,6 +1416,9 @@ EOF
   wait_for_condition "kubectl -n argocd get app argocd-self-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argocd-self-config todavía no está totalmente sincronizado"
 
   wait_and_sync_applications
+
+  # NOTA: Kargo ahora usa un Secret normal en lugar de SealedSecret para evitar
+  # problemas de desencriptado con claves de cluster que cambian
 
   # Verificar servicios desplegados (NodePorts configurados via manifests GitOps)
   verify_gitops_services
