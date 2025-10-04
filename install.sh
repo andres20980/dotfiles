@@ -984,7 +984,7 @@ build_and_load_images() {
     version="1.0.0"
   fi
 
-  local registry_host="localhost:30500"
+  local registry_host="localhost:30087"
   local local_tag="${image_name}:v${version}"
   local registry_tag="${registry_host}/${local_tag}"
 
@@ -1479,9 +1479,9 @@ spec:
   source:
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
     targetRevision: HEAD
-    path: projects/
+    path: .
     directory:
-      recurse: true  # Leer subdirectorios de projects/
+      recurse: true  # Leer toda la raíz para incluir projects/ y applications/
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
