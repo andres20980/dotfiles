@@ -25,7 +25,7 @@ readonly SKIP_CLEANUP_ON_ERROR="${SKIP_CLEANUP_ON_ERROR:-false}"
 # Controla si se gestionan aplicaciones personalizadas (demo-api, etc.)
 # Por defecto habilitado para una experiencia de demo completa (puedes deshabilitar
 # exportando ENABLE_CUSTOM_APPS=false antes de ejecutar).
-ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-true}"
+ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
 readonly ENABLE_CUSTOM_APPS
 
 # Variables de configuración adicionales
