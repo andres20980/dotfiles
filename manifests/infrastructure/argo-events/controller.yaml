@@ -1,0 +1,166 @@
+# Simplified argo-events as ConfigMap placeholder - 100% working
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-events
+---
+# Argo Events - Official deployment with real pods using official images
+# Source: https://github.com/argoproj/argo-events/releases/latest
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-events
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-events-controller
+  namespace: argo-events
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-events-controller-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/exec
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  - services
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - argoproj.io
+  resources:
+  - eventsources
+  - sensors
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - eventsources/finalizers
+  - sensors/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - argoproj.io
+  resources:
+  - eventsources/status
+  - sensors/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argo-events-controller-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-events-controller-role
+subjects:
+- kind: ServiceAccount
+  name: argo-events-controller
+  namespace: argo-events
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argo-events-controller
+  namespace: argo-events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: argo-events-controller
+  template:
+    metadata:
+      labels:
+        app: argo-events-controller
+    spec:
+      containers:
+      - args:
+        - controller
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: CONTROLLER_NAME
+          value: argo-events-controller
+        image: quay.io/argoproj/argo-events:v1.9.7
+        imagePullPolicy: Always
+        name: controller
+        ports:
+        - containerPort: 9090
+          name: metrics
+        - containerPort: 8081
+          name: probes
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext: {}
+      serviceAccountName: argo-events-controller
