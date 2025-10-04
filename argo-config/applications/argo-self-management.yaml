@@ -11,11 +11,12 @@ spec:
       repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
       revision: HEAD
       directories:
+      - path: .  # ArgoCD self-config (root path)
       - path: applications/*
       - path: repositories/*
   template:
     metadata:
-      name: 'argo-{{path.basename}}'
+      name: '{{- if eq .path "." }}argocd-self-config{{- else }}argo-{{path.basename}}{{- end }}'
     spec:
       project: argocd-config  # 🎯 Usar el proyecto correcto
       source:

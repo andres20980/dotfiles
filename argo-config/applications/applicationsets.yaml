@@ -16,7 +16,7 @@ spec:
     metadata:
       name: '{{path.basename}}'
     spec:
-      project: infrastructure
+      project: gitops-tools
       source:
         repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
         targetRevision: HEAD

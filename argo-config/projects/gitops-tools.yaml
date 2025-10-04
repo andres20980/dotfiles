@@ -1,12 +1,12 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: infrastructure
+  name: gitops-tools
   namespace: argocd
   finalizers:
     - argocd.argoproj.io/resources-finalizer
 spec:
-  description: "Infraestructura y herramientas GitOps gestionadas por ArgoCD"
+  description: "GitOps tools y herramientas de infraestructura gestionadas por ArgoCD"
   sourceRepos:
     - '*'
   destinations:
