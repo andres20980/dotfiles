@@ -129,6 +129,9 @@ subjects:
 - kind: ServiceAccount
   name: argo
   namespace: argo-workflows
+- kind: ServiceAccount
+  name: argo-server
+  namespace: argo-workflows
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -161,16 +164,21 @@ spec:
         - --configmap
         - workflow-controller-configmap
         - --executor-image
-        - quay.io/argoproj/argoexec:v3.4.4
+        - quay.io/argoproj/argoexec:v3.7.2
         command:
         - workflow-controller
         env:
+        - name: LEADER_ELECTION_IDENTITY
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
         - name: LEADER_ELECTION_NAMESPACE
           valueFrom:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
-        image: quay.io/argoproj/workflow-controller:v3.4.4
+        image: quay.io/argoproj/workflow-controller:v3.7.2
         livenessProbe:
           failureThreshold: 3
           httpGet:
@@ -194,7 +202,7 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: false
       serviceAccountName: argo
 ---
 # Argo Server for UI access
@@ -228,7 +236,7 @@ spec:
               fieldPath: metadata.namespace
         - name: BASE_HREF
           value: /
-        image: quay.io/argoproj/argocli:v3.4.4
+        image: quay.io/argoproj/argocli:v3.7.2
         name: argo-server
         ports:
         - containerPort: 2746
@@ -253,14 +261,14 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: false
-          runAsNonRoot: true
+          runAsNonRoot: false
         volumeMounts:
         - mountPath: /tmp
           name: tmp
       nodeSelector:
         kubernetes.io/os: linux
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: false
       serviceAccountName: argo-server
       volumes:
       - emptyDir: {}
