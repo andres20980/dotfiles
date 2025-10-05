@@ -156,7 +156,7 @@ open_service() {
 
   case "$service" in
     dashboard)
-      url="http://localhost:30085"
+      url="http://localhost:30086"
       label="Kubernetes Dashboard"
       note="En la pantalla de login, pulsa 'SKIP'"
       ;;
@@ -1444,7 +1444,7 @@ verify_gitops_services() {
     "argo-workflows:argo-server:30089"
     "grafana:grafana:30082" 
     "prometheus:prometheus:30081"
-    "dashboard:kubernetes-dashboard:30084"
+    "dashboard:kubernetes-dashboard:30086"
     "kargo:kargo-api:30085"
     "registry:docker-registry:30087"
   )
@@ -1640,7 +1640,7 @@ verify_complete_gitops_ecosystem() {
     "Argo Workflows:http://localhost:30089"
     "Grafana:http://localhost:30082"
     "Prometheus:http://localhost:30081"
-    "Dashboard:http://localhost:30084"
+    "Dashboard:http://localhost:30086"
     "Kargo:http://localhost:30085"
     "Registry:http://localhost:30087"
   )
@@ -1893,9 +1893,9 @@ show_final_report() {
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
   wait_url "http://localhost:30092" "Prometheus" 200 240 || true
   wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
-  wait_url "http://localhost:30094" "Kargo (admin/admin123)" 200 240 || true
+  wait_url "http://localhost:30085" "Kargo (admin/admin123)" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
-  wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
+  wait_url "http://localhost:30086" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
     wait_url "http://localhost:30070" "Demo API" 200 240 || true
   else
