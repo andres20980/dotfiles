@@ -7,6 +7,8 @@ metadata:
   labels:
     app.kubernetes.io/name: kargo
     app.kubernetes.io/component: api
+  annotations:
+    link.argocd.argoproj.io/external-link: http://localhost:30085
 spec:
   type: NodePort
   ports:
