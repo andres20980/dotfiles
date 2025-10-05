@@ -1,36 +1,53 @@
 ---
-# ApplicationSet para ArgoCD Self-Management (configuración de ArgoCD)
+# Application principal que gestiona la configuración interna de ArgoCD
 apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
+kind: Application
 metadata:
-  name: argocd-self-management
+  name: argocd-self-config
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/managed-by: bootstrap
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
-  generators:
-  - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-      revision: HEAD
-      directories:
-      - path: .  # ArgoCD self-config (root path)
-      - path: applications/*
-      - path: repositories/*
-  template:
-    metadata:
-      name: '{{- if eq .path "." }}argocd-self-config{{- else }}argo-{{path.basename}}{{- end }}'
-    spec:
-      project: argocd-config  # 🎯 Usar el proyecto correcto
-      source:
-        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git'
-        targetRevision: HEAD
-        path: '{{path}}'
-      destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: argocd
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-        - CreateNamespace=true
-        - PrunePropagationPolicy=foreground
-        - PruneLast=true
+  project: argocd-config
+  sources:
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: projects
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: applications
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: repositories
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: configmaps
+      directory:
+        recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      namespace: argocd
+      jsonPointers:
+        - /spec/syncPolicy/automated
+        - /metadata/annotations/argocd.argoproj.io~1refresh
+        - /operation

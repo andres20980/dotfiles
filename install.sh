@@ -25,7 +25,7 @@ readonly SKIP_CLEANUP_ON_ERROR="${SKIP_CLEANUP_ON_ERROR:-false}"
 # Controla si se gestionan aplicaciones personalizadas (demo-api, etc.)
 # Por defecto habilitado para una experiencia de demo completa (puedes deshabilitar
 # exportando ENABLE_CUSTOM_APPS=false antes de ejecutar).
-ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
+ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-true}"
 readonly ENABLE_CUSTOM_APPS
 
 # Variables de configuración adicionales
@@ -156,7 +156,7 @@ open_service() {
 
   case "$service" in
     dashboard)
-      url="http://localhost:30086"
+      url="http://localhost:30085"
       label="Kubernetes Dashboard"
       note="En la pantalla de login, pulsa 'SKIP'"
       ;;
@@ -290,9 +290,98 @@ install_kubeseal() {
   return 1
 }
 
-# NOTA: Función create_kargo_secret_workaround eliminada - ahora Kargo usa Secret normal
+create_kargo_secret_workaround() {
+  log_info "Generando SealedSecret para Kargo con clave del cluster actual..."
+  
+  # Instalar kubeseal si no existe
+  install_kubeseal
+  
+  # Esperar a que el namespace kargo y sealed-secrets controller estén listos
+  local retries=30
+  while [[ $retries -gt 0 ]]; do
+    if kubectl get namespace kargo >/dev/null 2>&1 && kubectl get pods -n sealed-secrets -l name=sealed-secrets-controller --field-selector=status.phase=Running | grep -q Running 2>/dev/null; then
+      break
+    fi
+    sleep 2
+    retries=$((retries - 1))
+  done
+  
+  if [[ $retries -eq 0 ]]; then
+    log_warning "Namespace kargo o sealed-secrets controller no están listos"
+    return 0
+  fi
+  
+  # Generar hash seguro para admin/admin123
+  local password_hash
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import bcrypt" >/dev/null 2>&1; then
+    password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8'))")
+    log_info "Password hash generado dinámicamente"
+  else
+    # shellcheck disable=SC2016  # bcrypt hash debe usar comillas simples
+    password_hash='$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC'
+    log_warning "Usando password hash estático (bcrypt no disponible)"
+  fi
+  
+  # Crear Secret temporal y convertir a SealedSecret con validación
+  local temp_secret_file="/tmp/kargo-temp-secret-$$.yaml"
+  local sealed_secret_file="/tmp/kargo-sealed-secret-$$.yaml"
+  
+  kubectl create secret generic kargo-api -n kargo \
+    --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
+    --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
+    --dry-run=client -o yaml > "$temp_secret_file"
+  
+  # Validar que kubeseal funciona correctamente
+  if ! kubeseal -o yaml < "$temp_secret_file" > "$sealed_secret_file" 2>/dev/null; then
+    log_error "No se pudo generar SealedSecret con kubeseal"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
+  
+  # Validar que el SealedSecret generado es válido
+  if ! kubectl apply --dry-run=client -f "$sealed_secret_file" >/dev/null 2>&1; then
+    log_error "SealedSecret generado inválido"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
+  
+  # Aplicar el SealedSecret
+  if ! kubectl apply -f "$sealed_secret_file" >/dev/null 2>&1; then
+    log_error "No se pudo aplicar SealedSecret"
+    rm -f "$temp_secret_file" "$sealed_secret_file"
+    return 1
+  fi
+  
+  # Actualizar el archivo en el repo local para futuras sincronizaciones
+  cp "$sealed_secret_file" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  cp "$sealed_secret_file" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
+  rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
+  rm -f "$temp_secret_file" "$sealed_secret_file"
+  
+  log_success "SealedSecret kargo-api generado y aplicado (usuario: admin, contraseña: admin123)"
+}
 
-# NOTA: Función sync_sealedsecret_to_gitea eliminada - ahora Kargo usa Secret normal
+sync_sealedsecret_to_gitea() {
+  log_info "Sincronizando SealedSecret actualizado a Gitea..."
+  
+  # Verificar que el archivo exista
+  if [[ ! -f "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml" ]]; then
+    log_warning "SealedSecret no encontrado, saltando sincronización"
+    return 0
+  fi
+  
+  # Push directo del directorio infrastructure actualizado
+  (
+    cd "$DOTFILES_DIR/manifests/infrastructure" || exit 1
+    git add kargo/sealed-secret.yaml
+    git commit -m "feat: update kargo SealedSecret with cluster key" >/dev/null 2>&1 || true
+    git remote remove gitea 2>/dev/null || true
+    git remote add gitea "http://gitops:$GITEA_ADMIN_PASSWORD@localhost:30083/gitops/infrastructure.git"
+    git push gitea HEAD:main --force >/dev/null 2>&1
+  )
+  
+  log_success "SealedSecret sincronizado a Gitea"
+}
 
 check_mapping_sanity() {
   log_step "Comprobando mapeos de puertos (sanity)"
@@ -895,7 +984,7 @@ build_and_load_images() {
     version="1.0.0"
   fi
 
-  local registry_host="localhost:30087"
+  local registry_host="localhost:30500"
   local local_tag="${image_name}:v${version}"
   local registry_tag="${registry_host}/${local_tag}"
 
@@ -1294,8 +1383,11 @@ create_gitops_repositories() {
     # Crear repositorios de código fuente para desarrollo
     create_source_repositories "$gitops_base_dir"
     
-    # NOTA: El SealedSecret para Kargo se generará DESPUÉS del sync de aplicaciones
-    # para asegurar que el cluster tenga las claves correctas del sealed-secrets controller
+    # Generar SealedSecret para Kargo con clave del cluster actual
+    create_kargo_secret_workaround
+    
+    # Sincronizar SealedSecret actualizado a Gitea
+    sync_sealedsecret_to_gitea
     
     cd "$DOTFILES_DIR"
 }
@@ -1371,7 +1463,7 @@ setup_application_sets() {
   log_info "Creando proyecto argocd-config para self-management..."
   kubectl apply -f "$DOTFILES_DIR/argo-config/projects/argocd-config.yaml" >/dev/null 2>&1 || true
   
-  # Una sola Application para self-management (excluyendo ConfigMaps aplicados en bootstrap)
+  # Application ArgoCD self-management: cubre proyectos, apps, repos y configmaps
   cat <<'EOF' | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -1383,13 +1475,28 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
-  source:
-    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-    targetRevision: HEAD
-    path: .
-    directory:
-      recurse: true  # Leer toda la raíz para incluir projects/ y applications/
+  project: argocd-config
+  sources:
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: projects
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: applications
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: repositories
+      directory:
+        recurse: true
+    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
+      targetRevision: HEAD
+      path: configmaps
+      directory:
+        recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -1417,9 +1524,6 @@ EOF
 
   wait_and_sync_applications
 
-  # NOTA: Kargo ahora usa un Secret normal en lugar de SealedSecret para evitar
-  # problemas de desencriptado con claves de cluster que cambian
-
   # Verificar servicios desplegados (NodePorts configurados via manifests GitOps)
   verify_gitops_services
 }
@@ -1437,16 +1541,14 @@ verify_gitops_services() {
     log_warning "  ⚠️  argocd-self-config: $self_app_status"
   fi
   
-  # Verificar GitOps tools desplegadas - 100% configuración funcional
+  # Verificar GitOps tools desplegadas
   log_info "🛠️  GitOps Tools (con NodePorts definidos en manifests):"
   local tools=(
     "argocd:argocd-server:30080"
-    "argo-workflows:argo-server:30089"
-    "grafana:grafana:30082" 
-    "prometheus:prometheus:30081"
-    "dashboard:kubernetes-dashboard:30086"
-    "kargo:kargo-api:30085"
-    "registry:docker-registry:30087"
+    "grafana:grafana:30093" 
+    "prometheus:prometheus:30092"
+    "kubernetes-dashboard:kubernetes-dashboard:30085"
+    "kargo:kargo:30091"
   )
   
   for tool_def in "${tools[@]}"; do
@@ -1504,20 +1606,7 @@ wait_and_sync_applications() {
   # Asegura que el CRD de Rollouts exista antes de sincronizar workloads que lo usan
   wait_for_condition "kubectl get crd rollouts.argoproj.io >/dev/null 2>&1" 180 5 || true
 
-  # Lista completa de aplicaciones del ecosistema GitOps 100%
-  local desired_apps=(
-    argo-events
-    argo-image-updater
-    argo-rollouts
-    argo-workflows
-    dashboard
-    grafana
-    kargo
-    prometheus
-    redis
-    registry
-    sealed-secrets
-  )
+  local desired_apps=(argo-rollouts sealed-secrets dashboard grafana prometheus kargo)
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
     desired_apps+=(demo-api)
   fi
@@ -1587,77 +1676,6 @@ wait_and_sync_applications() {
     # Mostrar estado final
     log_success "📊 Estado final de aplicaciones:"
     kubectl get applications -n argocd 2>/dev/null | grep -E "NAME|Synced|Healthy" || true
-    
-    # Verificación final del ecosistema 100% completo
-    verify_complete_gitops_ecosystem
-}
-
-verify_complete_gitops_ecosystem() {
-  log_info "🎯 Verificación final del ecosistema GitOps 100% completo..."
-  
-  # Lista de las 12 aplicaciones que deben estar Synced/Healthy
-  local expected_apps=(
-    "argocd-self-config"
-    "argo-events"
-    "argo-image-updater" 
-    "argo-rollouts"
-    "argo-workflows"
-    "dashboard"
-    "grafana"
-    "kargo"
-    "prometheus"
-    "redis"
-    "registry"
-    "sealed-secrets"
-  )
-  
-  local synced_healthy=0
-  local total_apps=0
-  
-  log_info "Estado de las 12 aplicaciones del ecosistema GitOps:"
-  for app in "${expected_apps[@]}"; do
-    if kubectl -n argocd get app "$app" >/dev/null 2>&1; then
-      local sync_status health_status
-      sync_status=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
-      health_status=$(kubectl -n argocd get app "$app" -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
-      
-      total_apps=$((total_apps + 1))
-      if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
-        synced_healthy=$((synced_healthy + 1))
-        log_success "  ✅ $app: $sync_status/$health_status"
-      else
-        log_warning "  ⚠️  $app: $sync_status/$health_status"
-      fi
-    else
-      log_info "  ⏳ $app: Pendiente"
-    fi
-  done
-  
-  # Verificación de external links
-  log_info "🔗 Enlaces externos configurados:"
-  local ui_links=(
-    "ArgoCD:http://localhost:30080"
-    "Argo Workflows:http://localhost:30089"
-    "Grafana:http://localhost:30082"
-    "Prometheus:http://localhost:30081"
-    "Dashboard:http://localhost:30086"
-    "Kargo:http://localhost:30085"
-    "Registry:http://localhost:30087"
-  )
-  
-  for link in "${ui_links[@]}"; do
-    IFS=':' read -r name url <<< "$link"
-    log_success "  🌐 $name: $url"
-  done
-  
-  # Resultado final
-  if [[ $synced_healthy -eq 12 && $total_apps -eq 12 ]]; then
-    log_success "🎉 ¡ECOSISTEMA GITOPS 100% COMPLETO! ($synced_healthy/$total_apps aplicaciones Synced/Healthy)"
-    log_success "💪 ¡o 100% o nada! - OBJETIVO CUMPLIDO"
-  else
-    log_warning "⏳ Ecosistema GitOps: $synced_healthy/$total_apps aplicaciones Synced/Healthy"
-    log_info "Las aplicaciones restantes se sincronizarán automáticamente"
-  fi
 }
 
 create_access_scripts() {
@@ -1792,7 +1810,77 @@ configure_gitops_remotes() {
     log_info "   - gitea-infrastructure: Manifests de infraestructura"
   fi
   
-  # Script de sincronización eliminado - GitOps directo via manifests
+  # Crear script de sincronización
+  cat > "${SCRIPT_DIR}/scripts/sync-to-gitea.sh" << 'EOF'
+#!/bin/bash
+# Script para sincronizar cambios locales con Gitea (flujo GitOps)
+set -euo pipefail
+
+log_info() { echo "ℹ️  $*"; }
+log_success() { echo "✅ $*"; }
+log_error() { echo "❌ $*"; }
+
+sync_subtree() {
+  local prefix="$1"
+  local remote="$2"
+  
+  log_info "Sincronizando $prefix con $remote..."
+  
+  # Crear directorio temporal
+  local temp_dir="/tmp/gitops-sync-$$"
+  mkdir -p "$temp_dir"
+  
+  # Clonar repo de Gitea
+  git clone "$remote" "$temp_dir" >/dev/null 2>&1
+  
+  # Copiar archivos actuales
+  cp -r "$prefix"/* "$temp_dir/"
+  
+  # Commit y push
+  cd "$temp_dir"
+  git add .
+  if git commit -m "sync: update from local development" >/dev/null 2>&1; then
+    git push >/dev/null 2>&1
+    log_success "$prefix sincronizado ✅"
+  else
+    log_info "$prefix sin cambios"
+  fi
+  
+  # Cleanup
+  rm -rf "$temp_dir"
+}
+
+main() {
+  log_info "🔄 Sincronizando cambios locales con Gitea..."
+  
+  # Verificar que estemos en el directorio correcto
+  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/infrastructure" ]]; then
+    log_error "Ejecutar desde el directorio raíz del proyecto (donde están argo-config/ y manifests/)"
+    exit 1
+  fi
+  
+  # Obtener password de Gitea
+  local gitea_password
+  gitea_password=$(kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "")
+  
+  if [[ -z "$gitea_password" ]]; then
+    log_error "No se pudo obtener la contraseña de Gitea. ¿Está el cluster funcionando?"
+    exit 1
+  fi
+  
+  # Sincronizar ambos repos
+  sync_subtree "argo-config" "http://gitops:${gitea_password}@localhost:30083/gitops/argo-config.git"
+  sync_subtree "manifests/infrastructure" "http://gitops:${gitea_password}@localhost:30083/gitops/infrastructure.git"
+  
+  log_success "🎉 Sincronización completada. ArgoCD detectará los cambios automáticamente."
+  log_info "💡 Puedes verificar en: http://localhost:30080"
+}
+
+main "$@"
+EOF
+  
+  chmod +x "${BASE_DIR}/scripts/sync-to-gitea.sh"
+  log_success "Script de sincronización creado: ./scripts/sync-to-gitea.sh"
 }
 
 show_final_report() {
@@ -1893,9 +1981,9 @@ show_final_report() {
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
   wait_url "http://localhost:30092" "Prometheus" 200 240 || true
   wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
-  wait_url "http://localhost:30085" "Kargo (admin/admin123)" 200 240 || true
+  wait_url "http://localhost:30094" "Kargo (admin/admin123)" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
-  wait_url "http://localhost:30086" "Kubernetes Dashboard (skip login)" 200 240 || true
+  wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
     wait_url "http://localhost:30070" "Demo API" 200 240 || true
   else
@@ -1924,7 +2012,7 @@ show_final_report() {
   echo "   2. Editar manifests (argo-config/, manifests/infrastructure/)"
   echo "   3. git commit -m \"feat: nueva funcionalidad\""
   echo "   4. git push origin main  (backup a GitHub)"
-  echo "   5. ArgoCD detecta cambios automáticamente via GitOps"
+  echo "   5. ./scripts/sync-to-gitea.sh  (sincronizar a Gitea → ArgoCD detecta cambios)"
   echo ""
   configure_gitops_remotes
   echo ""
@@ -1941,9 +2029,9 @@ show_final_report() {
   echo ""
   echo "🎆 PRÓXIMOS PASOS RECOMENDADOS:"
   echo "   1. Explora ArgoCD UI: http://localhost:30080"
-  echo "   2. Configura Kargo pipelines: http://localhost:30085"
-  echo "   3. Revisa métricas: http://localhost:30082 (Grafana)"
-  echo "   4. Edita manifests directamente via GitOps"
+  echo "   2. Configura Kargo pipelines: http://localhost:30094"
+  echo "   3. Revisa métricas: http://localhost:30093 (Grafana)"
+  echo "   4. Edita manifests y usa: ./scripts/sync-to-gitea.sh"
   echo ""
   echo "📚 DOCUMENTACIÓN:"
   echo "   - ArgoCD: https://argo-cd.readthedocs.io/"
