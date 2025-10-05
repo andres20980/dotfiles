@@ -72,9 +72,9 @@ cd gitops-learning- ✅ **Demo API Modern** - Aplicación Go con observabilidad 
 
 - ArgoCD: http://localhost:30080 (sin login)
 - Gitea: http://localhost:30083
-- Prometheus: http://localhost:30092
-- Grafana: http://localhost:30093 (admin/admin123)
-- Kubernetes Dashboard: http://localhost:30085 (skip login)
+- Prometheus: http://localhost:30081
+- Grafana: http://localhost:30082 (admin/admin123)
+- Kubernetes Dashboard: http://localhost:30086 (skip login)
 - Argo Rollouts: http://localhost:30084
 - App Demo: http://localhost:30082
 
@@ -328,11 +328,11 @@ kind load docker-image demo-api:v2 --name mini-cluster---
 
 | **Gitea** | 1.21.11 | Git server local | 30083 |- Configura red para acceso desde Windows
 
-| **Prometheus** | latest | Métricas | 30092 |- Expone servicios como NodePort
+| **Prometheus** | latest | Métricas | 30081 |- Expone servicios como NodePort
 
-| **Grafana** | latest | Dashboards | 30093 |
+| **Grafana** | latest | Dashboards | 30082 |
 
-| **Dashboard** | latest | K8s UI | 30085 |
+| **Dashboard** | latest | K8s UI | 30086 |
 
 | **Demo API** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
 

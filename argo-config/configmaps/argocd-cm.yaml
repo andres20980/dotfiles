@@ -24,20 +24,3 @@ data:
     hs.status = "Healthy"
     hs.message = "Ingress is configured"
     return hs
-  
-  # External links for all GitOps UIs - 100% funcional
-  application.links: |
-    - url: http://localhost:30089
-      title: Argo Workflows
-    - url: http://localhost:30082  
-      title: Grafana
-    - url: http://localhost:30081
-      title: Prometheus
-    - url: http://localhost:30084
-      title: Kubernetes Dashboard
-    - url: http://localhost:30085
-      title: Kargo
-    - url: http://localhost:30086
-      title: Argo Rollouts
-    - url: http://localhost:30087
-      title: Registry UI

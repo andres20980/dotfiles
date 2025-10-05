@@ -156,7 +156,7 @@ open_service() {
 
   case "$service" in
     dashboard)
-      url="http://localhost:30085"
+      url="http://localhost:30086"
       label="Kubernetes Dashboard"
       note="En la pantalla de login, pulsa 'SKIP'"
       ;;
@@ -169,11 +169,11 @@ open_service() {
       label="Gitea"
       ;;
     grafana)
-      url="http://localhost:30093"
+      url="http://localhost:30082"
       label="Grafana"
       ;;
     prometheus)
-      url="http://localhost:30092"
+      url="http://localhost:30081"
       label="Prometheus"
       ;;
     rollouts|argo-rollouts)
@@ -181,7 +181,7 @@ open_service() {
       label="Argo Rollouts"
       ;;
     kargo)
-      url="http://localhost:30094"
+      url="http://localhost:30085"
       label="Kargo"
       note="Default credentials: admin/admin123"
       ;;
@@ -485,6 +485,13 @@ configure_argocd_bootstrap() {
   
   log_success "ArgoCD disponible en http://localhost:30080 (sin auth)"
   log_info "📝 Otros servicios configurarán sus NodePorts via manifests GitOps"
+}
+
+cleanup_legacy_gitops_resources() {
+  if kubectl -n argocd get applicationset gitops-tools-no-ui >/dev/null 2>&1; then
+    log_info "Eliminando ApplicationSet heredado gitops-tools-no-ui"
+    kubectl -n argocd delete applicationset gitops-tools-no-ui --ignore-not-found >/dev/null 2>&1 || true
+  fi
 }
 
 wait_for_condition() {
@@ -1519,6 +1526,8 @@ spec:
         - /operation
 EOF
 
+  cleanup_legacy_gitops_resources
+
   log_info "Esperando a que ArgoCD self-config esté Synced/Healthy..."
   wait_for_condition "kubectl -n argocd get app argocd-self-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argocd-self-config todavía no está totalmente sincronizado"
 
@@ -1545,10 +1554,10 @@ verify_gitops_services() {
   log_info "🛠️  GitOps Tools (con NodePorts definidos en manifests):"
   local tools=(
     "argocd:argocd-server:30080"
-    "grafana:grafana:30093" 
-    "prometheus:prometheus:30092"
-    "kubernetes-dashboard:kubernetes-dashboard:30085"
-    "kargo:kargo:30091"
+    "grafana:grafana:30082"
+    "prometheus:prometheus:30081"
+    "dashboard:kubernetes-dashboard:30086"
+    "kargo:kargo-api:30085"
   )
   
   for tool_def in "${tools[@]}"; do
@@ -1979,9 +1988,9 @@ show_final_report() {
 
   wait_url "http://localhost:30080" "ArgoCD (admin/${argocd_password})" 200 60 || true
   wait_url "http://localhost:30083" "Gitea (gitops/${gitea_pw})" 200 180 || true
-  wait_url "http://localhost:30092" "Prometheus" 200 240 || true
-  wait_url "http://localhost:30093" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
-  wait_url "http://localhost:30094" "Kargo (admin/admin123)" 200 240 || true
+  wait_url "http://localhost:30081" "Prometheus" 200 240 || true
+  wait_url "http://localhost:30082" "Grafana (admin/${grafana_admin_pw})" 200 240 || true
+  wait_url "http://localhost:30085" "Kargo (admin/admin123)" 200 240 || true
   wait_url "http://localhost:30084" "Argo Rollouts" 200 180 || true
   wait_url "http://localhost:30085" "Kubernetes Dashboard (skip login)" 200 240 || true
   if [[ "$ENABLE_CUSTOM_APPS" == "true" ]]; then
@@ -2029,8 +2038,8 @@ show_final_report() {
   echo ""
   echo "🎆 PRÓXIMOS PASOS RECOMENDADOS:"
   echo "   1. Explora ArgoCD UI: http://localhost:30080"
-  echo "   2. Configura Kargo pipelines: http://localhost:30094"
-  echo "   3. Revisa métricas: http://localhost:30093 (Grafana)"
+  echo "   2. Configura Kargo pipelines: http://localhost:30085"
+  echo "   3. Revisa métricas: http://localhost:30082 (Grafana)"
   echo "   4. Edita manifests y usa: ./scripts/sync-to-gitea.sh"
   echo ""
   echo "📚 DOCUMENTACIÓN:"
