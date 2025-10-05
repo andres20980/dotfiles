@@ -1,0 +1,182 @@
+---
+# Aplicaciones GitOps con UI - configuradas individualmente para incluir external-url
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dashboard
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30086
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'dashboard'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'dashboard'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30082
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'grafana'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'grafana'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30081
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'prometheus'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'prometheus'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kargo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30085
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'kargo'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'kargo'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30084
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'argo-rollouts'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'argo-rollouts'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30089
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'argo-workflows'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'argo-workflows'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: registry
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30087
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    targetRevision: HEAD
+    path: 'registry'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'registry'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true

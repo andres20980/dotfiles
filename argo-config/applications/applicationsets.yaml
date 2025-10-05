@@ -1,9 +1,9 @@
 ---
-# ApplicationSet para GitOps Tools (infraestructura base)
+# ApplicationSet para GitOps Tools sin UI (herramientas que no tienen interfaz web)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: gitops-tools
+  name: gitops-tools-no-ui
   namespace: argocd
 spec:
   generators:
@@ -11,7 +11,10 @@ spec:
       repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
       revision: HEAD
       directories:
-      - path: '*'
+      - path: argo-events
+      - path: argo-image-updater  
+      - path: redis
+      - path: sealed-secrets
   template:
     metadata:
       name: '{{path.basename}}'
