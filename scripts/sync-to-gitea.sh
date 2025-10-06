@@ -17,10 +17,14 @@ sync_subtree() {
   mkdir -p "$temp_dir"
   
   # Clonar repo de Gitea
-  git clone "$remote" "$temp_dir" >/dev/null 2>&1
+  git clone "$remote" "$temp_dir" >/dev/null 2>&1 || {
+    log_error "No se pudo clonar $remote"
+    rm -rf "$temp_dir"
+    return 1
+  }
   
   # Copiar archivos actuales
-  cp -r "$prefix"/* "$temp_dir/"
+  cp -r "$prefix"/* "$temp_dir/" 2>/dev/null || true
   
   # Commit y push
   cd "$temp_dir"
@@ -45,9 +49,9 @@ main() {
     exit 1
   fi
   
-  # Obtener password de Gitea
+  # Obtener password de Gitea (sanitizar saltos de línea)
   local gitea_password
-  gitea_password=$(kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "")
+  gitea_password=$(kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null | tr -d '\n' | tr -d '\r' || echo "")
   
   if [[ -z "$gitea_password" ]]; then
     log_error "No se pudo obtener la contraseña de Gitea. ¿Está el cluster funcionando?"

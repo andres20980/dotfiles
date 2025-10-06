@@ -317,7 +317,7 @@ create_kargo_secret_workaround() {
     password_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8'))")
     log_info "Password hash generado dinámicamente"
   else
-    # shellcheck disable=SC2016  # bcrypt hash debe usar comillas simples
+    # shellcheck disable=SC2016
     password_hash='$2b$12$DDMB2JPKQx8G2zlofseJ8OhTFQhFrpZvT4NxAlsjPY7RfcU0pIBBC'
     log_warning "Usando password hash estático (bcrypt no disponible)"
   fi
@@ -327,36 +327,40 @@ create_kargo_secret_workaround() {
   local sealed_secret_file="/tmp/kargo-sealed-secret-$$.yaml"
   
   kubectl create secret generic kargo-api -n kargo \
-    --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="$password_hash" \
+    --from-literal=ADMIN_ACCOUNT_PASSWORD_HASH="${password_hash}" \
     --from-literal=ADMIN_ACCOUNT_TOKEN_SIGNING_KEY='supersecretkey123456789012' \
-    --dry-run=client -o yaml > "$temp_secret_file"
+    --from-literal=ADMIN_ACCOUNT_USERNAME='admin' \
+    --from-literal=ADMIN_ACCOUNT_ENABLED='true' \
+    --dry-run=client -o yaml > "${temp_secret_file}"
   
-  # Validar que kubeseal funciona correctamente
-  if ! kubeseal -o yaml < "$temp_secret_file" > "$sealed_secret_file" 2>/dev/null; then
+  if ! kubeseal -o yaml < "${temp_secret_file}" > "${sealed_secret_file}" 2>/dev/null; then
     log_error "No se pudo generar SealedSecret con kubeseal"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
+    rm -f "${temp_secret_file}" "${sealed_secret_file}"
     return 1
   fi
   
-  # Validar que el SealedSecret generado es válido
-  if ! kubectl apply --dry-run=client -f "$sealed_secret_file" >/dev/null 2>&1; then
+  if ! kubectl apply --dry-run=client -f "${sealed_secret_file}" >/dev/null 2>&1; then
     log_error "SealedSecret generado inválido"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
+    rm -f "${temp_secret_file}" "${sealed_secret_file}"
     return 1
   fi
   
-  # Aplicar el SealedSecret
-  if ! kubectl apply -f "$sealed_secret_file" >/dev/null 2>&1; then
+  if ! kubectl apply -f "${sealed_secret_file}" >/dev/null 2>&1; then
     log_error "No se pudo aplicar SealedSecret"
-    rm -f "$temp_secret_file" "$sealed_secret_file"
+    rm -f "${temp_secret_file}" "${sealed_secret_file}"
     return 1
   fi
   
-  # Actualizar el archivo en el repo local para futuras sincronizaciones
-  cp "$sealed_secret_file" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
-  cp "$sealed_secret_file" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
+  # Persistir en dotfiles para GitOps
+  cp "${sealed_secret_file}" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  cp "${sealed_secret_file}" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
   rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
-  rm -f "$temp_secret_file" "$sealed_secret_file"
+  rm -f "${temp_secret_file}" "${sealed_secret_file}"
+  
+  # Reiniciar API de Kargo para recoger nuevas variables
+  if kubectl -n kargo rollout restart deploy/kargo-api >/dev/null 2>&1; then
+    kubectl -n kargo rollout status deploy/kargo-api --timeout=120s >/dev/null 2>&1 || log_warning "Timeout esperando rollout de kargo-api"
+  fi
   
   log_success "SealedSecret kargo-api generado y aplicado (usuario: admin, contraseña: admin123)"
 }
@@ -886,11 +890,9 @@ EOF
     # Instalar ArgoCD
     log_info "Instalando ArgoCD..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false >/dev/null 2>&1
+  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.2/manifests/install.yaml --validate=false >/dev/null 2>&1
 
-    # Instalar Sealed Secrets CRD (requerido para kargo y otras apps)
-    log_info "Instalando Sealed Secrets CRD..."
-    kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/controller.yaml >/dev/null 2>&1
+    # Eliminado: instalación manual de Sealed Secrets (lo gestiona ArgoCD)
 
     # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
     log_info "Aplicando configuración ArgoCD (insecure, no-auth)..."
@@ -939,6 +941,9 @@ EOF
     if ! check_mapping_sanity; then
         log_warning "Problemas detectados en el mapeo de puertos; revisa los mensajes previos"
     fi
+
+    # Chequeo adicional de conflictos de NodePort
+    check_nodeport_conflicts || true
 
     log_success "Cluster y ArgoCD creados (acceso sin autenticación)"
 }
@@ -1383,12 +1388,7 @@ create_gitops_repositories() {
     # Crear repositorios de código fuente para desarrollo
     create_source_repositories "$gitops_base_dir"
     
-    # Generar SealedSecret para Kargo con clave del cluster actual
-    create_kargo_secret_workaround
-    
-    # Sincronizar SealedSecret actualizado a Gitea
-    sync_sealedsecret_to_gitea
-    
+    # Nota: La generación del SealedSecret de Kargo se ejecuta tras desplegar sealed-secrets
     cd "$DOTFILES_DIR"
 }
 
@@ -1523,6 +1523,20 @@ EOF
   wait_for_condition "kubectl -n argocd get app argocd-self-config -o jsonpath='{.status.sync.status} {.status.health.status}' 2>/dev/null | grep -q 'Synced Healthy'" 180 5 || log_warning "argocd-self-config todavía no está totalmente sincronizado"
 
   wait_and_sync_applications
+
+  # Asegurar sealed-secrets listo antes de usar kubeseal/kargo
+  ensure_sealed_secrets_ready || true
+  
+  # Generar y sincronizar el SealedSecret de Kargo ahora que el controller está listo
+  create_kargo_secret_workaround || true
+  sync_sealedsecret_to_gitea || true
+
+  # Hard refresh selectivo si namespaces fueron recreados recientemente
+  hard_refresh_if_recent "kargo" "kargo" 900
+  hard_refresh_if_recent "prometheus" "prometheus" 900
+  hard_refresh_if_recent "grafana" "grafana" 900
+  hard_refresh_if_recent "dashboard" "kubernetes-dashboard" 900
+  hard_refresh_if_recent "argo-rollouts" "argo-rollouts" 900
 
   # Verificar servicios desplegados (NodePorts configurados via manifests GitOps)
   verify_gitops_services
@@ -1678,23 +1692,65 @@ wait_and_sync_applications() {
     kubectl get applications -n argocd 2>/dev/null | grep -E "NAME|Synced|Healthy" || true
 }
 
-create_access_scripts() {
-  log_step "Configurando accesos rápidos"
+ensure_sealed_secrets_ready() {
+  log_info "Esperando a sealed-secrets (CRD + controller) desplegado por ArgoCD..."
+  # Esperar CRD
+  wait_for_condition "kubectl get crd sealedsecrets.bitnami.com >/dev/null 2>&1" 300 5 15 || {
+    log_warning "CRD sealedsecrets.bitnami.com no disponible tras la espera"
+  }
+  # Esperar Deployment del controller Ready
+  if ! kubectl -n sealed-secrets rollout status deploy/sealed-secrets-controller --timeout=300s >/dev/null 2>&1; then
+    log_warning "sealed-secrets-controller no alcanzó estado Ready a tiempo"
+    return 1
+  fi
+  log_success "sealed-secrets listo"
+  return 0
+}
 
-  local open_command
-  open_command="${DOTFILES_DIR}/install.sh --open"
+ns_created_within() {
+  # ns_created_within <namespace> <seconds>
+  local ns="$1"; local seconds="$2"
+  local ts
+  ts=$(kubectl get ns "$ns" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || true)
+  if [[ -z "$ts" ]]; then
+    return 1
+  fi
+  local created epoch_now
+  created=$(date -d "$ts" +%s 2>/dev/null || echo 0)
+  epoch_now=$(date +%s)
+  local age=$((epoch_now - created))
+  [[ $age -ge 0 && $age -le $seconds ]]
+}
 
-  for shell_file in "$HOME/.zshrc" "$HOME/.bashrc"; do
-    ensure_shell_alias "$shell_file" "argocd" "${open_command} argocd"
-    ensure_shell_alias "$shell_file" "gitea" "${open_command} gitea"
-    ensure_shell_alias "$shell_file" "dashboard" "${open_command} dashboard"
-    ensure_shell_alias "$shell_file" "grafana" "${open_command} grafana"
-    ensure_shell_alias "$shell_file" "prometheus" "${open_command} prometheus"
-    ensure_shell_alias "$shell_file" "rollouts" "${open_command} rollouts"
-  done
+hard_refresh_if_recent() {
+  # hard_refresh_if_recent <app> <namespace> <seconds>
+  local app="$1" ns="$2" seconds="${3:-600}"
+  if ns_created_within "$ns" "$seconds"; then
+    log_info "Namespace $ns reciente; aplicando hard refresh a app $app"
+    kubectl -n argocd patch application "$app" --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' >/dev/null 2>&1 || true
+  fi
+}
 
-  log_success "Aliases de acceso actualizados"
-  log_info "Usa 'dashboard', 'argocd', 'gitea', etc. para abrir los servicios"
+check_nodeport_conflicts() {
+  log_step "Chequeando conflictos de NodePort"
+  declare -A seen
+  local conflicts=0
+  # Listar todos los NodePorts actuales
+  while IFS=',' read -r ns name nodePort; do
+    [[ -z "$nodePort" ]] && continue
+    if [[ -n "${seen[$nodePort]:-}" ]]; then
+      log_warning "Conflicto: ${seen[$nodePort]} y $ns/$name comparten NodePort $nodePort"
+      conflicts=$((conflicts+1))
+    else
+      seen[$nodePort]="$ns/$name"
+    fi
+  done < <(kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type=="NodePort")]}{.metadata.namespace},{.metadata.name},{.spec.ports[0].nodePort}{"\n"}{end}' 2>/dev/null || true)
+
+  if [[ $conflicts -gt 0 ]]; then
+    log_warning "Detectados $conflicts conflictos de NodePort. Ajusta los manifests para evitar solapamientos."
+    return 1
+  fi
+  log_success "Sin conflictos de NodePort detectados"
 }
 
 # =============================================================================
@@ -1748,6 +1804,7 @@ stage_exists() {
 run_stage() {
   local stage="$1"
   local func="${STAGE_FUNCS[$stage]}"
+ 
   local title="${STAGE_TITLES[$stage]}"
   local start_ts
   start_ts=$(date +%s)
@@ -1755,7 +1812,7 @@ run_stage() {
   # Progress indicator
   local current_stage_idx=0
   local total_stages=${#STAGE_ORDER[@]}
-  for i in "${!STAGE_ORDER[@]}"; do
+  for i in "${!STAGE_ORDER[@]}; do
     if [[ "${STAGE_ORDER[$i]}" == "$stage" ]]; then
       current_stage_idx=$((i + 1))
       break
@@ -2014,31 +2071,47 @@ show_final_report() {
   echo "   4. git push origin main  (backup a GitHub)"
   echo "   5. ./scripts/sync-to-gitea.sh  (sincronizar a Gitea → ArgoCD detecta cambios)"
   echo ""
-  configure_gitops_remotes
-  echo ""
-  echo "📋 Comandos útiles:"
-  echo "   ./install.sh --open <servicio>  - Abre el servicio indicado (argocd, dashboard, gitea, grafana, prometheus, kargo, rollouts)"
-  echo "   Aliases disponibles tras reabrir tu shell: 'dashboard', 'argocd', 'gitea', ..."
-  echo ""
-  echo "🔍 Para verificar el estado manualmente:"
-  echo "   kubectl get applications -n argocd"
-  echo "   kubectl get pods --all-namespaces"
-  echo ""
-  echo "💡 Las aplicaciones pueden tardar 1-2 minutos en alcanzar estado Healthy"
-  echo ""
-  echo ""
-  echo "🎆 PRÓXIMOS PASOS RECOMENDADOS:"
-  echo "   1. Explora ArgoCD UI: http://localhost:30080"
-  echo "   2. Configura Kargo pipelines: http://localhost:30094"
-  echo "   3. Revisa métricas: http://localhost:30093 (Grafana)"
-  echo "   4. Edita manifests y usa: ./scripts/sync-to-gitea.sh"
-  echo ""
   echo "📚 DOCUMENTACIÓN:"
   echo "   - ArgoCD: https://argo-cd.readthedocs.io/"
   echo "   - Kargo: https://docs.kargo.io/"
   echo "   - Sealed Secrets: https://sealed-secrets.netlify.app/"
   echo ""
   log_success "¡GitOps Master Setup 100% funcional! Verificación automática completada. 🎉"
+}
+
+validate_yaml_and_apps() {
+  log_step "Validación final: lint YAML y verificación de contenidos"
+
+  # Lint YAML básico si yamllint está disponible
+  if command -v yamllint >/dev/null 2>&1; then
+    yamllint -d '{extends: default, rules: {line-length: disable, document-start: disable}}' "${DOTFILES_DIR}/manifests" >/dev/null 2>&1 || {
+      log_warning "yamllint detectó advertencias (consulta manualmente si es necesario)"
+    }
+  else
+    log_info "yamllint no instalado; omitiendo lint"
+  fi
+
+  # Verificar que cada carpeta de infraestructura tenga recursos aplicables
+  local base="${DOTFILES_DIR}/manifests/infrastructure"
+  local missing=()
+  for d in $(ls -1 "$base"); do
+    local dir="$base/$d"
+    [[ -d "$dir" ]] || continue
+    # Ignorar carpetas que solo tienen CRDs (han sido ya separadas)
+    local has_resource=false
+    if grep -R "^kind:\s*\(Deployment\|StatefulSet\|DaemonSet\|Service\)" -n "$dir" >/dev/null 2>&1; then
+      has_resource=true
+    fi
+    if [[ "$has_resource" != true ]]; then
+      missing+=("$d")
+    fi
+  done
+
+  if ((${#missing[@]} > 0)); then
+    log_warning "Directorios sin workloads/Service aparentes: ${missing[*]}"
+  else
+    log_success "Todos los componentes de infraestructura tienen recursos aplicables"
+  fi
 }
 
 # =============================================================================

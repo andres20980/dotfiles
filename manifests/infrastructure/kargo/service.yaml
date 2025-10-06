@@ -1,0 +1,21 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kargo-api
+  namespace: kargo
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: api
+  annotations:
+    link.argocd.argoproj.io/external-link: http://localhost:30085
+spec:
+  type: NodePort
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+    nodePort: 30085
+  selector:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: api

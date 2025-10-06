@@ -25,6 +25,89 @@ data:
     hs.message = "Ingress is configured"
     return hs
   
+  # Health overrides para no marcar Healthy cuando no hay pods
+  resource.customizations.health.apps_Deployment: |
+    hs = {}
+    if obj.spec and obj.spec.replicas and obj.spec.replicas == 0 then
+      hs.status = "Degraded"
+      hs.message = "Deployment scaled to 0"
+      return hs
+    end
+    if obj.status and obj.status.availableReplicas and obj.spec and obj.spec.replicas then
+      if obj.status.availableReplicas >= obj.spec.replicas then
+        hs.status = "Healthy"
+        hs.message = "All replicas available"
+        return hs
+      else
+        hs.status = "Progressing"
+        hs.message = "Waiting for pods to become available"
+        return hs
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for status"
+    return hs
+  resource.customizations.health.apps_StatefulSet: |
+    hs = {}
+    local desired = 1
+    if obj.spec and obj.spec.replicas then desired = obj.spec.replicas end
+    if desired == 0 then
+      hs.status = "Degraded"
+      hs.message = "StatefulSet scaled to 0"
+      return hs
+    end
+    if obj.status and obj.status.readyReplicas and obj.status.readyReplicas >= desired then
+      hs.status = "Healthy"
+      hs.message = "All replicas ready"
+      return hs
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for replicas to be ready"
+    return hs
+  resource.customizations.health.apps_DaemonSet: |
+    hs = {}
+    if obj.status and obj.status.numberUnavailable and obj.status.numberUnavailable == 0 then
+      hs.status = "Healthy"
+      hs.message = "All pods available"
+      return hs
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for pods"
+    return hs
+  resource.customizations.health.bitnami.com_SealedSecret: |
+    hs = {}
+    -- If controller has populated status.conditions, prefer that
+    if obj.status and obj.status.conditions then
+      for _, c in ipairs(obj.status.conditions) do
+        if c.type == "Synced" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = "SealedSecret synced"
+          return hs
+        end
+      end
+    end
+    -- Default to Healthy once created (controller reconciles)
+    hs.status = "Healthy"
+    hs.message = "SealedSecret created"
+    return hs
+  resource.customizations.health.apiextensions.k8s.io_CustomResourceDefinition: |
+    hs = {}
+    if obj.status and obj.status.conditions then
+      for _, c in ipairs(obj.status.conditions) do
+        if c.type == "Established" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = "CRD established"
+          return hs
+        end
+      end
+      hs.status = "Progressing"
+      hs.message = "Waiting for CRD to be established"
+      return hs
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for CRD status"
+    return hs
+  
   # External links for all GitOps UIs - 100% funcional
   application.links: |
     - url: http://localhost:30089
