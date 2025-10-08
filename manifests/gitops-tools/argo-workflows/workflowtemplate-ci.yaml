@@ -1,0 +1,77 @@
+---
+# WorkflowTemplate: Git Clone (reutilizable, sin inputs)
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: git-clone-template
+  namespace: argo-workflows
+spec:
+  templates:
+  - name: clone
+    container:
+      image: alpine/git:latest
+      command: [sh, /scripts/git-clone.sh]
+      env:
+      - name: REPO_URL
+        value: "{{workflow.parameters.repo-url}}"
+      - name: BRANCH
+        value: "{{workflow.parameters.branch}}"
+      - name: COMMIT_SHA
+        value: "{{workflow.parameters.commit-sha}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: ci-scripts
+        mountPath: /scripts
+
+---
+# WorkflowTemplate: Docker Build & Push con Kaniko
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: docker-build-template
+  namespace: argo-workflows
+spec:
+  templates:
+  - name: build
+    container:
+      image: gcr.io/kaniko-project/executor:latest
+      command: [sh, /scripts/docker-build-push.sh]
+      env:
+      - name: IMAGE_REGISTRY
+        value: "{{workflow.parameters.image-registry}}"
+      - name: IMAGE_NAME
+        value: "{{workflow.parameters.image-name}}"
+      - name: COMMIT_SHA
+        value: "{{workflow.parameters.commit-sha}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: ci-scripts
+        mountPath: /scripts
+
+---
+# WorkflowTemplate: Update K8s Manifests
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: update-manifests-template
+  namespace: argo-workflows
+spec:
+  templates:
+  - name: update
+    container:
+      image: alpine/git:latest
+      command: [sh, /scripts/update-manifests.sh]
+      env:
+      - name: IMAGE_REGISTRY
+        value: "{{workflow.parameters.image-registry}}"
+      - name: IMAGE_NAME
+        value: "{{workflow.parameters.image-name}}"
+      - name: COMMIT_SHA
+        value: "{{workflow.parameters.commit-sha}}"
+      volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+      - name: ci-scripts
+        mountPath: /scripts

@@ -2231,6 +2231,62 @@ EOF
 
   # Verificar servicios desplegados (NodePorts configurados via manifests GitOps)
   verify_gitops_services
+  
+  # Aplicar fixes críticos post-instalación
+  apply_critical_fixes
+}
+
+apply_critical_fixes() {
+  log_info "🔧 Aplicando fixes críticos para Argo Workflows + Events..."
+  
+  # FIX 1: ClusterRoleBinding para workflow-controller (necesario para WorkflowTemplates)
+  log_info "📋 Creando ClusterRoleBinding para workflow-controller..."
+  if ! kubectl get clusterrolebinding argo-workflow-controller-binding >/dev/null 2>&1; then
+    kubectl create clusterrolebinding argo-workflow-controller-binding \
+      --clusterrole=argo-cluster-role \
+      --serviceaccount=argo-workflows:argo >/dev/null 2>&1 && \
+      log_success "  ✅ ClusterRoleBinding creado (permite leer WorkflowTemplates)" || \
+      log_warning "  ⚠️  No se pudo crear ClusterRoleBinding"
+  else
+    log_info "  ✅ ClusterRoleBinding ya existe"
+  fi
+  
+  # FIX 2: Parche para Sensor (workaround bug Argo Events v1.9.7)
+  log_info "🔨 Aplicando workaround RBAC para Argo Events Sensor..."
+  
+  # Esperar a que el sensor esté desplegado
+  local sensor_ready=false
+  for i in {1..30}; do
+    if kubectl get sensor gitea-workflow-trigger -n argo-events >/dev/null 2>&1; then
+      sensor_ready=true
+      break
+    fi
+    sleep 2
+  done
+  
+  if [[ "$sensor_ready" == true ]]; then
+    sleep 5  # Dar tiempo a que se cree el deployment
+    
+    # Obtener nombre del deployment generado por el sensor
+    local sensor_deployment
+    sensor_deployment=$(kubectl get deployment -n argo-events --no-headers 2>/dev/null | \
+      grep gitea-workflow-trigger-sensor | awk '{print $1}' | head -1)
+    
+    if [[ -n "$sensor_deployment" ]]; then
+      log_info "  Parcheando deployment: $sensor_deployment"
+      kubectl patch deployment "$sensor_deployment" -n argo-events \
+        -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sensor-sa"}}}}' \
+        >/dev/null 2>&1 && \
+        log_success "  ✅ ServiceAccount inyectado en sensor deployment" || \
+        log_warning "  ⚠️  No se pudo parchear sensor deployment"
+    else
+      log_warning "  ⚠️  No se encontró deployment del sensor (se creará cuando se sincronice)"
+    fi
+  else
+    log_warning "  ⚠️  Sensor no encontrado (se aplicará cuando ArgoCD lo sincronice)"
+  fi
+  
+  log_success "🎯 Fixes críticos aplicados"
 }
 
 verify_gitops_services() {

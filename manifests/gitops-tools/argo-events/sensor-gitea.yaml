@@ -1,0 +1,114 @@
+---
+# Sensor to trigger Argo Workflow on Gitea push events
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: gitea-workflow-trigger
+  namespace: argo-events
+spec:
+  # EventBus connection
+  eventBusName: default
+  
+  # ServiceAccount with permissions to create Workflows
+  serviceAccountName: argo-events-sensor-sa
+  
+  # Dependencies: what events to listen for
+  dependencies:
+    - name: gitea-push
+      eventSourceName: gitea-webhook
+      eventName: demo-app
+      
+      # Filters to apply to the event
+      filters:
+        data:
+          # Only trigger on push events (not PR, etc)
+          - path: header.X-Gitea-Event.0
+            type: string
+            value:
+              - push
+          
+          # Only trigger on main branch
+          - path: body.ref
+            type: string
+            value:
+              - refs/heads/main
+  
+  # Triggers: what to do when event matches
+  triggers:
+    - template:
+        name: demo-app-ci-trigger
+        k8s:
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: demo-app-ci-
+                namespace: argo-workflows
+                labels:
+                  app: demo-app
+                  workflows.argoproj.io/controller-instanceid: default
+                  triggered-by: argo-events
+              spec:
+                # Service account with permissions to push to registry
+                serviceAccountName: argo-workflow-sa
+                
+                # Workflow entry point
+                entrypoint: ci-pipeline
+                
+                # Arguments from webhook payload
+                arguments:
+                  parameters:
+                    - name: repo-url
+                      value: http://gitea.gitea.svc.cluster.local:3000/gitops/demo-app.git
+                    - name: branch
+                      value: main
+                    - name: commit-sha
+                      # Extract from webhook payload
+                      value: "unknown"
+                    - name: image-registry
+                      value: localhost:30087
+                    - name: image-name
+                      value: demo-app
+                
+                # Volumes: ConfigMap with scripts + workspace PVC
+                volumes:
+                  - name: ci-scripts
+                    configMap:
+                      name: ci-scripts
+                      defaultMode: 0755
+                
+                # Volume claims for workspace
+                volumeClaimTemplates:
+                  - metadata:
+                      name: workspace
+                    spec:
+                      accessModes: ["ReadWriteOnce"]
+                      resources:
+                        requests:
+                          storage: 1Gi
+                
+                # Workflow templates usando templateRef (sin arguments redundantes)
+                templates:
+                  - name: ci-pipeline
+                    steps:
+                      - - name: checkout
+                          templateRef:
+                            name: git-clone-template
+                            template: clone
+                      - - name: build-and-push
+                          templateRef:
+                            name: docker-build-template
+                            template: build
+                      - - name: update-manifests
+                          templateRef:
+                            name: update-manifests-template
+                            template: update
+          
+          # Parameter bindings from webhook payload
+          parameters:
+            - src:
+                dependencyName: gitea-push
+                dataKey: body.after
+              dest: spec.arguments.parameters.2.value  # commit-sha
