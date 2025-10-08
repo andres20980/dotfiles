@@ -123,10 +123,11 @@ Si tu herramienta requiere credenciales sensibles:
 ### 1. Crea el Secret en formato YAML
 
 ```bash
+# ⚠️ Usa un password real generado con: openssl rand -base64 32
 kubectl create secret generic my-tool-credentials \
   --namespace=my-new-tool \
   --from-literal=username=admin \
-  --from-literal=password=supersecret123 \
+  --from-literal=password='YOUR_SECURE_PASSWORD_HERE' \
   --dry-run=client -o yaml > secret.yaml
 ```
 
