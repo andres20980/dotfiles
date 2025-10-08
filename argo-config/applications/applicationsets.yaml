@@ -8,7 +8,7 @@ metadata:
 spec:
   generators:
   - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
+      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
       revision: HEAD
       directories:
       - path: argo-events
@@ -21,7 +21,7 @@ spec:
     spec:
       project: gitops-tools
       source:
-        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
         targetRevision: HEAD
         path: '{{path}}'
       destination:

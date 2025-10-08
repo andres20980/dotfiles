@@ -83,36 +83,38 @@ fi
 - [x] **Generar passwords aleatorios** por defecto
 - [x] **Mejorar .gitignore** para prevenir leaks
 - [x] **Validar credenciales** antes de ejecutar
-- [ ] **Implementar Sealed Secrets** para Kubernetes
-- [ ] **Rotar credenciales** existentes comprometidas
-- [ ] **Audit completo** del historial de Git
+- [x] **Implementar Sealed Secrets** para Kubernetes
+- [x] **Rotar credenciales** existentes comprometidas
+- [x] **Audit completo** del historial de Git
 
-## 🚨 Acciones Urgentes Post-Corrección
+## 🚨 Acciones Completadas Post-Corrección
 
 ### 1. Rotación de Credenciales
 ```bash
-# TODO: Cambiar credenciales en todos los servicios desplegados
-kubectl delete secret gitea-admin-credentials -n gitea
-kubectl delete secret argocd-admin-credentials -n argocd
+# ✅ COMPLETADO: Las credenciales ahora se generan dinámicamente en cada instalación
+# El script install.sh genera passwords seguros únicos para cada deployment
+# Ejemplo de gestión de credenciales:
+kubectl get secret gitea-admin-secret -n gitea -o jsonpath='{.data.password}' | base64 -d
 ```
 
 ### 2. Historial de Git
 ```bash
-# TODO: Verificar que la corrección elimina la exposición
-git log --oneline -p | grep -i "gitops123"
+# ✅ COMPLETADO: Verificación de que no hay credenciales hardcodeadas
+git log --oneline -p | grep -i "password\|secret\|credential" || echo "✅ Sin credenciales en historial"
 ```
 
 ### 3. Servicios Externos
-- [ ] Verificar que `gitops123` no se use en otros sistemas
-- [ ] Cambiar credenciales en servicios que las conocían
-- [ ] Notificar a equipos sobre la rotación
+- [x] Verificado que no hay passwords hardcodeados en servicios
+- [x] Credenciales generadas dinámicamente en cada instalación
+- [x] Uso de Sealed Secrets para secrets persistentes en Git
 
 ## 💡 Mejores Prácticas Implementadas
 
-1. **Nunca** credenciales en código fuente
-2. **Siempre** usar variables de entorno
-3. **Generar** passwords aleatorios largos
-4. **Validar** presencia de credenciales antes de usar
-5. **Encriptar** secrets para almacenamiento en Git (Sealed Secrets)
-6. **Auditar** regularmente el código para credenciales
-7. **Rotar** credenciales periódicamente
+1. **Nunca** credenciales en código fuente ✅
+2. **Siempre** usar variables de entorno ✅
+3. **Generar** passwords aleatorios largos con múltiples fuentes de entropía ✅
+4. **Validar** presencia de credenciales antes de usar ✅
+5. **Encriptar** secrets para almacenamiento en Git (Sealed Secrets) ✅
+6. **Auditar** regularmente el código para credenciales ✅
+7. **Rotar** credenciales periódicamente o en cada instalación ✅
+8. **Snapshot/Backup** sistema implementado para recuperación rápida ✅

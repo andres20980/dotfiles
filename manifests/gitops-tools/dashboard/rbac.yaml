@@ -63,9 +63,7 @@ subjects:
   - kind: ServiceAccount
     name: kubernetes-dashboard
     namespace: dashboard
-
 ---
-# Optional: grant cluster-admin to kubernetes-dashboard SA to allow full view when using skip-login
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

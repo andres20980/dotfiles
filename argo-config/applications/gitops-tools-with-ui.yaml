@@ -10,7 +10,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'dashboard'
   destination:
@@ -42,7 +42,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'grafana'
   destination:
@@ -74,7 +74,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'prometheus'
   destination:
@@ -106,7 +106,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'kargo'
   destination:
@@ -138,7 +138,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'argo-rollouts'
   destination:
@@ -170,7 +170,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'argo-workflows'
   destination:
@@ -202,7 +202,7 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
     targetRevision: HEAD
     path: 'registry'
   destination:

@@ -1,83 +1,201 @@
-# 🙈 Archivos a ignorar
+# 🙈 GitOps Master Setup - Archivos a ignorar
 
-# � SEGURIDAD - Credenciales y secrets
+# =============================================================================
+# 🔐 SEGURIDAD - Credenciales y secrets
+# =============================================================================
 .env
 .env.*
+!.env.example
 *credentials*
 *secrets*
 *.key
 *.pem
 *.p12
 *.pfx
-/tmp/.gitops-*
 sealed-secrets-manifests/
 *-secret.yaml
 !sealed-*-secret.yaml
 
-# �🔧 Sistema y logs
-*.log
-*.tmp
-.DS_Store
-Thumbs.db
+# Archivos temporales de instalación
+/tmp/.gitops-*
+.gitops-temp/
 
-# 🐳 Docker
+# =============================================================================
+# 🐳 DOCKER Y CONTAINERS
+# =============================================================================
 .dockerignore
 docker-compose.override.yml
+*.dockerfile.bak
 
-# 🔑 Credenciales y secretos
-*.key
-*.pem
-*.p12
-.env
-.env.local
-.env.*.local
-secrets/
-.secrets/
-
-# 💻 IDEs y editores
+# =============================================================================
+# � IDEs Y EDITORES
+# =============================================================================
+# VS Code
 .vscode/
+*.code-workspace
+
+# JetBrains IDEs (IntelliJ, PyCharm, etc.)
 .idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
 *~
+.*.sw?
 
-# 🗂️ Archivos temporales del sistema
+# Emacs
+*~
+\#*\#
+.\#*
+
+# =============================================================================
+# 🗂️ ARCHIVOS TEMPORALES DEL SISTEMA
+# =============================================================================
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
-Thumbs.db
+.AppleDouble
+.LSOverride
 
-# 📦 Node.js (si hay apps JS futuras)
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# =============================================================================
+# 📦 DEPENDENCIAS Y BUILD
+# =============================================================================
+# Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json
+yarn.lock
+.npm
+.yarn
 
-# 🐍 Python (si hay scripts Python futuros)
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .pytest_cache/
+.tox/
+.coverage
+htmlcov/
 
-# 🚀 GitOps específico
+# Go
+vendor/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# =============================================================================
+# 🚀 GITOPS Y KUBERNETES
+# =============================================================================
+# ArgoCD
 .argocd/
+argocd-admin-password.txt
+
+# Kubectl
 .kubectl_cache/
 kubeconfig*
 !config/kind-config.yaml
+*.kubeconfig
 
-# 📊 Datos temporales
+# Helm
+.helm/
+charts/*.tgz
+
+# Kustomize
+kustomization.yaml.bak
+
+# =============================================================================
+# 📊 DATOS Y LOGS
+# =============================================================================
+*.log
+*.tmp
+*.bak
+*.backup
+*.old
 data/
 logs/
 tmp/
 test-*-local.*
 
-# ArgoCD admin password (if stored locally)
-argocd-admin-password.txt
+# Snapshots del cluster
+.gitops-snapshots/
 
-# Kubernetes context backup
-kubeconfig.backup
+# Métricas y debug
+/tmp/gitops-metrics/
+/tmp/gitops-debug*/
+/tmp/install-*.log
+
+# =============================================================================
+# 🏗️ REPOSITORIOS GITOPS LOCALES
+# =============================================================================
+# Los repos se crean en ~/gitops-repos durante la instalación
+# No queremos trackearlos aquí
+gitops-repos/
+
+# =============================================================================
+# 📝 CONFIGURACIÓN PERSONAL (no compartir)
+# =============================================================================
+# Config personalizado del usuario (gitignoreado para no sobreescribir)
+config.local.env
+.personal/
+
+# Shell config files (deberían estar en dotfiles del usuario, no aquí)
+.zshrc.local
+.bashrc.local
+
+# =============================================================================
+# ⚙️ MISC
+# =============================================================================
+# Archivos de respaldo de editores
+*.orig
+*.rej
+*.bk
+
+# Archivos de sistema
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+
+# Certificados temporales
+*.crt.temp
+*.csr

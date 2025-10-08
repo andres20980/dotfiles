@@ -40,6 +40,27 @@ spec:
             name: kargo-api
         - secretRef:
             name: kargo-api
+        env:
+        - name: KARGO_API_ADMIN_ACCOUNT_PASSWORD_HASH
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_PASSWORD_HASH
+        - name: KARGO_API_ADMIN_ACCOUNT_TOKEN_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_TOKEN_SIGNING_KEY
+        - name: KARGO_API_ADMIN_ACCOUNT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_USERNAME
+        - name: KARGO_API_ADMIN_ACCOUNT_ENABLED
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_ENABLED
         livenessProbe:
           httpGet:
             path: /healthz

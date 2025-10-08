@@ -1,9 +1,4 @@
 # Redis for Kargo and other apps - 100% working
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: redis
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

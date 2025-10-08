@@ -8,8 +8,9 @@ metadata:
     argocd.argoproj.io/secret-type: repository
 type: Opaque
 stringData:
+  name: gitops-gitops-tools
   type: git
-  url: http://gitea.gitea.svc.cluster.local:3000/gitops/infrastructure.git
+  url: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
 ---
 apiVersion: v1
 kind: Secret

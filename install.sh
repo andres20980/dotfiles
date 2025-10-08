@@ -15,17 +15,25 @@ set -euo pipefail
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export DEBIAN_FRONTEND=noninteractive
+
+# Cargar configuración externa PRIMERO (antes de marcar variables como readonly)
+if [[ -f "${SCRIPT_DIR}/config.env" ]]; then
+  # shellcheck source=config.env
+  source "${SCRIPT_DIR}/config.env"
+fi
+
+# Declarar constantes después de cargar config.env (con valores por defecto)
 readonly SCRIPT_DIR
-readonly DOTFILES_DIR="$SCRIPT_DIR"
-readonly CLUSTER_NAME="mini-cluster"
-readonly GITEA_NAMESPACE="gitea"
-readonly BASE_DIR="$SCRIPT_DIR"
+readonly DOTFILES_DIR="${DOTFILES_DIR:-$SCRIPT_DIR}"
+readonly CLUSTER_NAME="${CLUSTER_NAME:-gitops-local}"
+readonly GITEA_NAMESPACE="${GITEA_NAMESPACE:-gitea}"
+readonly BASE_DIR="${BASE_DIR:-$SCRIPT_DIR}"
 readonly SKIP_CLEANUP_ON_ERROR="${SKIP_CLEANUP_ON_ERROR:-false}"
 
 # Controla si se gestionan aplicaciones personalizadas (demo-api, etc.)
-# Por defecto habilitado para una experiencia de demo completa (puedes deshabilitar
-# exportando ENABLE_CUSTOM_APPS=false antes de ejecutar).
-ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-true}"
+ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
 readonly ENABLE_CUSTOM_APPS
 
 # Variables de configuración adicionales
@@ -33,11 +41,77 @@ readonly INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-1800}" # 30 minutos por defecto
 readonly VERBOSE_LOGGING="${VERBOSE_LOGGING:-false}"
 readonly SKIP_SYSTEM_CHECK="${SKIP_SYSTEM_CHECK:-false}"
 
-export DEBIAN_FRONTEND=noninteractive
+# Activar modo debug si está configurado
+if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
+  set -x  # Activar xtrace para debugging completo
+  export VERBOSE_LOGGING=true
+  echo "🐛 Modo DEBUG activado"
+fi
 
 # =============================================================================
 # FUNCIONES DE UTILIDAD
 # =============================================================================
+
+# Capturar estado del cluster para debugging
+capture_cluster_state() {
+  local output_dir="${DEBUG_LOG_DIR:-/tmp/gitops-debug}-$(date +%s)"
+  mkdir -p "$output_dir"
+  
+  log_info "📸 Capturando estado del cluster en $output_dir..."
+  
+  # Información general del cluster
+  {
+    echo "=== CLUSTER INFO ==="
+    kubectl version --short 2>&1 || echo "kubectl version failed"
+    echo ""
+    echo "=== NODES ==="
+    kubectl get nodes -o wide 2>&1 || echo "get nodes failed"
+    echo ""
+    echo "=== NAMESPACES ==="
+    kubectl get namespaces 2>&1 || echo "get namespaces failed"
+  } > "$output_dir/cluster-info.txt" 2>&1
+  
+  # Pods de todos los namespaces
+  kubectl get pods -A -o wide > "$output_dir/pods.txt" 2>&1 || true
+  
+  # Eventos recientes ordenados
+  kubectl get events -A --sort-by='.lastTimestamp' > "$output_dir/events.txt" 2>&1 || true
+  
+  # Estado de aplicaciones ArgoCD
+  kubectl get applications -n argocd -o yaml > "$output_dir/argocd-applications.yaml" 2>&1 || true
+  kubectl get applications -n argocd -o wide > "$output_dir/argocd-apps-status.txt" 2>&1 || true
+  
+  # Logs de componentes críticos
+  if kubectl get namespace argocd >/dev/null 2>&1; then
+    kubectl logs -n argocd deployment/argocd-server --tail=100 > "$output_dir/argocd-server.log" 2>&1 || true
+    kubectl logs -n argocd deployment/argocd-application-controller --tail=100 > "$output_dir/argocd-controller.log" 2>&1 || true
+    kubectl logs -n argocd deployment/argocd-repo-server --tail=100 > "$output_dir/argocd-repo-server.log" 2>&1 || true
+  fi
+  
+  if kubectl get namespace gitea >/dev/null 2>&1; then
+    kubectl logs -n gitea deployment/gitea --tail=100 > "$output_dir/gitea.log" 2>&1 || true
+  fi
+  
+  # Services y endpoints
+  kubectl get svc -A -o wide > "$output_dir/services.txt" 2>&1 || true
+  kubectl get endpoints -A > "$output_dir/endpoints.txt" 2>&1 || true
+  
+  # ConfigMaps y Secrets (solo nombres, no contenido sensible)
+  kubectl get configmaps -A > "$output_dir/configmaps-list.txt" 2>&1 || true
+  kubectl get secrets -A > "$output_dir/secrets-list.txt" 2>&1 || true
+  
+  # Estado de Docker y kind
+  {
+    echo "=== DOCKER INFO ==="
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>&1 || echo "docker ps failed"
+    echo ""
+    echo "=== KIND CLUSTERS ==="
+    kind get clusters 2>&1 || echo "kind get clusters failed"
+  } > "$output_dir/docker-kind.txt" 2>&1
+  
+  log_success "Estado capturado en: $output_dir"
+  echo "$output_dir"
+}
 
 # Limpieza en caso de error crítico
 cleanup_on_error() {
@@ -46,6 +120,14 @@ cleanup_on_error() {
         log_error "Instalación interrumpida con código de salida: $exit_code"
 
     rm -rf /tmp/gitops-sync-* /tmp/kargo-sealed-secret.yaml /tmp/kubeseal 2>/dev/null || true
+
+    # Capturar estado del cluster para debugging si está habilitado
+    if [[ "${CAPTURE_STATE_ON_ERROR:-true}" == "true" ]]; then
+      local debug_dir
+      debug_dir=$(capture_cluster_state)
+      log_error "📋 Debug info guardado en: $debug_dir"
+      log_info "💡 Revisa los logs para diagnosticar el problema"
+    fi
 
     if [[ "$SKIP_CLEANUP_ON_ERROR" == "true" ]]; then
       log_warning "SKIP_CLEANUP_ON_ERROR=true: se preserva el cluster kind para diagnóstico manual"
@@ -257,8 +339,8 @@ install_kubeseal() {
   fi
   
   log_info "Instalando kubeseal CLI..."
-  local kubeseal_version="v0.27.1"
-  local kubeseal_url="https://github.com/bitnami-labs/sealed-secrets/releases/download/${kubeseal_version}/kubeseal-0.27.1-linux-amd64.tar.gz"
+  local kubeseal_version="${KUBESEAL_VERSION:-v0.32.2}"
+  local kubeseal_url="https://github.com/bitnami-labs/sealed-secrets/releases/download/${kubeseal_version}/kubeseal-0.32.2-linux-amd64.tar.gz"
   
   # Retry lógic para descarga con verificación
   local max_retries=3
@@ -352,9 +434,9 @@ create_kargo_secret_workaround() {
   fi
   
   # Persistir en dotfiles para GitOps
-  cp "${sealed_secret_file}" "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml"
+  cp "${sealed_secret_file}" "$DOTFILES_DIR/manifests/gitops-tools/kargo/sealed-secret.yaml"
   cp "${sealed_secret_file}" /tmp/kargo-sealed-secret.yaml 2>/dev/null || true
-  rm -f "$DOTFILES_DIR/manifests/infrastructure/kargo/secret.yaml" 2>/dev/null || true
+  rm -f "$DOTFILES_DIR/manifests/gitops-tools/kargo/secret.yaml" 2>/dev/null || true
   rm -f "${temp_secret_file}" "${sealed_secret_file}"
   
   # Reiniciar API de Kargo para recoger nuevas variables
@@ -369,14 +451,14 @@ sync_sealedsecret_to_gitea() {
   log_info "Sincronizando SealedSecret actualizado a Gitea..."
   
   # Verificar que el archivo exista
-  if [[ ! -f "$DOTFILES_DIR/manifests/infrastructure/kargo/sealed-secret.yaml" ]]; then
+  if [[ ! -f "$DOTFILES_DIR/manifests/gitops-tools/kargo/sealed-secret.yaml" ]]; then
     log_warning "SealedSecret no encontrado, saltando sincronización"
     return 0
   fi
   
   # Push directo del directorio infrastructure actualizado
   (
-    cd "$DOTFILES_DIR/manifests/infrastructure" || exit 1
+    cd "$DOTFILES_DIR/manifests/gitops-tools" || exit 1
     git add kargo/sealed-secret.yaml
     git commit -m "feat: update kargo SealedSecret with cluster key" >/dev/null 2>&1 || true
     git remote remove gitea 2>/dev/null || true
@@ -594,6 +676,305 @@ PY
   done
 }
 
+# Verificar y actualizar versiones de GitOps tools desde GitHub
+check_and_update_versions() {
+  log_info "🔍 Verificando últimas versiones de GitOps tools..."
+  
+  # Verificar dependencias
+  if ! command -v jq >/dev/null 2>&1; then
+    log_warning "jq no está instalado, usando versiones de config.env"
+    return 0
+  fi
+
+  local config_file="$SCRIPT_DIR/config.env"
+  local temp_file="${config_file}.tmp"
+  cp "$config_file" "$temp_file"
+
+  # Función helper para obtener última versión de GitHub
+  get_latest_github_version() {
+    local repo="$1"
+    local var_name="$2"
+    
+    log_info "   Consultando: $repo"
+    local version
+    version=$(curl -fsSL "https://api.github.com/repos/$repo/releases" 2>/dev/null | \
+              jq -r '.[0].tag_name // empty' 2>/dev/null)
+    
+    if [[ -n "$version" ]]; then
+      log_success "   ✓ $var_name=$version"
+      sed -i "s|^${var_name}=.*|${var_name}=${version}|" "$temp_file"
+    else
+      log_warning "   ⚠ No se pudo obtener versión de $repo"
+    fi
+  }
+
+  # Actualizar todas las versiones
+  echo ""
+  log_info "📦 ArgoCD Stack:"
+  get_latest_github_version "argoproj/argo-cd" "ARGOCD_VERSION"
+  get_latest_github_version "argoproj/argo-rollouts" "ARGO_ROLLOUTS_VERSION"
+  get_latest_github_version "argoproj/argo-workflows" "ARGO_WORKFLOWS_VERSION"
+  get_latest_github_version "argoproj/argo-events" "ARGO_EVENTS_VERSION"
+  get_latest_github_version "argoproj-labs/argocd-image-updater" "ARGO_IMAGE_UPDATER_VERSION"
+
+  echo ""
+  log_info "🔐 Seguridad:"
+  get_latest_github_version "bitnami-labs/sealed-secrets" "KUBESEAL_VERSION"
+
+  echo ""
+  log_info "🚀 Release Management:"
+  get_latest_github_version "akuity/kargo" "KARGO_VERSION"
+
+  echo ""
+  log_info "📊 Observabilidad:"
+  get_latest_github_version "prometheus/prometheus" "PROMETHEUS_VERSION"
+  get_latest_github_version "grafana/grafana" "GRAFANA_VERSION"
+  get_latest_github_version "kubernetes/dashboard" "K8S_DASHBOARD_VERSION"
+
+  echo ""
+  log_info "📦 Infraestructura:"
+  get_latest_github_version "go-gitea/gitea" "GITEA_VERSION"
+  get_latest_github_version "kubernetes-sigs/kind" "KIND_VERSION"
+
+  # Aplicar cambios si hubo actualizaciones
+  if ! diff -q "$config_file" "$temp_file" >/dev/null 2>&1; then
+    mv "$temp_file" "$config_file"
+    log_success "✅ config.env actualizado con las últimas versiones"
+    
+    # Recargar configuración
+    load_config
+  else
+    rm -f "$temp_file"
+    log_info "ℹ️  Todas las versiones ya están actualizadas"
+  fi
+  
+  echo ""
+}
+
+# Generar password seguro con múltiples fuentes de entropía
+generate_secure_password() {
+  local length="${1:-16}"
+  
+  # Prioridad: 1. /dev/urandom, 2. openssl, 3. fallback
+  if [[ -c /dev/urandom ]]; then
+    # Evitar SIGPIPE con || true
+    tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$length" || true
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 "$((length * 2))" | tr -d "=+/\n" | cut -c1-"$length"
+  else
+    # Fallback: usar timestamp + random + hostname
+    local entropy
+    entropy="$(date +%s%N)$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)$(hostname)"
+    echo "$entropy" | sha256sum | cut -c1-"$length"
+  fi
+}
+
+# Crear snapshot del estado del cluster
+create_snapshot() {
+  local snapshot_name="${1:-auto-$(date +%Y%m%d-%H%M%S)}"
+  local snapshot_dir="${SNAPSHOT_DIR:-$HOME/.gitops-snapshots}/$snapshot_name"
+  
+  log_info "📸 Creando snapshot del cluster: $snapshot_name"
+  mkdir -p "$snapshot_dir"
+  
+  # Exportar estado completo del cluster
+  log_info "   Exportando recursos de Kubernetes..."
+  kubectl get all -A -o yaml > "$snapshot_dir/all-resources.yaml" 2>/dev/null || true
+  kubectl get applications -n argocd -o yaml > "$snapshot_dir/argocd-applications.yaml" 2>/dev/null || true
+  kubectl get appprojects -n argocd -o yaml > "$snapshot_dir/argocd-projects.yaml" 2>/dev/null || true
+  kubectl get configmaps -A -o yaml > "$snapshot_dir/configmaps.yaml" 2>/dev/null || true
+  
+  # Información del cluster
+  {
+    echo "Snapshot: $snapshot_name"
+    echo "Fecha: $(date -Iseconds)"
+    echo "Cluster: $CLUSTER_NAME"
+    echo "Kubernetes Version: $(kubectl version --short 2>/dev/null | grep Server || echo 'N/A')"
+    echo ""
+    echo "=== Applications Status ==="
+    kubectl get applications -n argocd -o wide 2>/dev/null || echo "No applications found"
+  } > "$snapshot_dir/snapshot-info.txt"
+  
+  # Backup de repos Gitea via git bundle
+  local gitops_base_dir="${GITOPS_BASE_DIR:-$HOME/gitops-repos}"
+  if [[ -d "$gitops_base_dir" ]]; then
+    log_info "   Respaldando repositorios GitOps..."
+    for repo_path in "$gitops_base_dir"/gitops-*; do
+      if [[ -d "$repo_path/.git" ]]; then
+        local repo_name
+        repo_name=$(basename "$repo_path")
+        git -C "$repo_path" bundle create "$snapshot_dir/${repo_name}.bundle" --all 2>/dev/null || true
+      fi
+    done
+  fi
+  
+  # Crear tarball comprimido del snapshot
+  tar -czf "${snapshot_dir}.tar.gz" -C "$(dirname "$snapshot_dir")" "$(basename "$snapshot_dir")" 2>/dev/null || true
+  
+  log_success "✅ Snapshot creado: ${snapshot_dir}.tar.gz"
+  echo "$snapshot_dir"
+}
+
+# Restaurar desde snapshot
+restore_snapshot() {
+  local snapshot_path="$1"
+  
+  if [[ ! -d "$snapshot_path" && -f "${snapshot_path}.tar.gz" ]]; then
+    log_info "📦 Descomprimiendo snapshot..."
+    tar -xzf "${snapshot_path}.tar.gz" -C "$(dirname "$snapshot_path")" 2>/dev/null || {
+      log_error "No se pudo descomprimir el snapshot"
+      return 1
+    }
+  fi
+  
+  if [[ ! -d "$snapshot_path" ]]; then
+    log_error "Snapshot no encontrado: $snapshot_path"
+    return 1
+  fi
+  
+  log_info "⏮️  Restaurando desde snapshot: $snapshot_path"
+  
+  # Restaurar Applications de ArgoCD
+  if [[ -f "$snapshot_path/argocd-applications.yaml" ]]; then
+    log_info "   Restaurando Applications de ArgoCD..."
+    kubectl apply -f "$snapshot_path/argocd-applications.yaml" >/dev/null 2>&1 || log_warning "Fallo al restaurar applications"
+  fi
+  
+  # Restaurar Projects
+  if [[ -f "$snapshot_path/argocd-projects.yaml" ]]; then
+    log_info "   Restaurando Projects de ArgoCD..."
+    kubectl apply -f "$snapshot_path/argocd-projects.yaml" >/dev/null 2>&1 || log_warning "Fallo al restaurar projects"
+  fi
+  
+  # Forzar hard refresh de todas las apps
+  log_info "   Forzando sincronización de aplicaciones..."
+  kubectl get app -n argocd -o name 2>/dev/null | while read -r app; do
+    kubectl patch "$app" -n argocd \
+      -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' \
+      --type merge >/dev/null 2>&1 || true
+  done
+  
+  log_success "✅ Snapshot restaurado. Verifica el estado con: kubectl get applications -n argocd"
+}
+
+# Ejecutar smoke tests post-instalación
+run_smoke_tests() {
+  log_step "🧪 Ejecutando smoke tests de validación"
+  
+  local tests_passed=0
+  local tests_failed=0
+  local tests_total=0
+  
+  run_test() {
+    local name="$1"
+    local command="$2"
+    local optional="${3:-false}"
+    
+    ((tests_total++))
+    
+    if eval "$command" >/dev/null 2>&1; then
+      log_success "✅ $name"
+      ((tests_passed++))
+      return 0
+    else
+      if [[ "$optional" == "true" ]]; then
+        log_info "⏭️  $name (opcional - omitido)"
+      else
+        log_error "❌ $name"
+        ((tests_failed++))
+      fi
+      return 1
+    fi
+  }
+  
+  # Tests de infraestructura básica
+  log_info "🔧 Tests de infraestructura:"
+  run_test "Cluster kind activo" "kind get clusters 2>/dev/null | grep -q '^${CLUSTER_NAME}$'"
+  run_test "Kubectl responde" "kubectl cluster-info >/dev/null 2>&1"
+  run_test "ArgoCD namespace existe" "kubectl get namespace argocd"
+  run_test "Gitea namespace existe" "kubectl get namespace ${GITEA_NAMESPACE}"
+  
+  # Tests de APIs
+  log_info "🌐 Tests de APIs:"
+  run_test "ArgoCD API responde" "curl -fsS --max-time 5 http://localhost:${ARGOCD_PORT:-30080}/api/version"
+  run_test "Gitea API responde" "curl -fsS --max-time 5 http://localhost:${GITEA_PORT:-30083}/api/v1/version"
+  run_test "Prometheus responde" "curl -fsS --max-time 5 http://localhost:${PROMETHEUS_PORT:-30092}/-/healthy" true
+  run_test "Grafana responde" "curl -fsS --max-time 5 http://localhost:${GRAFANA_PORT:-30093}/api/health" true
+  
+  # Tests de ArgoCD Applications
+  log_info "📦 Tests de ArgoCD Applications:"
+  run_test "Al menos 1 Application existe" "[[ \$(kubectl get app -n argocd --no-headers 2>/dev/null | wc -l) -gt 0 ]]"
+  
+  if command -v jq >/dev/null 2>&1; then
+    run_test "Todas las apps están Synced" "[[ \$(kubectl get app -n argocd -o json 2>/dev/null | jq -r '.items[] | select(.status.sync.status != \"Synced\") | .metadata.name' | wc -l) -eq 0 ]]" true
+    run_test "Todas las apps están Healthy" "[[ \$(kubectl get app -n argocd -o json 2>/dev/null | jq -r '.items[] | select(.status.health.status != \"Healthy\") | .metadata.name' | wc -l) -eq 0 ]]" true
+  fi
+  
+  # Tests de componentes clave
+  log_info "🔐 Tests de componentes de seguridad:"
+  run_test "Sealed Secrets controller Running" "kubectl get pods -n sealed-secrets -o json 2>/dev/null | jq -r '.items[].status.phase' | grep -q Running"
+  run_test "CRD SealedSecrets existe" "kubectl get crd sealedsecrets.bitnami.com"
+  
+  # Resumen final
+  echo ""
+  log_info "📊 Resultados de smoke tests:"
+  log_info "   Total:   $tests_total tests"
+  log_success "   Passed:  $tests_passed ✅"
+  
+  if [[ $tests_failed -gt 0 ]]; then
+    log_error "   Failed:  $tests_failed ❌"
+    log_warning "⚠️  Algunos tests fallaron. Revisa los logs para más detalles."
+    return 1
+  else
+    log_success "🎉 ¡Todos los tests pasaron correctamente!"
+    return 0
+  fi
+}
+
+# Validación de conectividad de red
+check_network_connectivity() {
+  log_info "🌐 Verificando conectividad de red..."
+  
+  local test_urls=(
+    "https://dl.k8s.io/release/stable.txt"
+    "https://get.docker.com"
+    "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+    "https://github.com/bitnami-labs/sealed-secrets/releases"
+  )
+  
+  local failed=()
+  local timeout=10
+  
+  for url in "${test_urls[@]}"; do
+    if ! curl -fsS --max-time "$timeout" --head "$url" >/dev/null 2>&1; then
+      failed+=("$url")
+    fi
+  done
+  
+  if (( ${#failed[@]} > 0 )); then
+    log_warning "⚠️  URLs no accesibles:"
+    for url in "${failed[@]}"; do
+      log_warning "   ❌ $url"
+    done
+    log_warning ""
+    log_warning "La instalación puede fallar por falta de conectividad."
+    log_warning "Verifica tu conexión a Internet o configuración de proxy."
+    
+    if [[ "${CI_MODE:-false}" != "true" ]]; then
+      log_warning ""
+      read -p "¿Deseas continuar de todos modos? (y/N): " -r response
+      if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        log_error "Instalación cancelada por el usuario"
+        exit 1
+      fi
+    fi
+    return 1
+  fi
+  
+  log_success "✅ Conectividad de red verificada"
+  return 0
+}
+
 # Validación de recursos del sistema
 check_system_resources() {
     local min_memory_gb=4
@@ -635,6 +1016,9 @@ validate_prerequisites() {
     log_error "Tu usuario necesita pertenecer al grupo sudo"
     exit 1
   fi
+
+  # Verificar conectividad de red
+  check_network_connectivity || log_warning "Continuando sin verificación completa de conectividad..."
 
   # Verificar recursos del sistema (si no está deshabilitado)
   if [[ "$SKIP_SYSTEM_CHECK" != "true" ]]; then
@@ -706,7 +1090,7 @@ install_system_base() {
 install_docker_and_tools() {
     log_step "Instalando Docker y herramientas Kubernetes"
     
-    # Docker
+    # Docker (debe ir primero y secuencialmente)
   if ! command -v docker >/dev/null 2>&1; then
     log_info "Instalando Docker..."
     curl -fsSL https://get.docker.com -o get-docker.sh
@@ -717,38 +1101,118 @@ install_docker_and_tools() {
     log_info "Docker ya está instalado"
   fi
 
-    # kubectl
-  if ! command -v kubectl >/dev/null 2>&1; then
-    log_info "Instalando kubectl..."
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-    rm kubectl
-  else
-    log_info "kubectl ya está instalado"
-  fi
-
-    # kind
-  if ! command -v kind >/dev/null 2>&1; then
-    log_info "Instalando kind..."
-    if [[ "$(uname -m)" == "x86_64" ]]; then
-      curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-      sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
-      rm kind
+    # Instalación paralela de kubectl, kind y helm (si está habilitado)
+    if [[ "${PARALLEL_INSTALL:-true}" == "true" ]]; then
+      log_info "Instalando herramientas en paralelo..."
+      
+      # Función auxiliar para instalación en background con logging
+      install_tool() {
+        local tool_name="$1"
+        shift
+        if "$@" 2>&1 | tee "/tmp/install-${tool_name}.log" >/dev/null; then
+          log_success "${tool_name} instalado"
+          return 0
+        else
+          log_error "Error instalando ${tool_name}"
+          return 1
+        fi
+      }
+      
+      # kubectl
+      if ! command -v kubectl >/dev/null 2>&1; then
+        (
+          install_tool "kubectl" bash -c '
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            rm kubectl
+          '
+        ) &
+      else
+        log_info "kubectl ya está instalado"
+      fi
+      
+      # kind
+      if ! command -v kind >/dev/null 2>&1; then
+        (
+          install_tool "kind" bash -c '
+            if [[ "$(uname -m)" == "x86_64" ]]; then
+              curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-amd64
+              sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+              rm kind
+            else
+              echo "Arquitectura $(uname -m) no soportada"
+              exit 1
+            fi
+          '
+        ) &
+      else
+        log_info "kind ya está instalado"
+      fi
+      
+      # Helm
+      if ! command -v helm >/dev/null 2>&1; then
+        (
+          install_tool "helm" bash -c '
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          '
+        ) &
+      else
+        log_info "Helm ya está instalado"
+      fi
+      
+      # Esperar a que todas las instalaciones paralelas terminen
+      wait
+      
+      # Verificar que todas las herramientas estén disponibles
+      local tools_ok=true
+      for tool in kubectl kind helm; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+          log_error "$tool no se instaló correctamente"
+          tools_ok=false
+        fi
+      done
+      
+      if [[ "$tools_ok" != "true" ]]; then
+        log_error "Algunas herramientas no se instalaron correctamente"
+        exit 1
+      fi
     else
-      log_error "Arquitectura $(uname -m) no soportada para kind"
-      exit 1
-    fi
-  else
-    log_info "kind ya está instalado"
-  fi
+      # Instalación secuencial (modo legacy)
+      log_info "Instalando herramientas secuencialmente..."
+      
+      # kubectl
+      if ! command -v kubectl >/dev/null 2>&1; then
+        log_info "Instalando kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+        rm kubectl
+      else
+        log_info "kubectl ya está instalado"
+      fi
 
-    # Helm
-  if ! command -v helm >/dev/null 2>&1; then
-    log_info "Instalando Helm..."
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null 2>&1
-  else
-    log_info "Helm ya está instalado"
-  fi
+      # kind
+      if ! command -v kind >/dev/null 2>&1; then
+        log_info "Instalando kind..."
+        if [[ "$(uname -m)" == "x86_64" ]]; then
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-amd64
+          sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+          rm kind
+        else
+          log_error "Arquitectura $(uname -m) no soportada para kind"
+          exit 1
+        fi
+      else
+        log_info "kind ya está instalado"
+      fi
+
+      # Helm
+      if ! command -v helm >/dev/null 2>&1; then
+        log_info "Instalando Helm..."
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null 2>&1
+      else
+        log_info "Helm ya está instalado"
+      fi
+    fi
 
     log_success "Docker y herramientas Kubernetes instaladas"
 }
@@ -887,10 +1351,23 @@ nodes:
     protocol: TCP
 EOF
 
+    # Esperar a que el nodo esté listo antes de continuar
+    log_info "Esperando a que el nodo esté listo..."
+    kubectl wait --for=condition=Ready nodes --all --timeout=120s
+
+    # Esperar a que CoreDNS esté listo (esencial para que funcione el cluster)
+    log_info "Esperando a que CoreDNS esté listo..."
+    kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=120s
+
     # Instalar ArgoCD
-    log_info "Instalando ArgoCD..."
+    log_info "Instalando ArgoCD ${ARGOCD_VERSION:-v3.2.0-rc3}..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.2/manifests/install.yaml --validate=false >/dev/null 2>&1
+    local argocd_version="${ARGOCD_VERSION:-v3.2.0-rc3}"
+    if ! kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${argocd_version}/manifests/install.yaml" --validate=false 2>&1 | tee /tmp/argocd-install.log; then
+        log_error "Error al instalar ArgoCD ${argocd_version}. Ver detalles en /tmp/argocd-install.log"
+        cat /tmp/argocd-install.log
+        exit 1
+    fi
 
     # Eliminado: instalación manual de Sealed Secrets (lo gestiona ArgoCD)
 
@@ -1054,6 +1531,16 @@ build_and_load_images() {
 setup_gitops() {
     log_step "Configurando GitOps completo"
     
+    # Asegurar que kubectl esté configurado para el cluster correcto
+    if ! kubectl config current-context >/dev/null 2>&1; then
+        log_info "Configurando contexto kubectl para cluster kind..."
+        kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || {
+            log_error "No se pudo configurar el contexto de kubectl. ¿Existe el cluster?"
+            kubectl config get-contexts
+            exit 1
+        }
+    fi
+    
     # Generar credenciales automáticamente
   local gitea_password=""
   local existing_secret
@@ -1066,7 +1553,7 @@ setup_gitops() {
   fi
 
   if [[ -z "$gitea_password" ]]; then
-    gitea_password=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
+    gitea_password=$(generate_secure_password 16)
     log_info "Password generado para Gitea: $gitea_password"
   fi
 
@@ -1331,8 +1818,8 @@ create_gitops_repositories() {
     
     # Crear repositorios GitOps
   local repo_definitions=(
-    "infrastructure|$DOTFILES_DIR/manifests/infrastructure|GitOps infrastructure manifests"
-    "applications|$DOTFILES_DIR/manifests/applications|GitOps applications manifests"
+    "gitops-tools|$DOTFILES_DIR/manifests/gitops-tools|GitOps tools manifests"
+    "applications|$DOTFILES_DIR/manifests/custom-apps|GitOps applications manifests"
     "argo-config|$DOTFILES_DIR/argo-config|GitOps ArgoCD configuration"
   )
 
@@ -1812,7 +2299,7 @@ run_stage() {
   # Progress indicator
   local current_stage_idx=0
   local total_stages=${#STAGE_ORDER[@]}
-  for i in "${!STAGE_ORDER[@]}; do
+  for i in "${!STAGE_ORDER[@]}"; do
     if [[ "${STAGE_ORDER[$i]}" == "$stage" ]]; then
       current_stage_idx=$((i + 1))
       break
@@ -1833,19 +2320,56 @@ print_usage() {
   cat <<'EOF'
 Uso: ./install.sh [opciones]
 
-Opciones:
+Opciones de instalación:
   --unattended           Ejecuta todas las fases sin pedir confirmación
   --stage <fase>         Ejecuta solo la fase indicada (ver --list-stages)
   --start-from <fase>    Ejecuta desde la fase indicada hasta el final
-  --open <servicio>      Abre rápidamente la URL de un servicio (argocd, dashboard, gitea, kargo...)
-  --list-stages          Muestra las fases disponibles y termina (si no se especifican fases)
+  --list-stages          Muestra las fases disponibles
+
+Opciones de acceso rápido:
+  --open <servicio>      Abre rápidamente la URL de un servicio
+                         Servicios: argocd, dashboard, gitea, grafana, prometheus, 
+                                   rollouts, kargo
+
+Opciones de snapshot y recuperación:
+  --snapshot [nombre]    Crea un snapshot del estado actual del cluster
+  --restore <path>       Restaura el cluster desde un snapshot
+
+Opciones de ayuda:
   -h, --help             Muestra esta ayuda y termina
 
+Variables de entorno (ver config.env para más):
+  DEBUG_MODE=true        Activa trazas completas de ejecución
+  VERBOSE_LOGGING=true   Muestra logs detallados
+  SKIP_CLEANUP_ON_ERROR=true  Preserva cluster en caso de error
+  ENABLE_CUSTOM_APPS=false    Deshabilita aplicaciones de ejemplo
+  PARALLEL_INSTALL=false      Instala herramientas secuencialmente
+  RUN_SMOKE_TESTS=false       Omite smoke tests automáticos
+
 Ejemplos:
+  # Instalación completa desatendida
+  ./install.sh --unattended
+
+  # Ejecutar solo una fase específica
   ./install.sh --stage gitops
+
+  # Abrir dashboard rápidamente
   ./install.sh --open dashboard
+
+  # Continuar desde una fase
   ./install.sh --start-from gitops --unattended
-  ./install.sh --list-stages
+
+  # Crear snapshot del cluster actual
+  ./install.sh --snapshot mi-backup
+
+  # Restaurar desde un snapshot
+  ./install.sh --restore ~/.gitops-snapshots/mi-backup
+
+  # Modo debug completo
+  DEBUG_MODE=true VERBOSE_LOGGING=true ./install.sh --stage cluster
+
+  # Usar configuración personalizada
+  source config.env && ./install.sh --unattended
 EOF
 }
 
@@ -1911,7 +2435,7 @@ main() {
   log_info "🔄 Sincronizando cambios locales con Gitea..."
   
   # Verificar que estemos en el directorio correcto
-  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/infrastructure" ]]; then
+  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/gitops-tools" ]]; then
     log_error "Ejecutar desde el directorio raíz del proyecto (donde están argo-config/ y manifests/)"
     exit 1
   fi
@@ -1927,7 +2451,7 @@ main() {
   
   # Sincronizar ambos repos
   sync_subtree "argo-config" "http://gitops:${gitea_password}@localhost:30083/gitops/argo-config.git"
-  sync_subtree "manifests/infrastructure" "http://gitops:${gitea_password}@localhost:30083/gitops/infrastructure.git"
+  sync_subtree "manifests/gitops-tools" "http://gitops:${gitea_password}@localhost:30083/gitops/gitops-tools.git"
   
   log_success "🎉 Sincronización completada. ArgoCD detectará los cambios automáticamente."
   log_info "💡 Puedes verificar en: http://localhost:30080"
@@ -2066,7 +2590,7 @@ show_final_report() {
   echo ""
   echo "🔄 Flujo de trabajo recomendado:"
   echo "   1. Trabajar en el repo local clonado de GitHub"
-  echo "   2. Editar manifests (argo-config/, manifests/infrastructure/)"
+  echo "   2. Editar manifests (argo-config/, manifests/gitops-tools/)"
   echo "   3. git commit -m \"feat: nueva funcionalidad\""
   echo "   4. git push origin main  (backup a GitHub)"
   echo "   5. ./scripts/sync-to-gitea.sh  (sincronizar a Gitea → ArgoCD detecta cambios)"
@@ -2092,7 +2616,7 @@ validate_yaml_and_apps() {
   fi
 
   # Verificar que cada carpeta de infraestructura tenga recursos aplicables
-  local base="${DOTFILES_DIR}/manifests/infrastructure"
+  local base="${DOTFILES_DIR}/manifests/gitops-tools"
   local missing=()
   for d in $(ls -1 "$base"); do
     local dir="$base/$d"
@@ -2124,6 +2648,8 @@ main() {
   local start_from=""
   local list_stages=false
   local open_service_name=""
+  local snapshot_cmd=""
+  local snapshot_arg=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -2142,6 +2668,18 @@ main() {
         shift || { log_error "Falta el nombre del servicio tras --open"; exit 1; }
         open_service_name="$1"
         ;;
+      --snapshot)
+        snapshot_cmd="create"
+        shift
+        if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+          snapshot_arg="$1"
+        fi
+        ;;
+      --restore)
+        snapshot_cmd="restore"
+        shift || { log_error "Falta la ruta del snapshot tras --restore"; exit 1; }
+        snapshot_arg="$1"
+        ;;
       --list-stages)
         list_stages=true
         ;;
@@ -2158,6 +2696,24 @@ main() {
     esac
     shift
   done
+
+  # Manejar comandos de snapshot
+  if [[ -n "$snapshot_cmd" ]]; then
+    case "$snapshot_cmd" in
+      create)
+        if [[ -n "$snapshot_arg" ]]; then
+          create_snapshot "$snapshot_arg"
+        else
+          create_snapshot
+        fi
+        exit $?
+        ;;
+      restore)
+        restore_snapshot "$snapshot_arg"
+        exit $?
+        ;;
+    esac
+  fi
 
   if [[ -n "$open_service_name" ]]; then
     if [[ -n "$single_stage" || -n "$start_from" || "$list_stages" == true ]]; then
@@ -2234,6 +2790,12 @@ main() {
     echo "   🤖 MODO DESATENDIDO ACTIVADO - Ejecutando fases seleccionadas..."
   fi
 
+  # ===== VERIFICAR Y ACTUALIZAR VERSIONES =====
+  # Consultar últimas versiones desde GitHub antes de empezar
+  echo ""
+  check_and_update_versions
+  echo ""
+
   local report_needed=false
   for stage in "${stages_to_run[@]}"; do
     run_stage "$stage"
@@ -2245,6 +2807,13 @@ main() {
   done
 
   if [[ "$report_needed" == true ]]; then
+    # Ejecutar smoke tests si está habilitado
+    if [[ "${RUN_SMOKE_TESTS:-true}" == "true" ]]; then
+      echo ""
+      run_smoke_tests || log_warning "Algunos smoke tests fallaron, pero la instalación continuó"
+      echo ""
+    fi
+    
     show_final_report
   else
     echo ""

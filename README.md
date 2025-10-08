@@ -1,428 +1,854 @@
-# 🚀 GitOps Learning Environment - **Excelencia Educativa**# 🚀 Entorno de Desarrollo GitOps Completo
+# 🚀 GitOps Master Setup - Entorno Completo Automatizado# 🚀 GitOps Learning Environment - **Excelencia Educativa**# 🚀 Entorno de Desarrollo GitOps Completo
 
 
 
-[![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-blue.svg)](https://argoproj.github.io/cd/)Este repositorio contiene la configuración automática para crear un **entorno GitOps completo** con Kubernetes, ArgoCD, Gitea y aplicaciones de ejemplo. Todo se instala y configura automáticamente con un solo comando.
+[![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-blue.svg)](https://argoproj.github.io/cd/)
 
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-kind-326ce5.svg)](https://kind.sigs.k8s.io/)
 
-[![Observability](https://img.shields.io/badge/Observability-Prometheus%2BGrafana-orange.svg)](https://prometheus.io/)## 🎯 ¿Qué incluye este entorno?
+[![Observability](https://img.shields.io/badge/Monitoring-Prometheus%2BGrafana-orange.svg)](https://prometheus.io/)[![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-blue.svg)](https://argoproj.github.io/cd/)Este repositorio contiene la configuración automática para crear un **entorno GitOps completo** con Kubernetes, ArgoCD, Gitea y aplicaciones de ejemplo. Todo se instala y configura automáticamente con un solo comando.
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-kind-326ce5.svg)](https://kind.sigs.k8s.io/)
+
+> **Un entorno GitOps completo y listo para producción que se instala en minutos**
+
+[![Observability](https://img.shields.io/badge/Observability-Prometheus%2BGrafana-orange.svg)](https://prometheus.io/)## 🎯 ¿Qué incluye este entorno?
+
+Este repositorio contiene un instalador completamente automatizado para crear un **entorno GitOps** profesional con Kubernetes, ArgoCD, Gitea, monitoreo, y todas las herramientas necesarias para desarrollo y aprendizaje.
+
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+## ✨ Características Principales
+
 ### 🔧 **Herramientas Base:**
 
-> **🎯 El entorno GitOps más simple, limpio y educativo para aprender en local**- ✅ **Docker** - Containerización
+- 🎯 **Instalación Automatizada** - Un solo comando para todo el stack
 
-> - ✅ **kubectl** - Cliente Kubernetes
+- 🔄 **GitOps Nativo** - Todo gestionado declarativamente con ArgoCD> **🎯 El entorno GitOps más simple, limpio y educativo para aprender en local**- ✅ **Docker** - Containerización
 
-> Diseñado siguiendo **best practices** para que novatos puedan entender **cómo funciona GitOps** desde cero con un ecosistema **mínimo pero funcional**.- ✅ **kind** - Kubernetes local en Docker
+- 📊 **Observabilidad Completa** - Prometheus + Grafana incluidos
 
-- ✅ **zsh + Oh My Zsh** - Shell mejorado con plugins
+- 🔐 **Seguridad First** - Sealed Secrets, credenciales seguras, sin hardcoding> - ✅ **kubectl** - Cliente Kubernetes
 
-## 📋 **¿Qué aprenderás?**- ✅ **Git Credential Manager** - Gestión de credenciales
+- 🐳 **100% Local** - No requiere cloud, funciona en tu laptop
 
+- 🔧 **Modular y Extensible** - Activa/desactiva componentes fácilmente> Diseñado siguiendo **best practices** para que novatos puedan entender **cómo funciona GitOps** desde cero con un ecosistema **mínimo pero funcional**.- ✅ **kind** - Kubernetes local en Docker
 
+- 📸 **Snapshots** - Sistema de backup y recuperación integrado
 
-- 🏗️ **Arquitectura GitOps**: Separación clara entre código e infraestructura### 🏗️ **Stack GitOps:**
-
-- 🚀 **ArgoCD**: Despliegue declarativo automático  - ✅ **Kubernetes Cluster** (kind) - Cluster local completo
-
-- 📊 **Observabilidad**: Métricas con Prometheus + Grafana- ✅ **ArgoCD** - Controlador GitOps con UI web
-
-- 🐳 **Containers**: Docker + Kubernetes locales- ✅ **Gitea** - Servidor Git local (como GitHub local)
-
-- 📦 **Manifests**: Kubernetes YAML best practices- ✅ **NGINX Ingress** - Controlador de ingreso
-
-- 🔧 **Automatización**: Scripts modulares y mantenibles- ✅ **Kubernetes Dashboard** - UI web de Kubernetes
+- 🧪 **Smoke Tests** - Validación automática post-instalación- ✅ **zsh + Oh My Zsh** - Shell mejorado con plugins
 
 
 
----### � **Herramientas de Observabilidad:**
+---## 📋 **¿Qué aprenderás?**- ✅ **Git Credential Manager** - Gestión de credenciales
+
+
+
+## 🎯 ¿Qué Incluye?
+
+
+
+### 🏗️ **Infraestructura GitOps**- 🏗️ **Arquitectura GitOps**: Separación clara entre código e infraestructura### 🏗️ **Stack GitOps:**
+
+- ✅ **Kubernetes (kind)** - Cluster local multi-nodo
+
+- ✅ **ArgoCD** - Continuous Delivery GitOps con UI- 🚀 **ArgoCD**: Despliegue declarativo automático  - ✅ **Kubernetes Cluster** (kind) - Cluster local completo
+
+- ✅ **Gitea** - Servidor Git local con Actions (CI/CD)
+
+- ✅ **Sealed Secrets** - Gestión segura de secrets en Git- 📊 **Observabilidad**: Métricas con Prometheus + Grafana- ✅ **ArgoCD** - Controlador GitOps con UI web
+
+- ✅ **Argo Rollouts** - Deployments progresivos (Blue/Green, Canary)
+
+- ✅ **Kargo** - Promoción avanzada de releases- 🐳 **Containers**: Docker + Kubernetes locales- ✅ **Gitea** - Servidor Git local (como GitHub local)
+
+
+
+### 📊 **Observabilidad**- 📦 **Manifests**: Kubernetes YAML best practices- ✅ **NGINX Ingress** - Controlador de ingreso
+
+- ✅ **Prometheus** - Métricas y alerting
+
+- ✅ **Grafana** - Dashboards y visualización- 🔧 **Automatización**: Scripts modulares y mantenibles- ✅ **Kubernetes Dashboard** - UI web de Kubernetes
+
+- ✅ **Kubernetes Dashboard** - UI de administración del cluster
+
+
+
+### 🚀 **Aplicaciones de Ejemplo**
+
+- ✅ **Demo API** - Aplicación Node.js con CI/CD completo---### � **Herramientas de Observabilidad:**
+
+- ✅ **Registry Local** - Docker registry para imágenes custom
 
 - ✅ **Prometheus** - Recolección de métricas y alertas
 
+---
+
 ## ⚡ **Instalación Ultra-Rápida**- ✅ **Grafana** - Dashboards y visualización de métricas
+
+## ⚡ Instalación Rápida
 
 - ✅ **Métricas Nativas** - Aplicaciones con métricas Prometheus integradas
 
-```bash
+### Prerequisitos
 
-# 1️⃣ Clonar repositorio### �📱 **Aplicaciones de Ejemplo:**
+- Ubuntu/Debian Linux (o WSL2 en Windows)```bash
+
+- Usuario con permisos sudo
+
+- Conexión a Internet# 1️⃣ Clonar repositorio### �📱 **Aplicaciones de Ejemplo:**
+
+- Al menos 4GB RAM disponible y 10GB de espacio en disco
 
 git clone https://github.com/tuusuario/gitops-learning.git- ✅ **Dashboard** - UI de administración de Kubernetes
 
+### Instalación Completa
+
 cd gitops-learning- ✅ **Demo API Modern** - Aplicación Go con observabilidad completa
 
-
-
-# 2️⃣ Ejecutar instalación completa (15 min)---
-
-./scripts/install.sh
-
-## ⚡ Instalación Rápida (Un Solo Comando)
-
-# 🎉 ¡Ya tienes GitOps funcionando!
-
-``````bash
+```bash
 
 # 1. Clonar el repositorio
 
-**📊 URLs instantáneas** (después de la instalación):
+git clone https://github.com/andres20980/dotfiles.git
 
-- ArgoCD: http://localhost:30080 (sin login)
-- Gitea: http://localhost:30083
+cd dotfiles# 2️⃣ Ejecutar instalación completa (15 min)---
+
+
+
+# 2. Ejecutar instalador (modo desatendido)./scripts/install.sh
+
+./install.sh --unattended
+
+## ⚡ Instalación Rápida (Un Solo Comando)
+
+# 3. ¡Listo! El entorno estará disponible en ~10-15 minutos
+
+```# 🎉 ¡Ya tienes GitOps funcionando!
+
+
+
+### Instalación por Fases``````bash
+
+
+
+```bash# 1. Clonar el repositorio
+
+# Ver las fases disponibles
+
+./install.sh --list-stages**📊 URLs instantáneas** (después de la instalación):
+
+
+
+# Ejecutar solo una fase específica- ArgoCD: http://localhost:30080 (sin login)
+
+./install.sh --stage docker- Gitea: http://localhost:30083
+
 - Prometheus: http://localhost:30092
-- Grafana: http://localhost:30093 (admin/admin123)
-- Kubernetes Dashboard: http://localhost:30085 (skip login)
-- Argo Rollouts: http://localhost:30084
+
+# Ejecutar desde una fase hasta el final- Grafana: http://localhost:30093 (admin/admin123)
+
+./install.sh --start-from cluster --unattended- Kubernetes Dashboard: http://localhost:30085 (skip login)
+
+```- Argo Rollouts: http://localhost:30084
+
 - App Demo: http://localhost:30082
+
+---
 
 Para instalar:
 
+## 🌐 Acceso a Servicios
+
 ```bash
-git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
+
+Después de la instalación, los servicios estarán disponibles en:git clone https://github.com/andres20980/dotfiles.git ~/dotfiles
+
 cd ~/dotfiles && chmod +x install.sh && ./install.sh
-```
 
-**¡Eso es todo!** En ~10-15 minutos tendrás un entorno GitOps completo funcionando.
+| Servicio | URL | Credenciales | Puerto |```
 
----
+|----------|-----|--------------|--------|
 
-## 🔗 Accesos rápidos integrados
+| **ArgoCD** | http://localhost:30080 | Sin autenticación | 30080 |**¡Eso es todo!** En ~10-15 minutos tendrás un entorno GitOps completo funcionando.
 
-- Usa `./install.sh --open <servicio>` para abrir ArgoCD, Gitea, Dashboard, Grafana, Prometheus o Argo Rollouts desde cualquier terminal.
-- El instalador añade aliases (`dashboard`, `argocd`, `gitea`, `grafana`, `prometheus`, `rollouts`) a tu shell para accesos rápidos.
+| **Gitea** | http://localhost:30083 | gitops / (generado) | 30083 |
+
+| **Kubernetes Dashboard** | http://localhost:30085 | Skip login | 30085 |---
+
+| **Prometheus** | http://localhost:30092 | - | 30092 |
+
+| **Grafana** | http://localhost:30093 | admin / admin123 | 30093 |## 🔗 Accesos rápidos integrados
+
+| **Argo Rollouts** | http://localhost:30084 | - | 30084 |
+
+| **Kargo** | http://localhost:30094 | admin / admin123 | 30094 |- Usa `./install.sh --open <servicio>` para abrir ArgoCD, Gitea, Dashboard, Grafana, Prometheus o Argo Rollouts desde cualquier terminal.
+
+| **Demo API** | http://localhost:30070 | - | 30070 |- El instalador añade aliases (`dashboard`, `argocd`, `gitea`, `grafana`, `prometheus`, `rollouts`) a tu shell para accesos rápidos.
+
 - El Dashboard expone HTTP plano en `http://localhost:30085`, pensado para uso personal en entornos de laboratorio.
+
+### Acceso Rápido desde CLI
 
 ## 📁 Repos GitOps generados
 
-- `~/gitops-repos/gitops-infrastructure/` → Manifests de infraestructura gestionados por ArgoCD.
-- `~/gitops-repos/gitops-applications/` → Plantillas para aplicaciones personalizadas (opcional).
-- `~/gitops-repos/argo-config/` → Configuración declarativa de ArgoCD (AppProjects, ApplicationSets, ConfigMaps).
-- `~/gitops-repos/sourcecode-apps/` → Código fuente de aplicaciones de desarrollo (por defecto `demo-api`).
+```bash
 
----
+# Abrir servicios directamente- `~/gitops-repos/gitops-infrastructure/` → Manifests de infraestructura gestionados por ArgoCD.
 
-## 🏗️ **Arquitectura del Proyecto**
+./install.sh --open argocd- `~/gitops-repos/gitops-applications/` → Plantillas para aplicaciones personalizadas (opcional).
 
-## 🌐 URLs de Acceso (Después de la Instalación)
+./install.sh --open dashboard- `~/gitops-repos/argo-config/` → Configuración declarativa de ArgoCD (AppProjects, ApplicationSets, ConfigMaps).
 
-### **📁 Estructura Perfecta**
+./install.sh --open gitea- `~/gitops-repos/sourcecode-apps/` → Código fuente de aplicaciones de desarrollo (por defecto `demo-api`).
 
-```text
+./install.sh --open grafana
+
+```---
+
+
+
+---## 🏗️ **Arquitectura del Proyecto**
+
+
+
+## 📁 Estructura del Proyecto## 🌐 URLs de Acceso (Después de la Instalación)
+
+
+
+```### **📁 Estructura Perfecta**
+
 dotfiles/
-├── install.sh                  # Instalador maestro que orquesta todo
-├── argo-config/                # Config declarativa de ArgoCD (projects, appsets, configmaps)
-├── manifests/
-│   ├── infrastructure/         # Stack de herramientas (ArgoCD, Grafana, Prometheus, Dashboard, Kargo, etc.)
-│   └── applications/
-│       └── demo-api/           # Manifests de la aplicación demo Node.js
-├── sourcecode-apps/
-│   └── demo-api/               # Código fuente de la app demo (Node.js)
-├── scripts/                    # Utilidades (check-status, open dashboards, etc.)
-├── config/                     # Configuración auxiliar (kind-config, etc.)
-└── docs/                       # Documentación (arquitectura, troubleshooting, learning path)
-```
 
-> 💡 Consejo: Usa `./scripts/check-windows-access.sh` para obtener las URLs exactas si accedes desde Windows/WSL.
-│   │   ├── prometheus/          # Stack de métricas# Acceso con token automático
+├── install.sh                      # 🎯 Instalador maestro```text
 
-│   │   └── grafana/            # Visualizacióndashboard-full    # Abre Dashboard + token en clipboard
+├── config.env                      # ⚙️  Configuración personalizabledotfiles/
 
-│   └── applications/            # Aplicaciones de negocio
+├── argo-config/                    # 🔧 Configuración de ArgoCD├── install.sh                  # Instalador maestro que orquesta todo
 
-│       └── demo-api/         # App demo con observabilidad# Otros servicios
+│   ├── projects/                   # AppProjects├── argo-config/                # Config declarativa de ArgoCD (projects, appsets, configmaps)
 
-├── 💻 source-code/              # Código fuente puro (developer workflow)argocd           # Abre ArgoCD UI directamente
+│   ├── applications/               # ApplicationSets├── manifests/
 
-│   └── demo-api/      # App Go con métricas Prometheusgitea            # Abre Gitea UI directamente
+│   ├── repositories/               # Git repositories│   ├── infrastructure/         # Stack de herramientas (ArgoCD, Grafana, Prometheus, Dashboard, Kargo, etc.)
 
-│       ├── main.go             # Aplicación con /metrics endpointk8s-dash         # Alias corto para dashboard
+│   └── configmaps/                 # Configuración de ArgoCD│   └── applications/
 
-│       ├── Dockerfile          # Build optimizado multi-stage  ```
+├── manifests/                      # 📦 Manifests Kubernetes│       └── demo-api/           # Manifests de la aplicación demo Node.js
 
-│       └── go.mod              # Dependencias mínimas
+│   ├── infrastructure/             # Herramientas GitOps├── sourcecode-apps/
 
-├── 🔧 scripts/                  # Herramientas y utilidades---
+│   │   ├── argo-rollouts/│   └── demo-api/               # Código fuente de la app demo (Node.js)
 
-│   ├── install.sh              # Instalador maestro orquestador
+│   │   ├── sealed-secrets/├── scripts/                    # Utilidades (check-status, open dashboards, etc.)
 
-│   ├── check-status.sh         # Verificar estado del sistema## 📋 Verificación del Sistema
+│   │   ├── prometheus/├── config/                     # Configuración auxiliar (kind-config, etc.)
 
-│   └── (usa ./install.sh --open <servicio>)  # Accesos rápidos integrados
+│   │   ├── grafana/└── docs/                       # Documentación (arquitectura, troubleshooting, learning path)
+
+│   │   ├── kargo/```
+
+│   │   └── ...
+
+│   └── applications/               # Aplicaciones custom> 💡 Consejo: Usa `./scripts/check-windows-access.sh` para obtener las URLs exactas si accedes desde Windows/WSL.
+
+│       └── demo-api/│   │   ├── prometheus/          # Stack de métricas# Acceso con token automático
+
+├── sourcecode-apps/                # 💻 Código fuente de apps
+
+│   └── demo-api/                   # App Node.js demo│   │   └── grafana/            # Visualizacióndashboard-full    # Abre Dashboard + token en clipboard
+
+├── scripts/                        # 🔧 Utilidades
+
+│   └── sync-to-gitea.sh           # Sincronizar cambios locales│   └── applications/            # Aplicaciones de negocio
+
+├── docs/                           # 📚 Documentación
+
+│   ├── ARCHITECTURE.md│       └── demo-api/         # App demo con observabilidad# Otros servicios
+
+│   └── SECURITY.md
+
+└── config/├── 💻 source-code/              # Código fuente puro (developer workflow)argocd           # Abre ArgoCD UI directamente
+
+    └── kind-config.yaml            # Configuración del cluster
+
+```│   └── demo-api/      # App Go con métricas Prometheusgitea            # Abre Gitea UI directamente
+
+
+
+---│       ├── main.go             # Aplicación con /metrics endpointk8s-dash         # Alias corto para dashboard
+
+
+
+## 🔧 Configuración Avanzada│       ├── Dockerfile          # Build optimizado multi-stage  ```
+
+
+
+### Archivo `config.env`│       └── go.mod              # Dependencias mínimas
+
+
+
+Personaliza la instalación editando `config.env`:├── 🔧 scripts/                  # Herramientas y utilidades---
+
+
+
+```bash│   ├── install.sh              # Instalador maestro orquestador
+
+# Feature flags
+
+ENABLE_CUSTOM_APPS=true          # Habilitar aplicaciones de ejemplo│   ├── check-status.sh         # Verificar estado del sistema## 📋 Verificación del Sistema
+
+ENABLE_MONITORING=true           # Habilitar Prometheus + Grafana
+
+ENABLE_KARGO=true                # Habilitar Kargo│   └── (usa ./install.sh --open <servicio>)  # Accesos rápidos integrados
+
+PARALLEL_INSTALL=true            # Instalación paralela de herramientas
 
 ├── ⚙️ config/                   # Configuraciones del entorno### **1. Verificar Estado General:**
 
-│   └── kind-config.yaml        # Cluster local optimizado```bash
+# Puertos personalizados
 
-└── 📚 docs/                     # Documentación educativa./verify-setup.sh                    # Script de verificación completo
+ARGOCD_PORT=30080│   └── kind-config.yaml        # Cluster local optimizado```bash
 
-    ├── ARCHITECTURE.md          # Arquitectura detallada./check-windows-access.sh           # URLs y credenciales para Windows
+GITEA_PORT=30083
 
-    ├── TROUBLESHOOTING.md      # Solución de problemas```
+GRAFANA_PORT=30093└── 📚 docs/                     # Documentación educativa./verify-setup.sh                    # Script de verificación completo
 
-    └── LEARNING-PATH.md        # Ruta de aprendizaje
 
-```### **2. Verificar Aplicaciones ArgoCD:**
 
-```bash
+# Debugging    ├── ARCHITECTURE.md          # Arquitectura detallada./check-windows-access.sh           # URLs y credenciales para Windows
 
-### **🎯 Filosofía de Diseño**kubectl get applications -n argocd   # Deberían mostrar "Synced & Healthy"
+DEBUG_MODE=false                 # Modo debug con trazas completas
+
+VERBOSE_LOGGING=false            # Logs detallados    ├── TROUBLESHOOTING.md      # Solución de problemas```
+
+SKIP_CLEANUP_ON_ERROR=false      # Preservar cluster en errores
+
+RUN_SMOKE_TESTS=true            # Tests automáticos al finalizar    └── LEARNING-PATH.md        # Ruta de aprendizaje
+
+
+
+# Recursos```### **2. Verificar Aplicaciones ArgoCD:**
+
+MIN_MEMORY_GB=4
+
+MIN_DISK_GB=10```bash
 
 ```
 
-1. **🔧 Separación Clara**: Sistema ≠ GitOps ≠ Código ≠ Manifests
+### **🎯 Filosofía de Diseño**kubectl get applications -n argocd   # Deberían mostrar "Synced & Healthy"
+
+### Uso de Variables
+
+```
+
+```bash
+
+# Cargar configuración personalizada1. **🔧 Separación Clara**: Sistema ≠ GitOps ≠ Código ≠ Manifests
+
+source config.env && ./install.sh --unattended
 
 2. **📚 Educativo Primero**: Cada componente enseña un concepto GitOps específico  ### **3. Verificar Pods:**
 
-3. **⚡ Mínimo Viable**: Solo lo esencial para entender GitOps```bash
+# O exportar variables específicas
 
-4. **🏭 Enterprise Ready**: Patterns escalables a producciónkubectl get pods --all-namespaces   # Todos los pods deberían estar "Running"
+export DEBUG_MODE=true VERBOSE_LOGGING=true3. **⚡ Mínimo Viable**: Solo lo esencial para entender GitOps```bash
 
-5. **🔄 Best Practices**: Siguiendo estándares de la industria```
+./install.sh --stage cluster
 
-
-
-------
+```4. **🏭 Enterprise Ready**: Patterns escalables a producciónkubectl get pods --all-namespaces   # Todos los pods deberían estar "Running"
 
 
 
-## 🎓 **Conceptos GitOps que Aprenderás**## 🔧 Solución de Problemas
+---5. **🔄 Best Practices**: Siguiendo estándares de la industria```
 
 
 
-### **1. 🏗️ Declarative Infrastructure**### **❌ Las aplicaciones no se sincronizan:**
+## 📸 Snapshots y Recuperación
 
-- **Manifests**: Toda la infraestructura como código YAML```bash
 
-- **Git como Source of Truth**: Repositorio único de la verdad# Forzar sincronización manual de todas las aplicaciones
+
+### Crear Snapshot------
+
+
+
+```bash
+
+# Crear snapshot con nombre automático
+
+./install.sh --snapshot## 🎓 **Conceptos GitOps que Aprenderás**## 🔧 Solución de Problemas
+
+
+
+# Crear snapshot con nombre personalizado
+
+./install.sh --snapshot mi-backup-produccion
+
+```### **1. 🏗️ Declarative Infrastructure**### **❌ Las aplicaciones no se sincronizan:**
+
+
+
+Los snapshots incluyen:- **Manifests**: Toda la infraestructura como código YAML```bash
+
+- Estado completo de recursos Kubernetes
+
+- Configuración de ArgoCD (Applications, Projects)- **Git como Source of Truth**: Repositorio único de la verdad# Forzar sincronización manual de todas las aplicaciones
+
+- Bundles de repositorios Git
 
 - **Immutable Deployments**: Despliegues inmutables y rastreableskubectl patch application dashboard -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
+### Restaurar desde Snapshot
+
 kubectl patch application demo-api -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
-### **2. 🚀 Continuous Deployment** kubectl patch application prometheus -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+```bash
+
+# Restaurar desde snapshot### **2. 🚀 Continuous Deployment** kubectl patch application prometheus -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+
+./install.sh --restore ~/.gitops-snapshots/mi-backup-produccion
 
 - **ArgoCD**: Controlador que mantiene el estado deseadokubectl patch application grafana -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 
-- **App-of-Apps Pattern**: Gestión jerárquica de aplicaciones```
+# O desde archivo comprimido
+
+./install.sh --restore ~/.gitops-snapshots/mi-backup-produccion.tar.gz- **App-of-Apps Pattern**: Gestión jerárquica de aplicaciones```
+
+```
 
 - **Auto-Sync**: Sincronización automática Git → Kubernetes
 
+---
+
 ### **❌ No puedo acceder desde Windows:**
+
+## 🧪 Smoke Tests y Validación
 
 ### **3. 📊 Observability**```bash
 
+El instalador ejecuta automáticamente smoke tests al finalizar:
+
 - **Prometheus**: Recolección de métricas de aplicaciones + cluster# Obtener IP correcta de WSL
 
-- **Grafana**: Visualización y dashboards personalizables./check-windows-access.sh
+```bash
 
-- **Health Checks**: Aplicaciones con endpoints de salud
+# Ejecutar solo smoke tests (requiere cluster activo)- **Grafana**: Visualización y dashboards personalizables./check-windows-access.sh
+
+# Los tests se ejecutan automáticamente al finalizar
+
+# Para deshabilitar: export RUN_SMOKE_TESTS=false- **Health Checks**: Aplicaciones con endpoints de salud
+
+```
 
 # Verificar que todos los puertos estén abiertos
 
-### **4. 🔒 Security & RBAC**netstat -tlnp | grep -E ':(30080|30081|30082|30083|30090|30091)'
+Tests incluidos:
 
-- **Projects Separation**: Infraestructura vs Aplicaciones```
+- ✅ Cluster kind activo### **4. 🔒 Security & RBAC**netstat -tlnp | grep -E ':(30080|30081|30082|30083|30090|30091)'
 
-- **Least Privilege**: Permisos mínimos necesarios
+- ✅ ArgoCD API responde
 
-- **Secrets Management**: Gestión segura de credenciales### **❌ El Dashboard pide token:**
+- ✅ Gitea API funcional- **Projects Separation**: Infraestructura vs Aplicaciones```
 
-```bash
+- ✅ Todas las Applications Synced
 
----# Generar token de administrador
+- ✅ Todas las Applications Healthy- **Least Privilege**: Permisos mínimos necesarios
 
-kubectl -n kubernetes-dashboard create token admin-user
+- ✅ Sealed Secrets operativo
 
-## 🚀 **Guía de Uso Rápido**
+- ✅ Prometheus y Grafana accesibles- **Secrets Management**: Gestión segura de credenciales### **❌ El Dashboard pide token:**
 
-# O usar acceso sin token (más fácil)
 
-### **📊 Verificar Estado**# En el Dashboard, simplemente haz clic en "SKIP"
 
-```bash```
+---```bash
 
-# Estado general del sistema
+
+
+## 🔄 Flujo de Trabajo GitOps---# Generar token de administrador
+
+
+
+### Desarrollo Local → Gitea → ArgoCDkubectl -n kubernetes-dashboard create token admin-user
+
+
+
+```bash## 🚀 **Guía de Uso Rápido**
+
+# 1. Realizar cambios en manifests locales
+
+vim manifests/infrastructure/grafana/deployment.yaml# O usar acceso sin token (más fácil)
+
+
+
+# 2. Commit localmente### **📊 Verificar Estado**# En el Dashboard, simplemente haz clic en "SKIP"
+
+git add .
+
+git commit -m "feat: increase grafana replicas"```bash```
+
+
+
+# 3. Sincronizar a Gitea# Estado general del sistema
+
+./scripts/sync-to-gitea.sh
 
 ./scripts/check-status.sh### **❌ Gitea no responde:**
 
-```bash
+# 4. ArgoCD detecta cambios automáticamente y sincroniza
+
+# Ver en: http://localhost:30080```bash
+
+```
 
 # Aplicaciones ArgoCD# Reiniciar Gitea
 
+### Estructura de Repositorios Gitea
+
 kubectl get applications -n argocdkubectl rollout restart deployment/gitea -n gitea
+
+Los repositorios se crean automáticamente en `~/gitops-repos/`:
 
 kubectl wait --for=condition=available --timeout=120s deployment/gitea -n gitea
 
-# Pods ejecutándose  ```
+- `gitops-infrastructure/` - Manifests de infraestructura
 
-kubectl get pods --all-namespaces
+- `gitops-applications/` - Manifests de aplicaciones# Pods ejecutándose  ```
 
-```---
+- `argo-config/` - Configuración de ArgoCD
+
+- `sourcecode-apps/demo-api/` - Código fuente de aplicacioneskubectl get pods --all-namespaces
 
 
 
-### **🔧 Comandos de Acceso** (después de `source ~/.zshrc`)## 📁 Estructura del Repositorio
+---```---
 
-```bash
 
-dashboard       # Dashboard K8s (skip login)```
+
+## 🐛 Debugging y Troubleshooting
+
+
+
+### Modo Debug### **🔧 Comandos de Acceso** (después de `source ~/.zshrc`)## 📁 Estructura del Repositorio
+
+
+
+```bash```bash
+
+# Activar modo debug completo
+
+DEBUG_MODE=true VERBOSE_LOGGING=true ./install.sh --stage clusterdashboard       # Dashboard K8s (skip login)```
+
+```
 
 argocd          # ArgoCD UI  dotfiles/
 
-prometheus      # Métricas├── install.sh                    # 🔥 Script de instalación principal
+En caso de error, el instalador captura automáticamente:
 
-grafana         # Dashboards├── verify-setup.sh              # ✅ Verificación del sistema
+- Logs de todos los podsprometheus      # Métricas├── install.sh                    # 🔥 Script de instalación principal
+
+- Eventos del cluster
+
+- Estado de Applications de ArgoCDgrafana         # Dashboards├── verify-setup.sh              # ✅ Verificación del sistema
+
+- Configuración de services y endpoints
 
 check-gitops    # Estado completo├── check-windows-access.sh      # 🌐 URLs para acceso desde Windows
 
+Los logs se guardan en `/tmp/gitops-debug-<timestamp>/`
+
 ```├── (usa ./install.sh --open dashboard)   # 🚀 Acceso rápido al Dashboard  
+
+### Comandos Útiles
 
 ├── (aliases en tu shell)        # 🔑 Usa 'dashboard', 'argocd', 'gitea', ...
 
-### **🔄 Workflow de Desarrollo**├── kind-config.yaml             # ⚙️ Configuración del cluster
+```bash
+
+# Ver estado de todas las aplicaciones### **🔄 Workflow de Desarrollo**├── kind-config.yaml             # ⚙️ Configuración del cluster
+
+kubectl get applications -n argocd
 
 ```bash├── .gitops_aliases              # 📋 Aliases de comandos
 
-# 1. Modificar código fuente├── argo-apps/                   # 📦 Definiciones de aplicaciones ArgoCD
+# Ver logs de ArgoCD
 
-cd source-code/demo-api/│   ├── gitops-tools/           # Dashboard y herramientas
+kubectl logs -n argocd deployment/argocd-server -f# 1. Modificar código fuente├── argo-apps/                   # 📦 Definiciones de aplicaciones ArgoCD
+
+
+
+# Ver estado del clustercd source-code/demo-api/│   ├── gitops-tools/           # Dashboard y herramientas
+
+kubectl get pods -A
 
 # ... hacer cambios ...│   └── custom-apps/            # Aplicaciones personalizadas
 
-└── README.md                    # 📚 Esta documentación
+# Verificar NodePorts
 
-# 2. Build + deploy automático```
-
-docker build -t demo-api:v2 .
-
-kind load docker-image demo-api:v2 --name mini-cluster---
+kubectl get svc -A | grep NodePort└── README.md                    # 📚 Esta documentación
 
 
 
-# 3. ArgoCD sincroniza automáticamente## 🎯 ¿Qué hace automáticamente `install.sh`?
+# Debug de aplicación específica# 2. Build + deploy automático```
 
-# Ver en: http://localhost:30080
+kubectl describe app <app-name> -n argocd
+
+```docker build -t demo-api:v2 .
+
+
+
+### Problemas Comuneskind load docker-image demo-api:v2 --name mini-cluster---
+
+
+
+**1. ArgoCD no sincroniza**
+
+```bash
+
+# Forzar refresh manual# 3. ArgoCD sincroniza automáticamente## 🎯 ¿Qué hace automáticamente `install.sh`?
+
+kubectl patch app <app-name> -n argocd \
+
+  -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge# Ver en: http://localhost:30080
+
+```
 
 ```El script realiza una **instalación completa desde cero**:
 
+**2. Pods en estado Pending**
+
+```bash
+
+# Verificar eventos
+
+kubectl get events -A --sort-by='.lastTimestamp'---### **1. 🔧 Instalación de Herramientas Base:**
 
 
----### **1. 🔧 Instalación de Herramientas Base:**
 
-- Actualiza el sistema Ubuntu/WSL
+# Verificar recursos- Actualiza el sistema Ubuntu/WSL
 
-## 📊 **Stack Tecnológico**- Instala Docker, kubectl, kind
+kubectl describe pod <pod-name> -n <namespace>
 
-- Configura zsh + Oh My Zsh con plugins
+```## 📊 **Stack Tecnológico**- Instala Docker, kubectl, kind
 
-| Componente | Versión | Propósito | Puerto |- Instala Git Credential Manager
+
+
+**3. Servicios no accesibles**- Configura zsh + Oh My Zsh con plugins
+
+```bash
+
+# Verificar mapeos de puertos en kind| Componente | Versión | Propósito | Puerto |- Instala Git Credential Manager
+
+docker port <cluster-name>-control-plane
 
 |------------|---------|-----------|--------|
 
-| **kind** | v0.23.0 | Kubernetes local | - |### **2. 🏗️ Creación del Cluster Kubernetes:**
+# Verificar services
+
+kubectl get svc -A -o wide| **kind** | v0.23.0 | Kubernetes local | - |### **2. 🏗️ Creación del Cluster Kubernetes:**
+
+```
 
 | **ArgoCD** | latest | GitOps controller | 30080 |- Crea cluster kind llamado "mini-cluster"
 
+---
+
 | **Gitea** | 1.21.11 | Git server local | 30083 |- Configura red para acceso desde Windows
+
+## 🏗️ Arquitectura
 
 | **Prometheus** | latest | Métricas | 30092 |- Expone servicios como NodePort
 
+### Flujo GitOps
+
 | **Grafana** | latest | Dashboards | 30093 |
 
-| **Dashboard** | latest | K8s UI | 30085 |
+```
 
-| **Demo API** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐| **Dashboard** | latest | K8s UI | 30085 |
 
-- Configura credenciales admin/admin123
+│   Código    │         │   Gitea     │         │   ArgoCD    │
 
-### **🎯 Características Mínimas pero Funcionales**- Expone UI en puertos 30080 (HTTP) y 30443 (HTTPS)
+│   Local     │ ──push─>│  (Git Repo) │<─watch──│ (Controller)│| **Demo API** | custom | Demo app | 30082 |- Instala ArgoCD desde manifests oficiales
 
-- ✅ **ArgoCD**: UI web + auto-sync + RBAC básico
+└─────────────┘         └─────────────┘         └──────┬──────┘
 
-- ✅ **Prometheus**: Service discovery + métricas K8s + apps### **4. 📚 Instalación de Gitea:**
+                                                        │- Configura credenciales admin/admin123
 
-- ✅ **Grafana**: Datasource automático + acceso admin- Despliega Gitea como servidor Git local
+                                                     deploy
 
-- ✅ **Gitea**: Repos privados + webhooks + usuario demo- Crea usuario gitops con password seguro generado
+                                                        │### **🎯 Características Mínimas pero Funcionales**- Expone UI en puertos 30080 (HTTP) y 30443 (HTTPS)
 
-- ✅ **Dashboard**: Skip-login + cluster-admin + métricas- Expone en puerto 30083
+                                                        ▼
 
-- ✅ **Apps**: Health checks + Prometheus metrics + logs
+                                                ┌───────────────┐- ✅ **ArgoCD**: UI web + auto-sync + RBAC básico
 
-### **5. 🌐 Configuración de NGINX Ingress:**
+                                                │  Kubernetes   │
 
----- Instala controlador de ingreso
+                                                │   Cluster     │- ✅ **Prometheus**: Service discovery + métricas K8s + apps### **4. 📚 Instalación de Gitea:**
 
-- Configura para acceso por hostname
+                                                └───────────────┘
 
-## 🛠️ **Solución de Problemas**- Expone en puerto 30090
+```- ✅ **Grafana**: Datasource automático + acceso admin- Despliega Gitea como servidor Git local
 
 
 
-### **❌ "Las aplicaciones no se sincronizan"**### **6. 📦 Creación de Repositorios Git:**
+### Componentes Principales- ✅ **Gitea**: Repos privados + webhooks + usuario demo- Crea usuario gitops con password seguro generado
 
-```bash- Crea repositorio `gitops-tools` (Dashboard)
 
-# Forzar refresh de ArgoCD- Crea repositorio `custom-apps` (Demo API)
 
-kubectl patch application demo-api -n argocd --type merge \- Sube manifests iniciales a Gitea
+1. **kind** - Cluster Kubernetes local en Docker- ✅ **Dashboard**: Skip-login + cluster-admin + métricas- Expone en puerto 30083
 
-  -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+2. **ArgoCD** - Lee manifests de Gitea y los aplica al cluster
 
-```### **7. 📊 Instalación de Stack de Observabilidad:**
+3. **Gitea** - Source of truth para todos los manifests- ✅ **Apps**: Health checks + Prometheus metrics + logs
 
-- Despliega Prometheus para recolección de métricas
+4. **Sealed Secrets** - Encripta secrets para almacenarlos en Git
 
-### **❌ "No puedo acceder desde Windows"**- Instala Grafana con datasource automático
+5. **Prometheus + Grafana** - Observabilidad del stack### **5. 🌐 Configuración de NGINX Ingress:**
 
-```bash- Construye aplicación Demo API moderna con métricas
 
-# Verificar IP de WSL- Configura RBAC para monitoreo de cluster
 
-hostname -I | awk '{print $1}'
+Para más detalles, ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)---- Instala controlador de ingreso
 
-### **8. 🎯 Configuración de Aplicaciones ArgoCD:**
 
-# Usar URLs con localhost (más compatibles)- Crea proyectos ArgoCD
 
-# http://localhost:30080 en lugar de http://IP:30080- Configura secrets de autenticación de repositorios
+---- Configura para acceso por hostname
 
-```- Despliega aplicaciones Dashboard, Demo API, Prometheus y Grafana
 
-- Configura sincronización automática
 
-### **❌ "Prometheus no encuentra métricas"**
+## 🔐 Seguridad## 🛠️ **Solución de Problemas**- Expone en puerto 30090
 
-```bash### **9. 🚀 Scripts de Acceso Automático:**
 
-# Verificar service discovery- Crea scripts para abrir Dashboard automáticamente
 
-kubectl logs deployment/prometheus -n monitoring- Configura aliases de comandos
+- ✅ **Sin credenciales hardcodeadas** - Todas se generan dinámicamente
 
-- Genera tokens de acceso automáticos
+- ✅ **Passwords seguros** - Múltiples fuentes de entropía
+
+- ✅ **Sealed Secrets** - Secrets encriptados en Git### **❌ "Las aplicaciones no se sincronizan"**### **6. 📦 Creación de Repositorios Git:**
+
+- ✅ **No-auth para demos** - ArgoCD sin autenticación para laboratorio local
+
+- ✅ **Rotación automática** - Nuevas credenciales en cada instalación```bash- Crea repositorio `gitops-tools` (Dashboard)
+
+
+
+Ver [docs/SECURITY.md](docs/SECURITY.md) para más información.# Forzar refresh de ArgoCD- Crea repositorio `custom-apps` (Demo API)
+
+
+
+---kubectl patch application demo-api -n argocd --type merge \- Sube manifests iniciales a Gitea
+
+
+
+## 🤝 Contribuir  -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+
+
+
+¡Las contribuciones son bienvenidas! Por favor:```### **7. 📊 Instalación de Stack de Observabilidad:**
+
+
+
+1. Fork el repositorio- Despliega Prometheus para recolección de métricas
+
+2. Crea una rama para tu feature (`git checkout -b feature/amazing-feature`)
+
+3. Commit tus cambios (`git commit -m 'feat: add amazing feature'`)### **❌ "No puedo acceder desde Windows"**- Instala Grafana con datasource automático
+
+4. Push a la rama (`git push origin feature/amazing-feature`)
+
+5. Abre un Pull Request```bash- Construye aplicación Demo API moderna con métricas
+
+
+
+---# Verificar IP de WSL- Configura RBAC para monitoreo de cluster
+
+
+
+## 📚 Recursos y Aprendizajehostname -I | awk '{print $1}'
+
+
+
+- [Documentación de ArgoCD](https://argo-cd.readthedocs.io/)### **8. 🎯 Configuración de Aplicaciones ArgoCD:**
+
+- [Guía de GitOps](https://www.gitops.tech/)
+
+- [Kubernetes Documentation](https://kubernetes.io/docs/)# Usar URLs con localhost (más compatibles)- Crea proyectos ArgoCD
+
+- [Prometheus Docs](https://prometheus.io/docs/)
+
+- [Sealed Secrets](https://sealed-secrets.netlify.app/)# http://localhost:30080 en lugar de http://IP:30080- Configura secrets de autenticación de repositorios
+
+
+
+---```- Despliega aplicaciones Dashboard, Demo API, Prometheus y Grafana
+
+
+
+## 📝 Licencia- Configura sincronización automática
+
+
+
+MIT License - Ver [LICENSE](LICENSE) para más detalles.### **❌ "Prometheus no encuentra métricas"**
+
+
+
+---```bash### **9. 🚀 Scripts de Acceso Automático:**
+
+
+
+## 🙏 Agradecimientos# Verificar service discovery- Crea scripts para abrir Dashboard automáticamente
+
+
+
+- **ArgoCD Team** - Por la increíble herramienta GitOpskubectl logs deployment/prometheus -n monitoring- Configura aliases de comandos
+
+- **Kubernetes Community** - Por kind y todo el ecosistema
+
+- **Gitea Project** - Por el servidor Git ligero y potente- Genera tokens de acceso automáticos
+
+- **CNCF** - Por promover las mejores prácticas cloud native
 
 # Verificar endpoint de métricas de app- Configura apertura de navegador desde WSL
 
+---
+
 curl http://localhost:30082/metrics
+
+## 📞 Soporte
 
 ```---
 
+¿Encontraste un problema? ¿Tienes una sugerencia?
 
 
----## 🎉 Resultado Final
+
+- 🐛 [Reportar un bug](https://github.com/andres20980/dotfiles/issues/new?labels=bug)
+
+- 💡 [Solicitar una feature](https://github.com/andres20980/dotfiles/issues/new?labels=enhancement)---## 🎉 Resultado Final
+
+- 📖 [Ver documentación completa](docs/)
 
 
+
+---
 
 ## 🎓 **Ruta de Aprendizaje Recomendada**Después de ejecutar `install.sh`, tendrás:
 
+<div align="center">
 
+
+
+**⭐ Si este proyecto te ayudó, considera darle una estrella ⭐**
 
 ### **👶 Nivel Beginner**### **✅ Estado Esperado:**
 
+Hecho con ❤️ para la comunidad GitOps
+
 1. **Ejecutar instalación completa** (`./scripts/install.sh`)- **ArgoCD Applications:** `Synced & Healthy`
+
+</div>
 
 2. **Explorar ArgoCD UI** (http://localhost:30080)- **Todos los Pods:** `Running` 
 

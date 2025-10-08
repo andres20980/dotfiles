@@ -16,119 +16,42 @@ metadata:
     app.kubernetes.io/name: kargo
     app.kubernetes.io/component: api
 rules:
-  # Core Kubernetes resources
-  - apiGroups:
-      - ""
-    resources:
-      - namespaces
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-      - secrets
-    verbs:
-      - list
-      - get
-      - create
-      - watch
-      - delete
-      - update
-  - apiGroups:
-      - authorization.k8s.io
-    resources:
-      - subjectaccessreviews
-    verbs:
-      - create
-  # Kargo CRDs
-  - apiGroups:
-      - kargo.akuity.io
-    resources:
-      - freight
-    verbs:
-      - create
-      - get
-      - list
-      - patch
-      - watch
-      - delete
-  - apiGroups:
-      - kargo.akuity.io
-    resources:
-      - freight/status
-    verbs:
-      - update
-      - patch
-  - apiGroups:
-      - kargo.akuity.io
-    resources:
-      - clusterconfigs
-      - clusterpromotiontasks
-      - projects
-      - promotiontasks
-      - stages
-      - warehouses
-      - projectconfigs
-    verbs:
-      - "*"
-  - apiGroups:
-      - kargo.akuity.io
-    resources:
-      - promotions
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-  - apiGroups:
-      - kargo.akuity.io
-    resources:
-      - stages/finalizers
-    verbs:
-      - patch
-      - update
-  # RBAC resources
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - rolebindings
-      - roles
-    verbs:
-      - get
-      - list
-      - watch
-  # Argo Rollouts integration (if enabled)
-  - apiGroups:
-      - argoproj.io
-    resources:
-      - rollouts
-      - analysisruns
-      - analysistemplates
-      - clusteranalysistemplates
-    verbs:
-      - "*"
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [get, list, watch, create, patch]
+  - apiGroups: [""]
+    resources: [configmaps, secrets]
+    verbs: [list, get, create, watch, delete, update]
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  - apiGroups: [kargo.akuity.io]
+    resources: [freight]
+    verbs: [create, get, list, patch, watch, delete]
+  - apiGroups: [kargo.akuity.io]
+    resources: [freight/status]
+    verbs: [update, patch]
+  - apiGroups: [kargo.akuity.io]
+    resources: [clusterconfigs, clusterpromotiontasks, projects, promotiontasks, stages, warehouses, projectconfigs]
+    verbs: ["*"]
+  - apiGroups: [kargo.akuity.io]
+    resources: [promotions]
+    verbs: [create, get, list, watch, patch]
+  - apiGroups: [kargo.akuity.io]
+    resources: [stages/finalizers]
+    verbs: [patch, update]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings, roles]
+    verbs: [get, list, watch]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts, analysisruns, analysistemplates, clusteranalysistemplates]
+    verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
