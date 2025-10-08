@@ -3,7 +3,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: gitops-tools-no-ui
+  name: gitops-tools
   namespace: argocd
 spec:
   generators:
@@ -12,7 +12,7 @@ spec:
       revision: HEAD
       directories:
       - path: argo-events
-      - path: argo-image-updater  
+      - path: argo-image-updater
       - path: redis
       # sealed-secrets is bootstrapped directly (not via ArgoCD) to avoid circular dependency
   template:
