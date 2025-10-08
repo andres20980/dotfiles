@@ -1,6 +1,19 @@
 # 🔐 GitOps Security Guide
 
-## 🚨 VULNERABILIDAD CORREGIDA
+## � Security Incident Log
+
+### 2025-10-08: Documentation Password Example (RESOLVED)
+- **Alert Source:** GitGuardian
+- **Severity:** Low (false positive - documentation example)
+- **Issue:** Generic password `supersecret123` in `docs/ADDING_GITOPS_TOOLS.md`
+- **Impact:** None - was a documentation placeholder, not real credentials
+- **Resolution:** Replaced with `YOUR_SECURE_PASSWORD_HERE` placeholder + warning to generate real passwords
+- **Commit:** `61c669b` (security: remove example password from documentation)
+- **Status:** ✅ RESOLVED
+
+---
+
+## �🚨 VULNERABILIDAD CORREGIDA (Previous Incident)
 
 **Problema detectado por GitGuardian:** Credenciales hardcodeadas en el código fuente expuestas públicamente.
 
