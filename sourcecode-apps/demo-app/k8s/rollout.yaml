@@ -1,0 +1,230 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: demo-app
+  labels:
+    app: demo-app
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: demo-app
+        image: localhost:30087/demo-app:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/.npm
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+  strategy:
+    canary:
+      # Canary strategy configuration
+      canaryService: demo-app-canary
+      stableService: demo-app-stable
+      
+      # Traffic management
+      trafficRouting:
+        nginx:
+          stableIngress: demo-app-ingress
+      
+      # Progressive delivery steps
+      steps:
+      # Step 1: Deploy canary with 20% traffic
+      - setWeight: 20
+      - pause:
+          duration: 2m
+      
+      # Step 2: Run analysis for 3 minutes
+      - analysis:
+          templates:
+          - templateName: demo-app-success-rate
+          args:
+          - name: service-name
+            value: demo-app-canary
+      
+      # Step 3: Increase to 50% traffic
+      - setWeight: 50
+      - pause:
+          duration: 3m
+      
+      # Step 4: Run extended analysis
+      - analysis:
+          templates:
+          - templateName: demo-app-success-rate
+          - templateName: demo-app-latency
+          args:
+          - name: service-name
+            value: demo-app-canary
+      
+      # Step 5: Final promotion to 100%
+      - setWeight: 100
+      - pause:
+          duration: 1m
+      
+      # Canary analysis configuration
+      analysis:
+        startingStep: 2
+        templates:
+        - templateName: demo-app-success-rate
+        - templateName: demo-app-latency
+        args:
+        - name: service-name
+          value: demo-app-canary
+      
+      # Anti-affinity for canary pods
+      antiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution: {}
+        
+      # Maximum duration before automatic rollback
+      progressDeadlineSeconds: 600
+      
+      # Rollback on failure
+      abortScaleDownDelaySeconds: 30
+
+---
+# Analysis template for success rate
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: demo-app-success-rate
+spec:
+  args:
+  - name: service-name
+  metrics:
+  - name: success-rate
+    interval: 30s
+    count: 6
+    successCondition: result >= 0.95
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-service.monitoring.svc.cluster.local:9090
+        query: |
+          sum(rate(http_requests_total{job="{{args.service-name}}",status=~"2.."}[2m]))
+          /
+          sum(rate(http_requests_total{job="{{args.service-name}}"}[2m]))
+
+---
+# Analysis template for latency
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: demo-app-latency
+spec:
+  args:
+  - name: service-name
+  metrics:
+  - name: p95-latency
+    interval: 30s
+    count: 6
+    successCondition: result <= 500
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-service.monitoring.svc.cluster.local:9090
+        query: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_ms_bucket{job="{{args.service-name}}"}[2m])) by (le)
+          )
+
+---
+# Stable service for Argo Rollouts
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-stable
+  labels:
+    app: demo-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: demo-app
+
+---
+# Canary service for Argo Rollouts
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-canary
+  labels:
+    app: demo-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: demo-app

@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: demo-app-staging
+
+resources:
+  - ../../base
+
+replicas:
+  - name: demo-app
+    count: 3
+
+images:
+  - name: localhost:30087/demo-app
+    newTag: latest
+
+commonLabels:
+  environment: staging
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 200m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 1000m
+    target:
+      kind: Deployment
+      name: demo-app

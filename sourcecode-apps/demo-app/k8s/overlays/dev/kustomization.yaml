@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: demo-app-dev
+
+resources:
+  - ../../base
+
+replicas:
+  - name: demo-app
+    count: 2
+
+images:
+  - name: localhost:30087/demo-app
+    newTag: latest
+
+commonLabels:
+  environment: dev
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: development
+    target:
+      kind: Deployment
+      name: demo-app
