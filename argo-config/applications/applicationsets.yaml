@@ -14,7 +14,7 @@ spec:
       - path: argo-events
       - path: argo-image-updater  
       - path: redis
-      - path: sealed-secrets
+      # sealed-secrets is bootstrapped directly (not via ArgoCD) to avoid circular dependency
   template:
     metadata:
       name: '{{path.basename}}'

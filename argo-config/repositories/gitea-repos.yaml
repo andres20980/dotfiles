@@ -15,11 +15,12 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: gitea-applications-repo
+  name: gitea-custom-apps-repo
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: repository
 type: Opaque
 stringData:
+  name: gitops-custom-apps
   type: git
-  url: http://gitea.gitea.svc.cluster.local:3000/gitops/applications.git
+  url: http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
