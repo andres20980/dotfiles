@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: demo-app-ci-manual-
+  namespace: argo-workflows
+  labels:
+    app: demo-app
+    triggered-by: manual
+  annotations:
+    workflows.argoproj.io/pod-name-format: v2
+spec:
+  serviceAccountName: argo-workflow-sa
+  workflowTemplateRef:
+    name: ci-pipeline-template
+    clusterScope: true
+  arguments:
+    parameters:
+    - name: repo-url
+      value: http://gitea.gitea.svc.cluster.local:3000/gitops/demo-app.git
+    - name: branch
+      value: main
+    - name: commit-sha
+      value: HEAD
+    - name: image-name
+      value: demo-app
+    - name: registry
+      value: registry.registry.svc.cluster.local:5000

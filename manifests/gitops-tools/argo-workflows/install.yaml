@@ -69,6 +69,10 @@ rules:
   - workflowtasksets
   - workflowtasksets/finalizers
   - workflowartifactgctasks
+  - workflows/status
+  - workflowtasksets/status
+  - workflows/status
+  - workflowtasksets/status
   verbs:
   - get
   - list
@@ -115,6 +119,123 @@ rules:
   - create
   - get
   - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-cluster-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/exec
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - namespaces
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  - persistentvolumeclaims/finalizers
+  verbs:
+  - create
+  - update
+  - delete
+  - get
+- apiGroups:
+  - argoproj.io
+  resources:
+  - workflows
+  - workflows/status
+  - workflows/finalizers
+  - workflowtasksets
+  - workflowtasksets/status
+  - workflowtasksets/finalizers
+  - workflowartifactgctasks
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - create
+- apiGroups:
+  - argoproj.io
+  resources:
+  - workflowtemplates
+  - workflowtemplates/finalizers
+  - clusterworkflowtemplates
+  - clusterworkflowtemplates/finalizers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - workflowtaskresults
+  verbs:
+  - list
+  - watch
+  - deletecollection
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - argoproj.io
+  resources:
+  - cronworkflows
+  - cronworkflows/finalizers
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ""
+  resourceNames:
+  - argo-workflows-agent-ca-certificates
+  resources:
+  - secrets
+  verbs:
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -170,7 +291,6 @@ data:
   config: |
     # Basic workflow controller configuration
     instanceID: default
-    namespace: argo-workflows
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -193,6 +313,9 @@ spec:
         - workflow-controller-configmap
         - --executor-image
         - quay.io/argoproj/argoexec:v3.7.2
+        - --namespaced
+        - --managed-namespace
+        - argo-workflows
         command:
         - workflow-controller
         env:
@@ -202,6 +325,11 @@ spec:
               apiVersion: v1
               fieldPath: metadata.name
         - name: LEADER_ELECTION_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
               apiVersion: v1

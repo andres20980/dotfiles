@@ -1,77 +1,127 @@
 ---
-# WorkflowTemplate: Git Clone (reutilizable, sin inputs)
+# ClusterWorkflowTemplate: Pipeline CI completo con inline containers
 apiVersion: argoproj.io/v1alpha1
-kind: WorkflowTemplate
+kind: ClusterWorkflowTemplate
 metadata:
-  name: git-clone-template
-  namespace: argo-workflows
+  name: ci-pipeline-template
 spec:
+  arguments:
+    parameters:
+    - name: repo-url
+    - name: branch
+    - name: commit-sha
+    - name: image-name
+    - name: registry
+  entrypoint: ci-pipeline
+  volumeClaimTemplates:
+  - metadata:
+      name: workspace
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+  volumes:
+  - name: ci-scripts
+    configMap:
+      name: ci-scripts
+      defaultMode: 0755
   templates:
-  - name: clone
+  - name: ci-pipeline
+    steps:
+    - - name: checkout
+        template: git-clone
+        arguments:
+          parameters:
+          - name: repo-url
+            value: "{{workflow.parameters.repo-url}}"
+          - name: branch
+            value: "{{workflow.parameters.branch}}"
+          - name: commit-sha
+            value: "{{workflow.parameters.commit-sha}}"
+    - - name: build-and-push
+        template: docker-build
+        arguments:
+          parameters:
+          - name: image-name
+            value: "{{workflow.parameters.image-name}}"
+          - name: registry
+            value: "{{workflow.parameters.registry}}"
+          - name: commit-sha
+            value: "{{workflow.parameters.commit-sha}}"
+    - - name: update-version
+        template: update-manifests
+        arguments:
+          parameters:
+          - name: image-name
+            value: "{{workflow.parameters.image-name}}"
+          - name: registry
+            value: "{{workflow.parameters.registry}}"
+          - name: commit-sha
+            value: "{{workflow.parameters.commit-sha}}"
+
+  - name: git-clone
     container:
       image: alpine/git:latest
       command: [sh, /scripts/git-clone.sh]
       env:
       - name: REPO_URL
-        value: "{{workflow.parameters.repo-url}}"
+        value: "{{inputs.parameters.repo-url}}"
       - name: BRANCH
-        value: "{{workflow.parameters.branch}}"
+        value: "{{inputs.parameters.branch}}"
       - name: COMMIT_SHA
-        value: "{{workflow.parameters.commit-sha}}"
+        value: "{{inputs.parameters.commit-sha}}"
       volumeMounts:
       - name: workspace
         mountPath: /workspace
       - name: ci-scripts
         mountPath: /scripts
+    inputs:
+      parameters:
+      - name: repo-url
+      - name: branch
+      - name: commit-sha
 
----
-# WorkflowTemplate: Docker Build & Push con Kaniko
-apiVersion: argoproj.io/v1alpha1
-kind: WorkflowTemplate
-metadata:
-  name: docker-build-template
-  namespace: argo-workflows
-spec:
-  templates:
-  - name: build
+  - name: docker-build
     container:
       image: gcr.io/kaniko-project/executor:latest
       command: [sh, /scripts/docker-build-push.sh]
       env:
-      - name: IMAGE_REGISTRY
-        value: "{{workflow.parameters.image-registry}}"
       - name: IMAGE_NAME
-        value: "{{workflow.parameters.image-name}}"
+        value: "{{inputs.parameters.image-name}}"
+      - name: IMAGE_REGISTRY
+        value: "{{inputs.parameters.registry}}"
       - name: COMMIT_SHA
-        value: "{{workflow.parameters.commit-sha}}"
+        value: "{{inputs.parameters.commit-sha}}"
       volumeMounts:
       - name: workspace
         mountPath: /workspace
       - name: ci-scripts
         mountPath: /scripts
+    inputs:
+      parameters:
+      - name: image-name
+      - name: registry
+      - name: commit-sha
 
----
-# WorkflowTemplate: Update K8s Manifests
-apiVersion: argoproj.io/v1alpha1
-kind: WorkflowTemplate
-metadata:
-  name: update-manifests-template
-  namespace: argo-workflows
-spec:
-  templates:
-  - name: update
+  - name: update-manifests
     container:
       image: alpine/git:latest
       command: [sh, /scripts/update-manifests.sh]
       env:
-      - name: IMAGE_REGISTRY
-        value: "{{workflow.parameters.image-registry}}"
       - name: IMAGE_NAME
-        value: "{{workflow.parameters.image-name}}"
+        value: "{{inputs.parameters.image-name}}"
+      - name: REGISTRY
+        value: "{{inputs.parameters.registry}}"
       - name: COMMIT_SHA
-        value: "{{workflow.parameters.commit-sha}}"
+        value: "{{inputs.parameters.commit-sha}}"
       volumeMounts:
       - name: workspace
         mountPath: /workspace
       - name: ci-scripts
         mountPath: /scripts
+    inputs:
+      parameters:
+      - name: image-name
+      - name: registry
+      - name: commit-sha

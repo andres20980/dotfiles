@@ -10,9 +10,11 @@ data:
     echo "🔍 Cloning repository..."
     git clone --depth=1 --branch="$BRANCH" "$REPO_URL" /workspace
     cd /workspace
-    echo "📌 Checking out commit: $COMMIT_SHA"
-    git fetch --depth=1 origin "$COMMIT_SHA"
-    git checkout "$COMMIT_SHA"
+    if [ -n "$COMMIT_SHA" ] && [ "$COMMIT_SHA" != "HEAD" ]; then
+      echo "📌 Checking out commit: $COMMIT_SHA"
+      git fetch --depth=1 origin "$COMMIT_SHA"
+      git checkout "$COMMIT_SHA"
+    fi
     echo "✅ Repository ready"
     ls -la
 
@@ -25,6 +27,8 @@ data:
       --context=/workspace \
       --destination="$IMAGE_REGISTRY/$IMAGE_NAME:$COMMIT_SHA" \
       --destination="$IMAGE_REGISTRY/$IMAGE_NAME:latest" \
+      --insecure \
+      --skip-tls-verify \
       --cache=true \
       --cache-ttl=24h
     echo "✅ Image pushed: $IMAGE_REGISTRY/$IMAGE_NAME:$COMMIT_SHA"
@@ -36,11 +40,11 @@ data:
     
     # Clone gitops repo
     cd /tmp
-    git clone http://gitea-service.gitea.svc.cluster.local:3000/gitops/gitops-repo.git
-    cd gitops-repo/gitops/applications/demo-app
+  git clone http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-repo.git
+  cd gitops-repo/gitops/applications/demo-app
     
     # Update image tag
-    sed -i "s|image:.*|image: $IMAGE_REGISTRY/$IMAGE_NAME:$COMMIT_SHA|g" kustomization.yaml
+  sed -i "s|image:.*|image: $REGISTRY/$IMAGE_NAME:$COMMIT_SHA|g" kustomization.yaml
     
     # Commit and push
     git config user.name "Argo Workflows"
