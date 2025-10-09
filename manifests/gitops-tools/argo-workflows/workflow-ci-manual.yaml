@@ -6,6 +6,7 @@ metadata:
   labels:
     app: demo-app
     triggered-by: manual
+    workflows.argoproj.io/controller-instanceid: default
   annotations:
     workflows.argoproj.io/pod-name-format: v2
 spec:
