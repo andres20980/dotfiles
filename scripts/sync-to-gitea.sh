@@ -44,7 +44,7 @@ main() {
   log_info "🔄 Sincronizando cambios locales con Gitea..."
   
   # Verificar que estemos en el directorio correcto
-  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/infrastructure" ]]; then
+  if [[ ! -d "argo-config" ]] || [[ ! -d "manifests/gitops-tools" ]]; then
     log_error "Ejecutar desde el directorio raíz del proyecto (donde están argo-config/ y manifests/)"
     exit 1
   fi
@@ -58,9 +58,10 @@ main() {
     exit 1
   fi
   
-  # Sincronizar ambos repos
+  # Sincronizar repos GitOps
   sync_subtree "argo-config" "http://gitops:${gitea_password}@localhost:30083/gitops/argo-config.git"
-  sync_subtree "manifests/infrastructure" "http://gitops:${gitea_password}@localhost:30083/gitops/infrastructure.git"
+  sync_subtree "manifests/gitops-tools" "http://gitops:${gitea_password}@localhost:30083/gitops/gitops-tools.git"
+  sync_subtree "manifests/custom-apps" "http://gitops:${gitea_password}@localhost:30083/gitops/custom-apps.git"
   
   log_success "🎉 Sincronización completada. ArgoCD detectará los cambios automáticamente."
   log_info "💡 Puedes verificar en: http://localhost:30080"

@@ -7,14 +7,20 @@ data:
   git-clone.sh: |
     #!/bin/sh
     set -e
-    echo "🔍 Cloning repository..."
-    git clone --depth=1 --branch="$BRANCH" "$REPO_URL" /workspace
+    
+    # Limpiar branch name (remover refs/heads/ si existe)
+    CLEAN_BRANCH=$(echo "$BRANCH" | sed 's|refs/heads/||')
+    
+    echo "🔍 Clonando repositorio $REPO_URL (branch $CLEAN_BRANCH)"
+    git clone --depth=1 --branch="$CLEAN_BRANCH" "$REPO_URL" /workspace
     cd /workspace
-    if [ -n "$COMMIT_SHA" ] && [ "$COMMIT_SHA" != "HEAD" ]; then
+    
+    if [ -n "$COMMIT_SHA" ] && [ "$COMMIT_SHA" != "unknown" ] && [ "$COMMIT_SHA" != "HEAD" ]; then
       echo "📌 Checking out commit: $COMMIT_SHA"
       git fetch --depth=1 origin "$COMMIT_SHA"
       git checkout "$COMMIT_SHA"
     fi
+    
     echo "✅ Repository ready"
     ls -la
 
@@ -40,11 +46,11 @@ data:
     
     # Clone gitops repo
     cd /tmp
-  git clone http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-repo.git
-  cd gitops-repo/gitops/applications/demo-app
+    git clone http://gitops:n5Sn4efguDMnUgIx@gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
+    cd custom-apps/demo-app
     
-    # Update image tag
-  sed -i "s|image:.*|image: $REGISTRY/$IMAGE_NAME:$COMMIT_SHA|g" kustomization.yaml
+    # Update image tag in kustomization.yaml
+    sed -i "s|newTag:.*|newTag: $COMMIT_SHA|g" kustomization.yaml
     
     # Commit and push
     git config user.name "Argo Workflows"

@@ -1,9 +1,10 @@
 ---
 # ClusterWorkflowTemplate: Pipeline CI completo con inline containers
 apiVersion: argoproj.io/v1alpha1
-kind: ClusterWorkflowTemplate
+kind: WorkflowTemplate
 metadata:
   name: ci-pipeline-template
+  namespace: argo-workflows
 spec:
   arguments:
     parameters:
@@ -85,19 +86,16 @@ spec:
   - name: docker-build
     container:
       image: gcr.io/kaniko-project/executor:latest
-      command: [sh, /scripts/docker-build-push.sh]
-      env:
-      - name: IMAGE_NAME
-        value: "{{inputs.parameters.image-name}}"
-      - name: IMAGE_REGISTRY
-        value: "{{inputs.parameters.registry}}"
-      - name: COMMIT_SHA
-        value: "{{inputs.parameters.commit-sha}}"
+      args:
+        - --dockerfile=/workspace/Dockerfile
+        - --context=/workspace
+        - --destination={{inputs.parameters.registry}}/{{inputs.parameters.image-name}}:{{inputs.parameters.commit-sha}}
+        - --destination={{inputs.parameters.registry}}/{{inputs.parameters.image-name}}:latest
+        - --insecure
+        - --skip-tls-verify
       volumeMounts:
       - name: workspace
         mountPath: /workspace
-      - name: ci-scripts
-        mountPath: /scripts
     inputs:
       parameters:
       - name: image-name

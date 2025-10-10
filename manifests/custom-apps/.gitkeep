@@ -1,0 +1,7 @@
+# Este directorio contiene las aplicaciones personalizadas gestionadas por ArgoCD.
+# Por defecto incluye `demo-api/`, la aplicación Node.js utilizada en la demo GitOps.
+# 
+# Para añadir nuevas apps:
+# 1. Crea un subdirectorio con los manifests K8s (deployment, service, ingress, etc.).
+# 2. Haz commit y push al repositorio `applications` en Gitea.
+# 3. ArgoCD detectará el nuevo directorio y desplegará la aplicación automáticamente.

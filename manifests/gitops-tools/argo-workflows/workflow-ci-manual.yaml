@@ -13,7 +13,7 @@ spec:
   serviceAccountName: argo-workflow-sa
   workflowTemplateRef:
     name: ci-pipeline-template
-    clusterScope: true
+    clusterScope: false
   arguments:
     parameters:
     - name: repo-url
