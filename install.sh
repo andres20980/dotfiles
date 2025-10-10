@@ -2301,10 +2301,12 @@ apply_critical_fixes() {
     
     if [[ -n "$sensor_deployment" ]]; then
       log_info "  Parcheando deployment: $sensor_deployment"
+      # Bug Argo Events v1.9.7: sensor-controller ignora spec.serviceAccountName
+      # Workaround: patch deployment post-creación con argo-events-sa (no argo-events-sensor-sa)
       kubectl patch deployment "$sensor_deployment" -n argo-events \
-        -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sensor-sa"}}}}' \
+        --type='json' -p='[{"op":"replace","path":"/spec/template/spec/serviceAccountName","value":"argo-events-sa"}]' \
         >/dev/null 2>&1 && \
-        log_success "  ✅ ServiceAccount inyectado en sensor deployment" || \
+        log_success "  ✅ ServiceAccount corregido a argo-events-sa (bug v1.9.7)" || \
         log_warning "  ⚠️  No se pudo parchear sensor deployment"
     else
       log_warning "  ⚠️  No se encontró deployment del sensor (se creará cuando se sincronice)"
