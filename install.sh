@@ -35,6 +35,10 @@ readonly BASE_DIR="${BASE_DIR:-$SCRIPT_DIR}"
 ENABLE_CUSTOM_APPS="${ENABLE_CUSTOM_APPS:-false}"
 readonly ENABLE_CUSTOM_APPS
 
+# Controla si se fuerza la recreación de repos GitOps existentes
+FORCE_GITOPS_BOOTSTRAP="${FORCE_GITOPS_BOOTSTRAP:-false}"
+readonly FORCE_GITOPS_BOOTSTRAP
+
 # Variables de configuración adicionales
 readonly INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-1800}" # 30 minutos por defecto
 readonly VERBOSE_LOGGING="${VERBOSE_LOGGING:-false}"
@@ -276,6 +280,29 @@ bootstrap_local_repo() {
   local target_dir="$2"
   local commit_message="$3"
   local skip_disabled="${4:-true}"
+
+  # Si el repo ya existe y tiene .git, solo actualizar si es necesario
+  if [[ -d "$target_dir/.git" && "$FORCE_GITOPS_BOOTSTRAP" != "true" ]]; then
+    log_info "   Repositorio existente detectado en $target_dir"
+    
+    # Verificar si hay cambios locales sin commitear
+    if ! git -C "$target_dir" diff-index --quiet HEAD -- 2>/dev/null; then
+      log_warning "   ⚠️  Cambios locales detectados - preservando repo existente"
+      log_info "   💡 Use FORCE_GITOPS_BOOTSTRAP=true para forzar recreación"
+      return 0
+    fi
+    
+    # Verificar si hay commits locales no pusheados
+    local unpushed_commits
+    unpushed_commits=$(git -C "$target_dir" rev-list @{u}..HEAD 2>/dev/null | wc -l || echo "0")
+    if [[ "$unpushed_commits" -gt 0 ]]; then
+      log_warning "   ⚠️  Commits locales sin pushear ($unpushed_commits) - preservando repo existente"
+      log_info "   💡 Use FORCE_GITOPS_BOOTSTRAP=true para forzar recreación"
+      return 0
+    fi
+    
+    log_info "   Repo limpio - actualizando desde dotfiles..."
+  fi
 
   rm -rf "$target_dir"
   mkdir -p "$target_dir"

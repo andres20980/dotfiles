@@ -326,6 +326,65 @@ Application demo-app synced con nueva imagen
 
 ---
 
+## Fix 8: Install.sh Preserva Repos GitOps Existentes
+
+### Problema
+- `install.sh` siempre ejecutaba `rm -rf ~/gitops-repos/gitops-tools`
+- Perdía todos los commits locales y fixes aplicados durante debug
+- No diferenciaba entre "primera instalación" vs "actualización"
+
+### Solución
+Modificado `bootstrap_local_repo()` para:
+
+1. **Detectar repos existentes** con `.git`
+2. **Verificar cambios locales** sin commitear → preservar
+3. **Verificar commits sin pushear** → preservar
+4. **Solo recrear** si repo limpio O `FORCE_GITOPS_BOOTSTRAP=true`
+
+```bash
+# COMPORTAMIENTO NUEVO
+if [[ -d "$target_dir/.git" && "$FORCE_GITOPS_BOOTSTRAP" != "true" ]]; then
+  # Repo existe - verificar estado
+  if ! git diff-index --quiet HEAD; then
+    log_warning "Cambios locales detectados - preservando repo existente"
+    return 0  # SKIP recreación
+  fi
+  
+  if [[ $(git rev-list @{u}..HEAD | wc -l) -gt 0 ]]; then
+    log_warning "Commits sin pushear - preservando repo existente"
+    return 0  # SKIP recreación
+  fi
+fi
+
+# Solo llega aquí si repo no existe O está limpio
+rm -rf "$target_dir"  # Recrear
+```
+
+**Variable de control**:
+```bash
+# Instalar desde cero (borra repos existentes)
+FORCE_GITOPS_BOOTSTRAP=true ./install.sh install
+
+# Instalar preservando repos existentes (default)
+./install.sh install
+```
+
+**Casos de uso**:
+
+| Escenario | Comportamiento |
+|-----------|----------------|
+| Primera instalación | Crea repos normalmente |
+| Re-install con repos limpios | Actualiza desde dotfiles |
+| Re-install con cambios locales | **PRESERVA repos** (no sobrescribe) |
+| Re-install con commits sin pushear | **PRESERVA repos** (no pierde trabajo) |
+| `FORCE_GITOPS_BOOTSTRAP=true` | Fuerza recreación (ignora cambios) |
+
+**Resultado**: ✅ Workflow de desarrollo seguro - no pierde trabajo local
+
+**Commit**: Pendiente
+
+---
+
 ## Comandos Útiles
 
 ### Verificar Estado Pipeline
