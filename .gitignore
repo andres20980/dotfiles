@@ -179,6 +179,9 @@ gitops-repos/
 config.local.env
 .personal/
 
+# Credenciales locales de referencia (no se suben)
+CREDENTIALS.md
+
 # Shell config files (deberían estar en dotfiles del usuario, no aquí)
 .zshrc.local
 .bashrc.local
