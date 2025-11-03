@@ -81,26 +81,13 @@ echo ""
 # ============================================================================
 echo -e "${BLUE}🌳 PASO 4: Desplegando Root Application (App of Apps)...${NC}"
 echo ""
-echo -e "${YELLOW}IMPORTANTE:${NC} El root-app.yaml debe apuntar a un repositorio accesible."
-echo "Opciones:"
-echo "  1. Repo público en GitHub (recomendado para bootstrap)"
-echo "  2. Repo local con git daemon"
-echo ""
-echo "Actualmente configurado en: bootstrap/root-app.yaml"
-echo ""
-read -p "¿Has configurado la URL del repositorio? (s/n): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Ss]$ ]]; then
-    echo ""
-    echo "Por favor, edita bootstrap/root-app.yaml y actualiza:"
-    echo "  spec.source.repoURL: <TU_REPO_URL>"
-    echo ""
-    echo "Luego ejecuta este script de nuevo."
-    exit 1
-fi
+
+# Verificar que el root-app.yaml tiene una URL válida
+REPO_URL=$(grep "repoURL:" "$SCRIPT_DIR/root-app.yaml" | head -1 | awk '{print $2}')
+echo "  - Repositorio configurado: $REPO_URL"
 
 # Aplicar root app
-kubectl apply -f "$SCRIPT_DIR/bootstrap/root-app.yaml"
+kubectl apply -f "$SCRIPT_DIR/root-app.yaml"
 
 echo -e "${GREEN}✅ Root Application aplicada${NC}"
 echo ""
