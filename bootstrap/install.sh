@@ -73,11 +73,16 @@ kubectl wait --for=condition=ready --timeout=300s \
     pod -l app.kubernetes.io/name=argocd-application-controller \
     -n argocd
 
-# Exponer Argo CD en NodePort para acceso local
-echo "  - Exponiendo Argo CD en NodePort 30080/30443..."
-kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":8080,"nodePort":30080},{"name":"https","port":443,"protocol":"TCP","targetPort":8080,"nodePort":30443}]}}' > /dev/null 2>&1
+# Configurar Argo CD para entorno local de aprendizaje
+echo "  - Configurando Argo CD para acceso local sin autenticación..."
+kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":8080,"nodePort":30080}]}}' > /dev/null 2>&1
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}' > /dev/null 2>&1
+kubectl patch configmap argocd-cm -n argocd --type merge -p '{"data":{"users.anonymous.enabled":"true"}}' > /dev/null 2>&1
+kubectl patch configmap argocd-rbac-cm -n argocd --type merge -p '{"data":{"policy.default":"role:admin"}}' > /dev/null 2>&1
+kubectl rollout restart deployment argocd-server -n argocd > /dev/null 2>&1
+kubectl rollout status deployment argocd-server -n argocd --timeout=60s > /dev/null 2>&1
 
-echo -e "${GREEN}✅ Argo CD está listo${NC}"
+echo -e "${GREEN}✅ Argo CD está listo (HTTP sin autenticación)${NC}"
 echo ""
 
 # ============================================================================
