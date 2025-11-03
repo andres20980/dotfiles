@@ -1,0 +1,40 @@
+# ApplicationSet para GitOps Tools
+# Despliega automáticamente todas las herramientas desde gitops-tools/
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gitops-tools
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/andres20980/dotfiles.git
+        revision: main
+        directories:
+          - path: gitops-manifests/gitops-tools/*
+  template:
+    metadata:
+      name: '{{path.basename}}'
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/andres20980/dotfiles.git
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            maxDuration: 3m

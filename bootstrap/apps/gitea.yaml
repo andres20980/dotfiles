@@ -13,7 +13,7 @@ spec:
     # Después de migración: apuntará a Gitea (self-hosting!)
     repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: gitops-tools/gitea
+    path: gitops-manifests/gitops-tools/gitea
   destination:
     server: https://kubernetes.default.svc
     namespace: gitea

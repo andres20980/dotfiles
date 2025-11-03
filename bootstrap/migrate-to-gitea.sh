@@ -75,9 +75,7 @@ echo ""
 echo -e "${BLUE}📦 PASO 3: Creando repositorios en Gitea...${NC}"
 
 REPOS=(
-    "argo-config"
-    "gitops-tools"
-    "gitops-custom-apps"
+    "gitops-manifests"
     "app-reloj"
     "visor-gitops"
 )
@@ -150,11 +148,9 @@ push_repo() {
 }
 
 # Push todos los repos
-push_repo "argo-config" "$HOME/gitops-repos/argo-config"
-push_repo "gitops-tools" "$HOME/gitops-repos/gitops-tools"
-push_repo "gitops-custom-apps" "$HOME/gitops-repos/gitops-custom-apps"
-push_repo "app-reloj" "$HOME/dotfiles/sourcecode-apps/app-reloj"
-push_repo "visor-gitops" "$HOME/dotfiles/sourcecode-apps/visor-gitops"
+push_repo "gitops-manifests" "$HOME/dotfiles/gitops-manifests"
+push_repo "app-reloj" "$HOME/dotfiles/gitops-source-code/app-reloj"
+push_repo "visor-gitops" "$HOME/dotfiles/gitops-source-code/visor-gitops"
 
 echo -e "${GREEN}✅ Push completado${NC}"
 echo ""
@@ -169,7 +165,12 @@ kubectl patch application root -n argocd --type='json' -p='[
     {
         "op": "replace",
         "path": "/spec/source/repoURL",
-        "value": "http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git"
+        "value": "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"
+    },
+    {
+        "op": "replace",
+        "path": "/spec/source/path",
+        "value": "infra-configs/applications"
     }
 ]'
 

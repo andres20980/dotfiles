@@ -10,11 +10,11 @@ metadata:
 spec:
   project: default
   source:
-    # Durante bootstrap: usa GitHub con argo-config/
+    # Durante bootstrap: usa GitHub con gitops-manifests/infra-configs/
     # Después de migración: apuntará a Gitea
     repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: argo-config
+    path: gitops-manifests/infra-configs/configmaps
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
