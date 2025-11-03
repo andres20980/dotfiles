@@ -15,8 +15,8 @@ spec:
   # FASE 1: Durante bootstrap inicial, usa GitHub público o local
   # FASE 2: Después de migrate-to-gitea.sh, se actualiza automáticamente a Gitea
   source:
-    # TODO: Cambiar a tu repo público temporal o usar path local
-    repoURL: https://github.com/YOUR_USER/gitops-bootstrap.git
+    # FASE 1: Bootstrap desde GitHub público
+    repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
     path: bootstrap/apps
   

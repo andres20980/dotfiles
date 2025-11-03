@@ -9,11 +9,11 @@ metadata:
 spec:
   project: default
   source:
-    # Durante bootstrap: usa GitHub/local
-    # Después de migración: apuntará a Gitea automáticamente cuando root-app se actualice
-    repoURL: https://github.com/YOUR_USER/gitops-tools.git
+    # Durante bootstrap: usa GitHub
+    # Después de migración: apuntará a Gitea
+    repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: docker-registry
+    path: gitops-repos/gitops-tools/docker-registry
   destination:
     server: https://kubernetes.default.svc
     namespace: registry

@@ -9,11 +9,11 @@ metadata:
 spec:
   project: default
   source:
-    # Durante bootstrap: usa GitHub/local
+    # Durante bootstrap: usa GitHub
     # Después de migración: apuntará a Gitea (self-hosting!)
-    repoURL: https://github.com/YOUR_USER/gitops-tools.git
+    repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: gitea
+    path: gitops-repos/gitops-tools/gitea
   destination:
     server: https://kubernetes.default.svc
     namespace: gitea
