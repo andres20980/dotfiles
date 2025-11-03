@@ -261,6 +261,19 @@ deploy_gitea() {
 initialize_gitea_repos() {
     log_phase "FASE 5/7: Inicializando repositorios en Gitea"
     
+    # Crear usuario admin en Gitea
+    log_info "Creando usuario admin en Gitea..."
+    kubectl exec -n gitea deployment/gitea -- su git -c "\
+        gitea admin user create \
+        --admin \
+        --username ${GITEA_USER} \
+        --password ${GITEA_PASSWORD} \
+        --email ${GITEA_USER}@gitops.local \
+        --must-change-password=false" 2>/dev/null || log_info "Usuario ya existe"
+    
+    # Esperar un momento para que el usuario esté disponible
+    sleep 3
+    
     # Crear token de API
     log_info "Creando token de API en Gitea..."
     local token
@@ -272,6 +285,10 @@ initialize_gitea_repos() {
     
     if [ -z "$token" ] || [ "$token" == "null" ]; then
         log_error "No se pudo crear token de API"
+        log_info "Respuesta API: $(curl -s -X POST "${GITEA_URL_EXTERNAL}/api/v1/users/${GITEA_USER}/tokens" \
+            -H "Content-Type: application/json" \
+            -u "${GITEA_USER}:${GITEA_PASSWORD}" \
+            -d "{\"name\": \"bootstrap-$(date +%s)\", \"scopes\": [\"write:repository\", \"write:user\"]}")"
         return 1
     fi
     

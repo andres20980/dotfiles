@@ -23,7 +23,7 @@ spec:
       source:
         repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git'
         targetRevision: HEAD
-        path: '{{path}}'
+        path: 'gitops-tools/{{path}}'
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: '{{path.basename}}'

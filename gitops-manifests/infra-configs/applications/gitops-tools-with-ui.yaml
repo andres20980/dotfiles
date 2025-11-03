@@ -10,9 +10,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'dashboard'
+    path: 'gitops-tools/dashboard'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'dashboard'
@@ -42,9 +42,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'grafana'
+    path: 'gitops-tools/grafana'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'grafana'
@@ -74,9 +74,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'prometheus'
+    path: 'gitops-tools/prometheus'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'prometheus'
@@ -106,9 +106,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'kargo'
+    path: 'gitops-tools/kargo'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'kargo'
@@ -138,9 +138,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'argo-rollouts'
+    path: 'gitops-tools/argo-rollouts'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'argo-rollouts'
@@ -175,9 +175,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'gitea'
+    path: 'gitops-tools/gitea'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'gitea'
@@ -211,9 +211,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'argo-workflows'
+    path: 'gitops-tools/argo-workflows'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'argo-workflows'
@@ -243,9 +243,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'registry'
+    path: 'gitops-tools/registry'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'registry'
@@ -275,9 +275,9 @@ metadata:
 spec:
   project: gitops-tools
   source:
-    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
     targetRevision: HEAD
-    path: 'redis'
+    path: 'gitops-tools/redis'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'redis'
