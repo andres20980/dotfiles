@@ -1,6 +1,9 @@
 # Root Application - App of Apps Pattern
 # Este es el ÚNICO manifest que se aplica manualmente con kubectl
 # Todos los demás recursos se despliegan automáticamente desde aquí
+#
+# ⚠️  IMPORTANTE: Este root-app apunta a GITEA (source of truth)
+# Gitea debe estar desplegado y con repos inicializados ANTES de aplicar esto
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -12,13 +15,12 @@ metadata:
 spec:
   project: default
   
-  # FASE 1: Durante bootstrap inicial, usa GitHub público o local
-  # FASE 2: Después de migrate-to-gitea.sh, se actualiza automáticamente a Gitea
+  # Source of Truth: Gitea interno (no GitHub)
   source:
-    # FASE 1: Bootstrap desde GitHub público
-    repoURL: https://github.com/andres20980/dotfiles.git
+    # URL interna de Gitea dentro del cluster
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
     targetRevision: main
-    path: bootstrap/apps
+    path: infra-configs/applications
   
   destination:
     server: https://kubernetes.default.svc
