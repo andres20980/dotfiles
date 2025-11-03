@@ -418,6 +418,87 @@ install_kubeseal() {
   return 1
 }
 
+# Crear SealedSecret para Gitea admin (GitOps best-practice)
+create_gitea_sealed_secret() {
+  log_info "Generando SealedSecret para credenciales admin de Gitea..."
+  
+  # Verificar que sealed-secrets controller esté listo
+  if ! kubectl get pods -n kube-system -l name=sealed-secrets-controller --field-selector=status.phase=Running 2>/dev/null | grep -q "sealed-secrets-controller"; then
+    log_error "Sealed Secrets Controller no está Running en kube-system"
+    return 1
+  fi
+  
+  # Instalar kubeseal si no está disponible
+  install_kubeseal || {
+    log_error "No se pudo instalar kubeseal"
+    return 1
+  }
+  
+  # Generar password seguro para Gitea admin
+  local gitea_password
+  gitea_password=$(generate_secure_password 16)
+  
+  # Crear namespace gitea si no existe
+  kubectl create namespace "$GITEA_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
+  
+  # Crear Secret temporal con labels (best-practice: tracking y ownership)
+  local temp_secret_file="/tmp/gitea-admin-secret-$$.yaml"
+  local sealed_secret_file="/tmp/gitea-admin-sealed-$$.yaml"
+  
+  kubectl create secret generic gitea-admin-secret -n "$GITEA_NAMESPACE" \
+    --from-literal=password="${gitea_password}" \
+    --dry-run=client -o yaml | \
+    kubectl label --local -f - app=gitea managed-by=sealed-secrets --dry-run=client -o yaml > "${temp_secret_file}"
+  
+  # Convertir a SealedSecret
+  if ! kubeseal --format=yaml < "${temp_secret_file}" > "${sealed_secret_file}" 2>/dev/null; then
+    log_error "No se pudo generar SealedSecret con kubeseal"
+    rm -f "${temp_secret_file}" "${sealed_secret_file}"
+    return 1
+  fi
+  
+  # Aplicar al cluster
+  if ! kubectl apply -f "${sealed_secret_file}" >/dev/null 2>&1; then
+    log_error "No se pudo aplicar SealedSecret"
+    rm -f "${temp_secret_file}" "${sealed_secret_file}"
+    return 1
+  fi
+  
+  # Guardar para GitOps (será commiteado después en el repo)
+  mkdir -p "$SCRIPT_DIR/manifests/gitops-tools/gitea"
+  cp "${sealed_secret_file}" "$SCRIPT_DIR/manifests/gitops-tools/gitea/sealed-secret.yaml"
+  
+  # Guardar credenciales para uso del script
+  export GITEA_ADMIN_PASSWORD="$gitea_password"
+  mkdir -p "$HOME/.gitops-credentials"
+  cat > "$HOME/.gitops-credentials/gitea-admin.txt" << EOF
+Gitea Admin Credentials
+========================
+URL: http://localhost:30083
+User: gitops
+Pass: ${gitea_password}
+
+Generated: $(date)
+EOF
+  chmod 600 "$HOME/.gitops-credentials/gitea-admin.txt"
+  
+  rm -f "${temp_secret_file}" "${sealed_secret_file}"
+  
+  log_success "SealedSecret de Gitea generado y aplicado"
+  log_info "   Credenciales guardadas en: ~/.gitops-credentials/gitea-admin.txt"
+  log_info "   Password: ${gitea_password}"
+  
+  # Esperar a que el secret sea descifrado por sealed-secrets-controller
+  log_info "Esperando a que Sealed Secrets Controller descifre el secret..."
+  wait_for_condition "kubectl get secret gitea-admin-secret -n $GITEA_NAMESPACE >/dev/null 2>&1" 60 2 || {
+    log_error "Secret no fue descifrado a tiempo"
+    return 1
+  }
+  
+  log_success "Secret descifrado y disponible para Gitea"
+  return 0
+}
+
 create_kargo_secret_workaround() {
   log_info "Generando SealedSecret para Kargo con clave del cluster actual..."
   
@@ -831,11 +912,9 @@ check_and_update_versions() {
   fi
 
   local config_file="$SCRIPT_DIR/config.env"
-  local temp_file="${config_file}.tmp"
-  cp "$config_file" "$temp_file"
-
-  # Función helper para obtener última versión de GitHub (silenciosa)
-  get_latest_github_version() {
+  
+  # Función helper para obtener última versión de GitHub y actualizar in-place
+  get_and_update_version() {
     local repo="$1"
     local var_name="$2"
     
@@ -844,7 +923,8 @@ check_and_update_versions() {
               jq -r '.[0].tag_name // empty' 2>/dev/null)
     
     if [[ -n "$version" ]]; then
-      sed -i "s|^${var_name}=.*|${var_name}=${version}|" "$temp_file"
+      # Actualizar in-place solo la línea de la versión (usando sed con backup)
+      sed -i.bak "s|^${var_name}=.*|${var_name}=${version}|" "$config_file"
       echo "$version"
     else
       # Devolver versión actual si falla
@@ -852,19 +932,22 @@ check_and_update_versions() {
     fi
   }
 
-  # Obtener todas las versiones (silenciosamente)
-  local argocd_ver=$(get_latest_github_version "argoproj/argo-cd" "ARGOCD_VERSION")
-  local rollouts_ver=$(get_latest_github_version "argoproj/argo-rollouts" "ARGO_ROLLOUTS_VERSION")
-  local workflows_ver=$(get_latest_github_version "argoproj/argo-workflows" "ARGO_WORKFLOWS_VERSION")
-  local events_ver=$(get_latest_github_version "argoproj/argo-events" "ARGO_EVENTS_VERSION")
-  local imgupd_ver=$(get_latest_github_version "argoproj-labs/argocd-image-updater" "ARGO_IMAGE_UPDATER_VERSION")
-  local kubeseal_ver=$(get_latest_github_version "bitnami-labs/sealed-secrets" "KUBESEAL_VERSION")
-  local kargo_ver=$(get_latest_github_version "akuity/kargo" "KARGO_VERSION")
-  local prom_ver=$(get_latest_github_version "prometheus/prometheus" "PROMETHEUS_VERSION")
-  local grafana_ver=$(get_latest_github_version "grafana/grafana" "GRAFANA_VERSION")
-  local dash_ver=$(get_latest_github_version "kubernetes/dashboard" "K8S_DASHBOARD_VERSION")
-  local gitea_ver=$(get_latest_github_version "go-gitea/gitea" "GITEA_VERSION")
-  local kind_ver=$(get_latest_github_version "kubernetes-sigs/kind" "KIND_VERSION")
+  # Obtener todas las versiones (silenciosamente) y actualizar config.env
+  local argocd_ver=$(get_and_update_version "argoproj/argo-cd" "ARGOCD_VERSION")
+  local rollouts_ver=$(get_and_update_version "argoproj/argo-rollouts" "ARGO_ROLLOUTS_VERSION")
+  local workflows_ver=$(get_and_update_version "argoproj/argo-workflows" "ARGO_WORKFLOWS_VERSION")
+  local events_ver=$(get_and_update_version "argoproj/argo-events" "ARGO_EVENTS_VERSION")
+  local imgupd_ver=$(get_and_update_version "argoproj-labs/argocd-image-updater" "ARGO_IMAGE_UPDATER_VERSION")
+  local kubeseal_ver=$(get_and_update_version "bitnami-labs/sealed-secrets" "KUBESEAL_VERSION")
+  local kargo_ver=$(get_and_update_version "akuity/kargo" "KARGO_VERSION")
+  local prom_ver=$(get_and_update_version "prometheus/prometheus" "PROMETHEUS_VERSION")
+  local grafana_ver=$(get_and_update_version "grafana/grafana" "GRAFANA_VERSION")
+  local dash_ver=$(get_and_update_version "kubernetes/dashboard" "K8S_DASHBOARD_VERSION")
+  local gitea_ver=$(get_and_update_version "go-gitea/gitea" "GITEA_VERSION")
+  local kind_ver=$(get_and_update_version "kubernetes-sigs/kind" "KIND_VERSION")
+
+  # Limpiar archivos backup generados por sed
+  rm -f "${config_file}.bak"
 
   # Mostrar versiones agrupadas
   log_success "Bootstrap (no gestionadas por ArgoCD):"
@@ -887,16 +970,6 @@ check_and_update_versions() {
   echo "      • Grafana $grafana_ver"
   echo "      • Dashboard $dash_ver"
   echo ""
-
-  # Aplicar cambios si hubo actualizaciones
-  if ! diff -q "$config_file" "$temp_file" >/dev/null 2>&1; then
-    mv "$temp_file" "$config_file"
-    log_success "config.env actualizado con las últimas versiones"
-    # Recargar configuración
-    source "${SCRIPT_DIR}/config.env"
-  else
-    rm -f "$temp_file"
-  fi
 }
 
 # Generar password seguro con múltiples fuentes de entropía
@@ -1509,52 +1582,151 @@ EOF
     kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=120s >/dev/null 2>&1
     log_success "CoreDNS listo"
 
-    # Instalar ArgoCD
-    log_info "🔧 Instalando ArgoCD ${ARGOCD_VERSION:-v3.2.0-rc3}..."
-    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
-    local argocd_version="${ARGOCD_VERSION:-v3.2.0-rc3}"
+    # ===========================================================================
+    # FASE 1: SEALED SECRETS (primer componente - fuente de secretos)
+    # ===========================================================================
+    install_sealed_secrets_bootstrap
+
+    # ===========================================================================
+    # FASE 2: GITEA (fuente de verdad GitOps - ANTES de ArgoCD)
+    # ===========================================================================
+    log_info "🔧 Instalando Gitea (fuente de verdad GitOps)..."
     
-    log_info "   📥 Descargando manifests desde GitHub..."
-    if ! kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${argocd_version}/manifests/install.yaml" --validate=false >/dev/null 2>&1; then
-        log_error "Error al instalar ArgoCD ${argocd_version}"
-        exit 1
-    fi
-    log_success "   Manifests aplicados (34 recursos creados)"
+    # Crear SealedSecret para credenciales admin
+    create_gitea_sealed_secret || {
+      log_error "No se pudo crear SealedSecret de Gitea"
+      exit 1
+    }
+    
+    # Aplicar manifests de Gitea (con health probes y resource limits - best practices)
+    kubectl apply -f - >/dev/null 2>&1 <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-pvc
+  namespace: $GITEA_NAMESPACE
+  labels:
+    app: gitea
+    managed-by: bootstrap
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: $GITEA_NAMESPACE
+  labels:
+    app: gitea
+    managed-by: bootstrap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+      - name: gitea
+        image: gitea/gitea:1.22
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        - containerPort: 22
+          name: ssh
+          protocol: TCP
+        env:
+        - name: GITEA__database__DB_TYPE
+          value: sqlite3
+        - name: GITEA__security__INSTALL_LOCK
+          value: "true"
+        - name: GITEA__service__DISABLE_REGISTRATION
+          value: "true"
+        - name: GITEA__service__REQUIRE_SIGNIN_VIEW
+          value: "false"
+        - name: GITEA__openid__ENABLE_OPENID_SIGNIN
+          value: "false"
+        - name: GITEA__openid__ENABLE_OPENID_SIGNUP
+          value: "false"
+        - name: GITEA__actions__ENABLED
+          value: "true"
+        - name: GITEA__actions__DEFAULT_ACTIONS_URL
+          value: "github"
+        # Best Practice: Resource limits para evitar consumo excesivo
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        # Best Practice: Health probes para garantizar disponibilidad
+        livenessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: gitea-storage
+          mountPath: /data
+      volumes:
+      - name: gitea-storage
+        persistentVolumeClaim:
+          claimName: gitea-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: $GITEA_NAMESPACE
+  labels:
+    app: gitea
+    managed-by: bootstrap
+spec:
+  type: NodePort
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30083
+    name: http
+    protocol: TCP
+  - port: 22
+    targetPort: 22
+    nodePort: 30022
+    name: ssh
+    protocol: TCP
+  selector:
+    app: gitea
+EOF
 
-    # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
-    log_info "   ⚙️  Configurando modo insecure (sin TLS ni autenticación)..."
-    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1
-    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cm.yaml" >/dev/null 2>&1
-    log_success "   Configuración aplicada"
-
-    # Reiniciar ArgoCD para que lea la nueva configuración
-    log_info "   🔄 Reiniciando componentes..."
-    kubectl rollout restart deployment/argocd-server -n argocd >/dev/null 2>&1 || true
-    kubectl rollout restart deployment/argocd-repo-server -n argocd >/dev/null 2>&1 || true
-    sleep 3
-
-  # Esperar a que ArgoCD esté listo con la nueva configuración (robusto)
-  log_info "   ⏳ Esperando pods de ArgoCD (0/7 Ready)..."
-  local argocd_components=(
-    "deploy/argocd-server"
-    "deploy/argocd-repo-server"
-    "deploy/argocd-applicationset-controller"
-    "deploy/argocd-dex-server"
-    "deploy/argocd-notifications-controller"
-    "deploy/argocd-redis"
-    "sts/argocd-application-controller"
-  )
-
-  local ready_count=0
-  for component in "${argocd_components[@]}"; do
-    kubectl -n argocd rollout status "$component" --timeout=600s >/dev/null 2>&1 && ((ready_count++)) || true
-    log_info "   ⏳ Esperando pods de ArgoCD ($ready_count/7 Ready)..."
-  done
-  
-  log_success "   🎉 ArgoCD instalado (7/7 pods Ready)"
-
-  # Configurar solo ArgoCD para bootstrapping (otros servicios usan manifests GitOps)
-  configure_argocd_bootstrap
+    log_success "Gitea deployment aplicado"
+    
+    # Esperar a que Gitea esté listo
+    wait_for_gitea_readiness || {
+      log_error "Gitea no alcanzó estado Ready"
+      exit 1
+    }
+    
+    log_success "🎉 Gitea instalado y listo (fuente de verdad para GitOps)"
 
     # Verificar mapeos de puertos (sanity check)
     if ! check_mapping_sanity; then
@@ -1563,9 +1735,6 @@ EOF
 
     # Chequeo adicional de conflictos de NodePort
     check_nodeport_conflicts || true
-
-    # Instalar Sealed Secrets Controller (bootstrap - antes de GitOps)
-    install_sealed_secrets_bootstrap
 
     log_success "Cluster y ArgoCD creados (acceso sin autenticación)"
 }
@@ -1721,28 +1890,22 @@ setup_gitops() {
         }
     fi
     
-    # Generar credenciales automáticamente
-  local gitea_password=""
-  local existing_secret
-  existing_secret=$(kubectl -n "$GITEA_NAMESPACE" get secret gitea-admin-secret -o jsonpath="{.data.password}" 2>/dev/null || true)
-  if [[ -n "$existing_secret" ]]; then
-    gitea_password=$(echo "$existing_secret" | base64 -d 2>/dev/null || echo "")
-    if [[ -n "$gitea_password" ]]; then
-      log_info "Usando password existente para Gitea."
+    # Recuperar password de Gitea desde el SealedSecret (ya descifrado)
+    local gitea_password
+    gitea_password=$(kubectl get secret gitea-admin-secret -n "$GITEA_NAMESPACE" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
+    
+    if [[ -z "$gitea_password" ]]; then
+      log_error "No se pudo recuperar password de Gitea desde el secret"
+      log_info "   Verifica que sealed-secrets-controller haya descifrado el SealedSecret"
+      exit 1
     fi
-  fi
+    
+    export GITEA_ADMIN_PASSWORD="$gitea_password"
+    log_info "Password de Gitea recuperado desde SealedSecret"
 
-  if [[ -z "$gitea_password" ]]; then
-    gitea_password=$(generate_secure_password 16)
-    log_info "Password generado para Gitea: $gitea_password"
-  fi
-
-  export GITEA_ADMIN_PASSWORD="$gitea_password"
-  log_info "Password para Gitea: $gitea_password"
-
-  # Instalar Gitea
-  install_gitea
-
+    # Crear usuario gitops en Gitea
+    create_gitea_user
+    
     # Configurar e instalar Gitea Actions con runner
     if install_gitea_actions; then
       log_success "Gitea Actions instalado/configurado correctamente"
@@ -1753,107 +1916,90 @@ setup_gitops() {
     # Crear repositorios y subir manifests
     create_gitops_repositories
     
-    # Configurar ApplicationSets
+    # ===========================================================================
+    # INSTALACIÓN DE ARGOCD (después de que Gitea tiene los repos)
+    # ===========================================================================
+    log_step "Instalando ArgoCD (consume desde Gitea)"
+    
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
+    local argocd_version="${ARGOCD_VERSION:-v3.2.0-rc3}"
+    
+    log_info "   📥 Descargando manifests ArgoCD ${argocd_version}..."
+    if ! kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${argocd_version}/manifests/install.yaml" --validate=false >/dev/null 2>&1; then
+        log_error "Error al instalar ArgoCD ${argocd_version}"
+        exit 1
+    fi
+    log_success "   Manifests aplicados (34 recursos creados)"
+
+    # Aplicar ConfigMaps de configuración inmediatamente (sin SSL, sin auth)
+    log_info "   ⚙️  Configurando modo insecure (sin TLS ni autenticación)..."
+    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cmd-params-cm.yaml" >/dev/null 2>&1
+    kubectl apply -f "$DOTFILES_DIR/argo-config/configmaps/argocd-cm.yaml" >/dev/null 2>&1
+    log_success "   Configuración aplicada"
+
+    # Reiniciar ArgoCD para que lea la nueva configuración
+    log_info "   🔄 Reiniciando componentes..."
+    kubectl rollout restart deployment/argocd-server -n argocd >/dev/null 2>&1 || true
+    kubectl rollout restart deployment/argocd-repo-server -n argocd >/dev/null 2>&1 || true
+    sleep 3
+
+    # Esperar a que ArgoCD esté listo con la nueva configuración (robusto)
+    log_info "   ⏳ Esperando pods de ArgoCD (0/7 Ready)..."
+    local argocd_components=(
+      "deploy/argocd-server"
+      "deploy/argocd-repo-server"
+      "deploy/argocd-applicationset-controller"
+      "deploy/argocd-dex-server"
+      "deploy/argocd-notifications-controller"
+      "deploy/argocd-redis"
+      "sts/argocd-application-controller"
+    )
+
+    local ready_count=0
+    for component in "${argocd_components[@]}"; do
+      kubectl -n argocd rollout status "$component" --timeout=600s >/dev/null 2>&1 && ((ready_count++)) || true
+      log_info "   ⏳ Esperando pods de ArgoCD ($ready_count/7 Ready)..."
+    done
+    
+    log_success "   🎉 ArgoCD instalado (7/7 pods Ready)"
+
+    # Configurar ArgoCD para bootstrapping (NodePort 30080)
+    configure_argocd_bootstrap
+    
+    # Configurar ApplicationSets (ArgoCD consume desde Gitea)
     setup_application_sets
 
     log_success "GitOps configurado completamente"
 }
 
-install_gitea() {
-    log_info "🔧 Instalando Gitea..."
-    
-    kubectl create namespace "$GITEA_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
-
-    # Crear secret con password
-    kubectl create secret generic gitea-admin-secret \
-        --from-literal=password="$GITEA_ADMIN_PASSWORD" \
-        -n "$GITEA_NAMESPACE" \
-        --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
-
-    # Aplicar manifests de Gitea
-    kubectl apply -f - >/dev/null 2>&1 <<EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: gitea-pvc
-  namespace: $GITEA_NAMESPACE
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: gitea
-  namespace: $GITEA_NAMESPACE
-  labels:
-    app: gitea
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: gitea
-  template:
-    metadata:
-      labels:
-        app: gitea
-    spec:
-      containers:
-      - name: gitea
-        image: gitea/gitea:1.22
-        ports:
-        - containerPort: 3000
-        - containerPort: 22
-        env:
-        - name: GITEA__database__DB_TYPE
-          value: sqlite3
-        - name: GITEA__security__INSTALL_LOCK
-          value: "true"
-        - name: GITEA__service__DISABLE_REGISTRATION
-          value: "true"
-        - name: GITEA__service__REQUIRE_SIGNIN_VIEW
-          value: "false"
-        - name: GITEA__openid__ENABLE_OPENID_SIGNIN
-          value: "false"
-        - name: GITEA__openid__ENABLE_OPENID_SIGNUP
-          value: "false"
-        - name: GITEA__actions__ENABLED
-          value: "true"
-        - name: GITEA__actions__DEFAULT_ACTIONS_URL
-          value: "github"
-        volumeMounts:
-        - name: gitea-storage
-          mountPath: /data
-      volumes:
-      - name: gitea-storage
-        persistentVolumeClaim:
-          claimName: gitea-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: gitea
-  namespace: $GITEA_NAMESPACE
-spec:
-  type: NodePort
-  ports:
-  - port: 3000
-    targetPort: 3000
-    nodePort: 30083
-    name: http
-  - port: 22
-    targetPort: 22
-    nodePort: 30022
-    name: ssh
-  selector:
-    app: gitea
-EOF
-
-  log_success "Manifests de Gitea aplicados"
-  wait_for_gitea_readiness
+create_gitea_user() {
+  log_info "Creando usuario admin 'gitops' en Gitea..."
+  
+  local pod_name
+  pod_name=$(kubectl get pods -n "$GITEA_NAMESPACE" -l app=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  
+  if [[ -z "$pod_name" ]]; then
+    log_error "No se encontró el pod de Gitea"
+    return 1
+  fi
+  
+  # Crear usuario usando CLI de Gitea
+  if kubectl exec -n "$GITEA_NAMESPACE" "$pod_name" -- \
+    su -s /bin/sh git -c "gitea --config /data/gitea/conf/app.ini admin user create --username gitops --password $GITEA_ADMIN_PASSWORD --email gitops@localhost --admin --must-change-password=false" >/dev/null 2>&1; then
+    log_success "Usuario 'gitops' creado correctamente"
+  else
+    # Verificar si ya existe
+    if curl -fsS -u "gitops:${GITEA_ADMIN_PASSWORD}" "http://localhost:30083/api/v1/user" >/dev/null 2>&1; then
+      log_info "Usuario 'gitops' ya existe"
+    else
+      log_warning "No se pudo crear usuario gitops, intentando método alternativo..."
+      # Método alternativo via API de instalación
+      curl -X POST "http://localhost:30083/user/sign_up" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "user_name=gitops&email=gitops@localhost&password=$GITEA_ADMIN_PASSWORD&retype=$GITEA_ADMIN_PASSWORD" \
+        >/dev/null 2>&1 || log_warning "Método alternativo también falló"
+    fi
+  fi
 }
 
 ### Gitea Actions support - enable in app.ini and deploy a simple runner

@@ -6,7 +6,7 @@ metadata:
   name: dashboard
   namespace: argocd
   annotations:
-    argocd.argoproj.io/external-url: http://localhost:30086
+    argocd.argoproj.io/external-url: http://localhost:30090
 spec:
   project: gitops-tools
   source:
@@ -166,7 +166,11 @@ metadata:
   name: argo-workflows
   namespace: argocd
   annotations:
-    argocd.argoproj.io/external-url: http://localhost:30089
+    argocd.argoproj.io/external-url: http://localhost:30091
+    argocd.argoproj.io/links: |
+      - url: http://localhost:30091
+        title: Argo Workflows UI
+        description: Open the Argo Workflows server UI
 spec:
   project: gitops-tools
   source:
@@ -198,7 +202,7 @@ metadata:
   name: registry
   namespace: argocd
   annotations:
-    argocd.argoproj.io/external-url: http://localhost:30087
+    argocd.argoproj.io/external-url: http://localhost:30096
 spec:
   project: gitops-tools
   source:
@@ -208,6 +212,38 @@ spec:
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: 'registry'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30097
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    targetRevision: HEAD
+    path: 'redis'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'redis'
   syncPolicy:
     automated:
       prune: true

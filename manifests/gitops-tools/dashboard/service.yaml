@@ -5,13 +5,13 @@ metadata:
     k8s-app: kubernetes-dashboard
   name: kubernetes-dashboard
   annotations:
-    link.argocd.argoproj.io/external-link: http://localhost:30086
+    link.argocd.argoproj.io/external-link: http://localhost:30090
 spec:
   type: NodePort
   ports:
     - name: http
       port: 80
       targetPort: 9090
-      nodePort: 30086
+      nodePort: 30090
   selector:
     k8s-app: kubernetes-dashboard

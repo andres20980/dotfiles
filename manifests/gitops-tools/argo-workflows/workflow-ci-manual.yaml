@@ -8,6 +8,7 @@ metadata:
     triggered-by: manual
     workflows.argoproj.io/controller-instanceid: default
   annotations:
+    argocd.argoproj.io/sync-options: Skip=true
     workflows.argoproj.io/pod-name-format: v2
 spec:
   serviceAccountName: argo-workflow-sa
