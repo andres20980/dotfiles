@@ -1,0 +1,40 @@
+# Root Application - App of Apps Pattern
+# Este es el ÚNICO manifest que se aplica manualmente con kubectl
+# Todos los demás recursos se despliegan automáticamente desde aquí
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  # Finalizer para cascading delete
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  # FASE 1: Durante bootstrap inicial, usa GitHub público o local
+  # FASE 2: Después de migrate-to-gitea.sh, se actualiza automáticamente a Gitea
+  source:
+    # TODO: Cambiar a tu repo público temporal o usar path local
+    repoURL: https://github.com/YOUR_USER/gitops-bootstrap.git
+    targetRevision: main
+    path: bootstrap/apps
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  
+  # Sync automático para que los cambios se apliquen inmediatamente
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

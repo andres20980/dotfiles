@@ -1,0 +1,30 @@
+# Docker Registry - Almacenamiento interno de imágenes
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: docker-registry
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Durante bootstrap: usa GitHub/local
+    # Después de migración: apuntará a Gitea automáticamente cuando root-app se actualice
+    repoURL: https://github.com/YOUR_USER/gitops-tools.git
+    targetRevision: main
+    path: docker-registry
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: registry
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m

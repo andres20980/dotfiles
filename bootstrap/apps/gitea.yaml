@@ -1,0 +1,37 @@
+# Gitea - Git Server Interno (Fuente de Verdad Final)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitea
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Durante bootstrap: usa GitHub/local
+    # Después de migración: apuntará a Gitea (self-hosting!)
+    repoURL: https://github.com/YOUR_USER/gitops-tools.git
+    targetRevision: main
+    path: gitea
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitea
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m
+  # Ignorar diferencias en el Secret generado automáticamente por Gitea
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: gitea-admin-secret
+      jsonPointers:
+        - /data
