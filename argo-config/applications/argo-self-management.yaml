@@ -50,4 +50,12 @@ spec:
       jsonPointers:
         - /spec/syncPolicy/automated
         - /metadata/annotations/argocd.argoproj.io~1refresh
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
         - /operation
+    - group: argoproj.io
+      kind: ApplicationSet
+      namespace: argocd
+      jsonPointers:
+        - /metadata/annotations/argocd.argoproj.io~1refresh
+        - /metadata/annotations/argocd.argoproj.io~1tracking-id

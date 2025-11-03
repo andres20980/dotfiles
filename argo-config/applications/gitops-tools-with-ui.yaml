@@ -163,6 +163,43 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: gitea
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/external-url: http://localhost:30083/explore/
+    link.argocd.argoproj.io/external-link: http://localhost:30083/explore/
+    argocd.argoproj.io/links: |
+      - url: http://localhost:30083/explore/
+        title: Gitea
+        description: "Git Server - Credenciales configuradas en instalación"
+spec:
+  project: gitops-tools
+  source:
+    repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+    targetRevision: HEAD
+    path: 'gitea'
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: 'gitea'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: argo-workflows
   namespace: argocd
   annotations:

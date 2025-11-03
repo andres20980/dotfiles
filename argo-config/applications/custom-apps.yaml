@@ -1,27 +1,27 @@
 ---
-# ApplicationSet para GitOps Tools sin UI (herramientas que no tienen interfaz web)
+# ApplicationSet para custom-apps (visor-gitops, app-reloj)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: gitops-tools
+  name: custom-apps
   namespace: argocd
 spec:
   generators:
   - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git
+      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
       revision: HEAD
       directories:
-      - path: argo-events
-      - path: argo-image-updater
-  # redis se gestiona como Application individual para poder añadir anotaciones de UI
-      # sealed-secrets is bootstrapped directly (not via ArgoCD) to avoid circular dependency
+      - path: visor-gitops
+      - path: app-reloj
   template:
     metadata:
       name: '{{path.basename}}'
+      annotations:
+        argocd.argoproj.io/external-url: 'http://localhost:{{if eq .path.basename "visor-gitops"}}30098{{else}}30099{{end}}'
     spec:
-      project: gitops-tools
+      project: custom-apps
       source:
-        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-tools.git'
+        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git'
         targetRevision: HEAD
         path: '{{path}}'
       destination:
