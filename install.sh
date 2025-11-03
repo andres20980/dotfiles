@@ -25,6 +25,7 @@ ARGOCD_VERSION="v2.13.2"
 KIND_VERSION="v0.24.0"
 KUBECTL_VERSION="v1.31.0"
 HELM_VERSION="v3.16.2"
+SEALED_SECRETS_IMAGE="bitnami/sealed-secrets-controller:0.27.1"
 GITEA_USER="gitops"
 GITEA_PASSWORD="gitops"
 GITEA_URL_INTERNAL="http://gitea.gitea.svc.cluster.local:3000"
@@ -222,6 +223,32 @@ install_argocd() {
 }
 
 # ============================================================================
+# FASE 3.5: DESPLEGAR SEALED SECRETS ANTES DEL BOOTSTRAP
+# ============================================================================
+deploy_sealed_secrets_prebootstrap() {
+    log_phase "FASE 3.5/7: Desplegando Sealed Secrets (infra esencial)"
+
+    # Aplicar CRD primero (wave -10 en Git, aquí directo)
+    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/crd.yaml"
+
+    # Pre-cargar imagen en Kind para evitar problemas de pull en entornos sin acceso
+    if ! docker image inspect "${SEALED_SECRETS_IMAGE}" >/dev/null 2>&1; then
+        log_info "Descargando imagen ${SEALED_SECRETS_IMAGE}..."
+        docker pull "${SEALED_SECRETS_IMAGE}" || true
+    fi
+    log_info "Cargando imagen en Kind (si no está)..."
+    kind load docker-image "${SEALED_SECRETS_IMAGE}" --name "${CLUSTER_NAME}" || true
+
+    # Aplicar controlador (SA, RBAC, Service, Deployment)
+    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/controller.yaml"
+
+    log_info "Esperando a que el controlador de Sealed Secrets esté listo..."
+    kubectl wait --for=condition=available --timeout=300s \
+        deployment/sealed-secrets-controller -n sealed-secrets
+    log_success "Sealed Secrets operativo"
+}
+
+# ============================================================================
 # FASE 4: DESPLEGAR GITEA
 # ============================================================================
 deploy_gitea() {
@@ -355,6 +382,9 @@ initialize_gitea_repos() {
         cd "${SCRIPT_DIR}"
     }
     
+    # Generar SealedSecrets iniciales (Grafana, Kargo) antes del primer push
+    generate_initial_sealed_secrets || log_warn "No se pudieron generar SealedSecrets iniciales (continuamos)"
+
     # Crear y pushear gitops-manifests
     create_gitea_repo "gitops-manifests"
     push_to_gitea "gitops-manifests" "${SCRIPT_DIR}/gitops-manifests"
@@ -436,6 +466,76 @@ verify_deployment() {
 }
 
 # ============================================================================
+# UTILIDADES: KUBESEAL Y GENERACIÓN DE SEALEDSECRETS
+# ============================================================================
+ensure_kubeseal_installed() {
+    if command -v kubeseal >/dev/null 2>&1; then
+        return 0
+    fi
+    log_info "Instalando kubeseal (v0.27.1)..."
+    local TMPD
+    TMPD=$(mktemp -d)
+    pushd "$TMPD" >/dev/null
+    curl -fsSL -o kubeseal.tar.gz https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/kubeseal-0.27.1-linux-amd64.tar.gz
+    tar -xzf kubeseal.tar.gz kubeseal
+    sudo install -m 0755 kubeseal /usr/local/bin/kubeseal
+    popd >/dev/null
+    rm -rf "$TMPD"
+}
+
+generate_initial_sealed_secrets() {
+    log_info "Generando SealedSecrets iniciales (Grafana, Kargo)..."
+
+    # Asegura sealed-secrets listo (en caso de ejecución fuera de orden)
+    if ! kubectl get deploy -n sealed-secrets sealed-secrets-controller >/dev/null 2>&1; then
+        log_warn "Sealed Secrets no está desplegado aún; saltando generación."
+        return 1
+    fi
+    kubectl wait --for=condition=available --timeout=180s deployment/sealed-secrets-controller -n sealed-secrets || true
+
+    ensure_kubeseal_installed
+
+    local CERT_FILE
+    CERT_FILE="${SCRIPT_DIR}/.tmp/sealed-secrets-pub-cert.pem"
+    mkdir -p "${SCRIPT_DIR}/.tmp"
+    log_info "Obteniendo clave pública del controlador..."
+    kubeseal --controller-name=sealed-secrets-controller \
+             --controller-namespace=sealed-secrets \
+             --fetch-cert > "$CERT_FILE"
+
+    # 1) Grafana: password admin
+    mkdir -p "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana"
+    kubectl create secret generic grafana-admin \
+        --namespace=grafana \
+        --from-literal=GF_SECURITY_ADMIN_PASSWORD=gitops \
+        --dry-run=client -o yaml | \
+        kubeseal --cert="$CERT_FILE" --format=yaml > \
+        "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/sealed-secret.yaml"
+
+    # 2) Kargo: credenciales admin (entorno de aprendizaje)
+    mkdir -p "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo"
+    cat <<'EOF' | kubeseal --cert="$CERT_FILE" --format=yaml > "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/sealed-secret.yaml"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kargo-api
+  namespace: kargo
+type: Opaque
+stringData:
+  ADMIN_ACCOUNT_ENABLED: "true"
+  ADMIN_ACCOUNT_USERNAME: "admin"
+  ADMIN_ACCOUNT_PASSWORD: "gitops"
+  ADMIN_ACCOUNT_PASSWORD_HASH: "$2a$10$mSUjJg7p7/H8p8RqZ.1z7OvVwZ9p1YmvZWJ9KqzJ9mZqWJ9KqzJ9m"
+  ADMIN_ACCOUNT_TOKEN_SIGNING_KEY: "gitops-learning-key-not-for-production"
+  ADMIN_ACCOUNT_TOKEN_ISSUER: "http://localhost:30091"
+  ADMIN_ACCOUNT_TOKEN_AUDIENCE: "http://localhost:30091"
+  ADMIN_ACCOUNT_TOKEN_TTL: "24h"
+EOF
+
+    log_success "SealedSecrets generados en gitops-manifests/gitops-tools/{grafana,kargo}"
+}
+
+# ============================================================================
 # MAIN
 # ============================================================================
 main() {
@@ -450,6 +550,7 @@ main() {
     install_dependencies
     create_cluster
     install_argocd
+    deploy_sealed_secrets_prebootstrap
     deploy_gitea
     initialize_gitea_repos
     bootstrap_gitops

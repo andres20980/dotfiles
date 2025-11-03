@@ -18,25 +18,30 @@ Grafana is configured for easy POC access:
 - **User signup**: Disabled
 - **Auto-assign role**: Admin for all users
 
-## Secret Fields
+# Gestión de secretos de Grafana
 
-The SealedSecret contains:
-- `GF_SECURITY_ADMIN_PASSWORD`: Random 16-char password
+Importante: la contraseña de administrador se gestiona con SealedSecrets (nunca en claro en Git).
 
-## Accessing Grafana
+## ¿Cómo se genera?
 
-After installation completes:
+Durante la instalación, `install.sh` ejecuta `generate_initial_sealed_secrets()` que:
+- Obtiene la clave pública del controlador de Sealed Secrets
+- Genera `gitops-tools/grafana/sealed-secret.yaml` con la contraseña admin
+- Realiza commit/push al repo `gitops-manifests` en Gitea
+
+## Campos del SealedSecret
+
+- `GF_SECURITY_ADMIN_PASSWORD`: contraseña (para demo: "gitops")
+
+## Acceso a Grafana
+
+Tras la instalación:
 ```bash
-# View credentials (only needed for admin tasks)
-cat ~/.gitops-credentials/grafana-admin.txt
-
-# Access (no login required for viewing)
-http://localhost:30003
+http://localhost:<nodeport-grafana>
 ```
 
-## Why SealedSecrets?
+## Ventajas de SealedSecrets
 
-- ✅ No hardcoded passwords in deployment.yaml
-- ✅ Safe to commit `sealed-secret.yaml` to Git
-- ✅ Admin password still available when needed
-- ✅ Follows GitOps best practices
+- No hay contraseñas en texto plano en Git
+- Se puede versionar de forma segura
+- Compatible con GitOps puro
