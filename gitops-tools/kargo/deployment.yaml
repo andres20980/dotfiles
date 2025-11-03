@@ -1,0 +1,82 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kargo-api
+  namespace: kargo
+  labels:
+    app.kubernetes.io/name: kargo
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kargo
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kargo
+        app.kubernetes.io/component: api
+    spec:
+      serviceAccountName: kargo-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+      - name: kargo
+        image: ghcr.io/akuity/kargo:v1.7.5
+        command: ["/usr/local/bin/kargo", "api"]
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: grpc
+          containerPort: 9090
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: kargo-api
+        - secretRef:
+            name: kargo-api
+        env:
+        - name: KARGO_API_ADMIN_ACCOUNT_PASSWORD_HASH
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_PASSWORD_HASH
+        - name: KARGO_API_ADMIN_ACCOUNT_TOKEN_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_TOKEN_SIGNING_KEY
+        - name: KARGO_API_ADMIN_ACCOUNT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_USERNAME
+        - name: KARGO_API_ADMIN_ACCOUNT_ENABLED
+          valueFrom:
+            secretKeyRef:
+              name: kargo-api
+              key: ADMIN_ACCOUNT_ENABLED
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-ui
+  namespace: registry
+  labels:
+    app: registry-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-ui
+  template:
+    metadata:
+      labels:
+        app: registry-ui
+    spec:
+      containers:
+      - name: registry-ui
+        image: joxit/docker-registry-ui:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: SINGLE_REGISTRY
+          value: "true"
+        - name: REGISTRY_TITLE
+          value: "Local Docker Registry"
+        - name: REGISTRY_URL
+          value: "/"
+        - name: NGINX_PROXY_PASS_URL
+          value: "http://docker-registry.registry.svc.cluster.local:5000"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-ui
+  namespace: registry
+  labels:
+    app: registry-ui
+  annotations:
+    link.argocd.argoproj.io/external-link: http://localhost:30096
+spec:
+  type: NodePort
+  selector:
+    app: registry-ui
+  ports:
+  - name: web
+    port: 80
+    targetPort: 80
+    nodePort: 30096

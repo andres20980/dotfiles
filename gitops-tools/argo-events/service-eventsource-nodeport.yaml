@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-webhook-nodeport
+  namespace: argo-events
+spec:
+  type: NodePort
+  selector:
+    eventsource-name: gitea-webhook
+  ports:
+    - name: webhook
+      port: 12000
+      targetPort: 12000
+      nodePort: 30200
+      protocol: TCP

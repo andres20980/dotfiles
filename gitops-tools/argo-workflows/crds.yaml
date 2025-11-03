@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: List
+metadata:
+  annotations:
+    # CRDs are provided by install.yaml. This file is intentionally empty to avoid duplication.
+    note: crds moved to install.yaml; keeping this as a no-op list
+items: []
