@@ -242,20 +242,94 @@ instalar_argocd() {
 # FASE 4: DESPLEGAR APLICACIONES GITOPS
 # ============================================
 desplegar_aplicaciones_gitops() {
-    log_info "🌳 FASE 4/4: Desplegando aplicaciones GitOps (patrón App of Apps)..."
+    log_info "🌳 FASE 4/7: Desplegando infraestructura base GitOps..."
     echo ""
     
-    log_info "Aplicando Root Application..."
+    # 1. Root Application (App of Apps)
+    log_info "Aplicando Root Application (App of Apps)..."
     kubectl apply -f bootstrap/root-app.yaml
-    
-    log_info "Esperando sincronización inicial..."
     sleep 5
     
-    log_info "Estado de aplicaciones en Argo CD:"
-    kubectl get applications -n argocd 2>/dev/null || log_warn "Aplicaciones aún no creadas (esto es normal)"
+    # 2. Sealed Secrets (gestión de secretos)
+    log_info "Desplegando Sealed Secrets..."
+    kubectl apply -f bootstrap/apps/sealed-secrets.yaml
     
-    log_success "Root Application desplegada"
-    log_info "Argo CD está sincronizando todas las aplicaciones automáticamente..."
+    log_info "Esperando a que Sealed Secrets esté listo..."
+    kubectl wait --for=condition=available --timeout=180s \
+        deployment/sealed-secrets-controller -n sealed-secrets 2>/dev/null || true
+    
+    log_success "Sealed Secrets desplegado"
+    echo ""
+}
+
+# ============================================
+# FASE 5: DESPLEGAR GITEA (FUENTE DE VERDAD)
+# ============================================
+desplegar_gitea() {
+    log_info "🔧 FASE 5/7: Desplegando Gitea (Fuente de Verdad)..."
+    echo ""
+    
+    log_info "Aplicando Application de Gitea..."
+    kubectl apply -f bootstrap/apps/gitea.yaml
+    
+    log_info "Esperando a que Gitea esté listo (puede tardar 2-3 minutos)..."
+    
+    # Esperar a que el pod esté corriendo
+    for i in {1..60}; do
+        if kubectl get pods -n gitea 2>/dev/null | grep -q "Running"; then
+            log_success "Gitea pod está corriendo"
+            break
+        fi
+        sleep 5
+    done
+    
+    # Esperar a que el servicio esté disponible
+    log_info "Esperando a que Gitea responda en puerto 3000..."
+    kubectl wait --for=condition=available --timeout=180s \
+        deployment/gitea -n gitea 2>/dev/null || true
+    
+    sleep 10  # Tiempo adicional para que Gitea inicialice completamente
+    
+    log_success "Gitea desplegado y listo"
+    echo ""
+}
+
+# ============================================
+# FASE 6: DESPLEGAR GITOPS TOOLS
+# ============================================
+desplegar_gitops_tools() {
+    log_info "⚙️  FASE 6/7: Desplegando GitOps Tools..."
+    echo ""
+    
+    log_info "Aplicando Docker Registry..."
+    kubectl apply -f bootstrap/apps/docker-registry.yaml
+    
+    log_info "Aplicando configuración de Argo CD..."
+    kubectl apply -f bootstrap/apps/argocd-config.yaml
+    
+    log_info "Esperando sincronización de herramientas..."
+    sleep 10
+    
+    log_success "GitOps Tools desplegándose"
+    echo ""
+}
+
+# ============================================
+# FASE 7: VERIFICAR DESPLIEGUE
+# ============================================
+verificar_despliegue() {
+    log_info "✅ FASE 7/7: Verificando estado del despliegue..."
+    echo ""
+    
+    log_info "Estado de aplicaciones en Argo CD:"
+    kubectl get applications -n argocd
+    
+    echo ""
+    log_info "Pods en todos los namespaces:"
+    kubectl get pods -A | grep -E "NAME|argocd|gitea|sealed-secrets|registry"
+    
+    echo ""
+    log_success "Verificación completada"
     echo ""
 }
 
@@ -277,11 +351,15 @@ mostrar_informacion_final() {
     echo "     👉 http://localhost:30080"
     echo "     ℹ️  Sin login necesario - acceso anónimo habilitado"
     echo ""
-    echo "  Una vez que Argo CD sincronice todo (~2-3 minutos), tendrás:"
-    echo ""
-    echo "  🔧 Gitea (Servidor Git)"
+    echo "  🔧 Gitea (Servidor Git - Fuente de Verdad)"
     echo "     👉 http://localhost:30083"
     echo "     🔑 Usuario: gitops / Contraseña: gitops"
+    echo "     ✅ YA DESPLEGADO Y FUNCIONAL"
+    echo ""
+    echo "  🔐 Sealed Secrets (Gestión de Secretos)"
+    echo "     ✅ Desplegado en namespace: sealed-secrets"
+    echo ""
+    echo "  Sincronizando (~2-3 minutos):"
     echo ""
     echo "  📦 Docker Registry (Registro Interno)"
     echo "     👉 localhost:30087"
@@ -363,6 +441,9 @@ main() {
     crear_cluster
     instalar_argocd
     desplegar_aplicaciones_gitops
+    desplegar_gitea
+    desplegar_gitops_tools
+    verificar_despliegue
     mostrar_informacion_final
 }
 
