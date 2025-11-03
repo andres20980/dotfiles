@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
       - name: app-reloj
-        image: app-reloj:latest
+        image: docker-registry.registry.svc.cluster.local:5000/app-reloj:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
           name: http
