@@ -8,11 +8,11 @@ metadata:
 spec:
   generators:
   - git:
-      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
+      repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
       revision: HEAD
       directories:
-      - path: visor-gitops
-      - path: app-reloj
+      - path: custom-apps/visor-gitops
+      - path: custom-apps/app-reloj
   template:
     metadata:
       name: '{{path.basename}}'
@@ -21,9 +21,9 @@ spec:
     spec:
       project: custom-apps
       source:
-        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git'
+        repoURL: 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
         targetRevision: HEAD
-        path: 'gitops-tools/{{path}}'
+        path: '{{path}}'
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: '{{path.basename}}'
