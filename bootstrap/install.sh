@@ -73,6 +73,10 @@ kubectl wait --for=condition=ready --timeout=300s \
     pod -l app.kubernetes.io/name=argocd-application-controller \
     -n argocd
 
+# Exponer Argo CD en NodePort para acceso local
+echo "  - Exponiendo Argo CD en NodePort 30080/30443..."
+kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":8080,"nodePort":30080},{"name":"https","port":443,"protocol":"TCP","targetPort":8080,"nodePort":30443}]}}' > /dev/null 2>&1
+
 echo -e "${GREEN}✅ Argo CD está listo${NC}"
 echo ""
 
