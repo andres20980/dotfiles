@@ -9,9 +9,9 @@ set -e
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GITEA_URL="http://localhost:30083"
-GITEA_USER="gitops"
-GITEA_PASSWORD="hP3d36eVkQZfbh8r"
+GITEA_URL="${GITEA_URL:-http://localhost:30083}"
+GITEA_USER="${GITEA_USER:-gitops}"
+GITEA_PASSWORD="${GITEA_PASSWORD:?Error: GITEA_PASSWORD environment variable must be set}"
 GITEA_TOKEN_FILE="$HOME/.gitops-credentials/gitea-token.txt"
 
 # Colores
