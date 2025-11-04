@@ -508,7 +508,7 @@ deploy_sealed_secrets_prebootstrap() {
 
     log_info "Esperando a que el controlador de Sealed Secrets esté listo..."
     kubectl wait --for=condition=available --timeout=300s \
-        deployment/sealed-secrets-controller -n sealed-secrets || {
+        deployment/sealed-secrets-controller -n kube-system || {
         log_warn "Timeout esperando sealed-secrets, continuando (puede estar iniciando)..."
         sleep 10
     }
@@ -929,11 +929,11 @@ generate_initial_sealed_secrets() {
     log_info "Generando SealedSecrets iniciales (Grafana, Kargo, Gitea-token para Workflows)..."
 
     # Asegura sealed-secrets listo (en caso de ejecución fuera de orden)
-    if ! kubectl get deploy -n sealed-secrets sealed-secrets-controller >/dev/null 2>&1; then
+    if ! kubectl get deploy -n kube-system sealed-secrets-controller >/dev/null 2>&1; then
         log_warn "Sealed Secrets no está desplegado aún; saltando generación."
         return 1
     fi
-    kubectl wait --for=condition=available --timeout=180s deployment/sealed-secrets-controller -n sealed-secrets || true
+    kubectl wait --for=condition=available --timeout=180s deployment/sealed-secrets-controller -n kube-system || true
 
     ensure_kubeseal_installed
 
@@ -942,7 +942,7 @@ generate_initial_sealed_secrets() {
     mkdir -p "${SCRIPT_DIR}/.tmp"
     log_info "Obteniendo clave pública del controlador..."
     kubeseal --controller-name=sealed-secrets-controller \
-             --controller-namespace=sealed-secrets \
+             --controller-namespace=kube-system \
              --fetch-cert > "$CERT_FILE"
 
     # 1) Grafana: password admin "gitops"
