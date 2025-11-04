@@ -89,7 +89,9 @@ check_wsl() {
 latest_github_release() {
     # Uso: latest_github_release OWNER REPO  → imprime tag (p.ej. v2.13.2)
     local owner="$1"; local repo="$2"
-    curl -fsSL "https://api.github.com/repos/${owner}/${repo}/releases/latest" | jq -r '.tag_name // empty'
+    local result
+    result=$(curl -fsSL "https://api.github.com/repos/${owner}/${repo}/releases/latest" 2>/dev/null | jq -r '.tag_name // empty' 2>/dev/null)
+    echo "$result"
 }
 
 resolve_latest_versions() {
@@ -101,14 +103,17 @@ resolve_latest_versions() {
     local DEF_SS="v0.27.1"
 
     # kubectl estable desde dl.k8s.io
-    KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || true)
-    if [ -z "$KUBECTL_VERSION" ]; then KUBECTL_VERSION="$DEF_KUBECTL"; fi
+    KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || echo "$DEF_KUBECTL")
 
-    # GitHub releases (no prerelease)
+    # GitHub releases (no prerelease) - con sleep para evitar rate limiting
     ARGOCD_VERSION=$(latest_github_release argoproj argo-cd)
+    sleep 0.2
     KIND_VERSION=$(latest_github_release kubernetes-sigs kind)
+    sleep 0.2
     HELM_VERSION=$(latest_github_release helm helm)
+    sleep 0.2
     SEALED_SECRETS_VERSION=$(latest_github_release bitnami-labs sealed-secrets)
+    sleep 0.2
 
     # Fallbacks si algo vino vacío
     if [ -z "$ARGOCD_VERSION" ]; then ARGOCD_VERSION="$DEF_ARGOCD"; fi
@@ -123,29 +128,37 @@ resolve_latest_versions() {
 
     # Resolver versiones de GitOps tools
     ARGO_ROLLOUTS_VERSION=$(latest_github_release argoproj argo-rollouts)
+    sleep 0.2
     if [ -z "$ARGO_ROLLOUTS_VERSION" ]; then ARGO_ROLLOUTS_VERSION="v1.8.0"; fi
     
     ARGO_WORKFLOWS_VERSION=$(latest_github_release argoproj argo-workflows)
+    sleep 0.2
     if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.6.2"; fi
     
     ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj-labs argocd-image-updater)
+    sleep 0.2
     if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.15.0"; fi
     
     KARGO_VERSION=$(latest_github_release akuity kargo)
+    sleep 0.2
     if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v0.11.0"; fi
     
     DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
+    sleep 0.2
     if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v3.1.0"; fi
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
+    sleep 0.2
     if [ -z "$GITEA_VERSION" ]; then GITEA_VERSION="v1.22.0"; fi
     
     # Grafana - usar latest stable de grafana/grafana
     GRAFANA_VERSION=$(latest_github_release grafana grafana)
+    sleep 0.2
     if [ -z "$GRAFANA_VERSION" ]; then GRAFANA_VERSION="v11.4.0"; fi
     
     # Prometheus - usar latest de prometheus/prometheus
     PROMETHEUS_VERSION=$(latest_github_release prometheus prometheus)
+    sleep 0.2
     if [ -z "$PROMETHEUS_VERSION" ]; then PROMETHEUS_VERSION="v3.0.0"; fi
     
     # Redis - DockerHub latest stable (no GitHub releases)
@@ -153,6 +166,7 @@ resolve_latest_versions() {
     
     # Registry - distribution/distribution
     REGISTRY_VERSION=$(latest_github_release distribution distribution)
+    sleep 0.2
     if [ -z "$REGISTRY_VERSION" ]; then REGISTRY_VERSION="v3.0.0"; fi
 
     # Helm chart version de argo-events
