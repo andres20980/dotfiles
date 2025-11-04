@@ -550,6 +550,89 @@ deploy_gitea() {
 }
 
 # ============================================================================
+# BUILD Y PUSH IMÁGENES INICIALES DE CUSTOM APPS
+# ============================================================================
+build_and_push_initial_images() {
+    log_info "Construyendo y pusheando imágenes iniciales de custom apps..."
+    
+    local registry_url="localhost:30087"
+    
+    for app in app-reloj visor-gitops; do
+        local app_dir="${SCRIPT_DIR}/gitops-source-code/${app}"
+        
+        if [ ! -f "${app_dir}/Dockerfile" ]; then
+            log_warn "App ${app} no tiene Dockerfile, saltando build"
+            continue
+        fi
+        
+        log_info "Building ${app}:latest..."
+        if docker build -t "${registry_url}/${app}:latest" "${app_dir}" >/dev/null 2>&1; then
+            log_info "Pushing ${app}:latest to local registry..."
+            if docker push "${registry_url}/${app}:latest" >/dev/null 2>&1; then
+                log_success "✓ ${app}:latest disponible en registry"
+            else
+                log_warn "Failed to push ${app}:latest (registry puede no estar listo)"
+            fi
+        else
+            log_warn "Failed to build ${app}:latest"
+        fi
+    done
+}
+
+# ============================================================================
+# CONFIGURAR WEBHOOKS EN GITEA
+# ============================================================================
+setup_gitea_webhooks() {
+    log_info "Configurando webhooks Gitea → Argo Events..."
+    
+    local eventsource_url="http://gitea-webhook-eventsource-svc.argo-events.svc.cluster.local:12000"
+    
+    for app in app-reloj visor-gitops; do
+        log_info "Configurando webhook para ${app}..."
+        
+        # Crear webhook via API
+        curl -X POST "${GITEA_URL_EXTERNAL}/api/v1/repos/gitops/${app}/hooks" \
+            -u "${GITEA_USER}:${GITEA_PASSWORD}" \
+            -H "Content-Type: application/json" \
+            -d "{
+                \"type\": \"gitea\",
+                \"config\": {
+                    \"url\": \"${eventsource_url}/${app}\",
+                    \"content_type\": \"json\",
+                    \"http_method\": \"POST\"
+                },
+                \"events\": [\"push\"],
+                \"active\": true
+            }" >/dev/null 2>&1
+        
+        if [ $? -eq 0 ]; then
+            log_success "✓ Webhook ${app} configurado"
+        else
+            log_warn "Failed to configure webhook for ${app} (puede ya existir)"
+        fi
+    done
+}
+
+# ============================================================================
+# CREAR SECRET GITEA TOKEN PARA CI/CD
+# ============================================================================
+create_gitea_ci_token() {
+    log_info "Creando token Gitea para CI/CD workflows..."
+    
+    # Para simplificar, usamos usuario/password básico
+    # En producción: usar tokens de API reales
+    kubectl create secret generic gitea-ci-token \
+        -n argo-workflows \
+        --from-literal=username="${GITEA_USER}" \
+        --from-literal=password="${GITEA_PASSWORD}" \
+        --from-literal=token="${GITEA_PASSWORD}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    log_success "✓ Secret gitea-ci-token creado en argo-workflows"
+}
+
+
+# ============================================================================
 # FASE 5: INICIALIZAR REPOSITORIOS EN GITEA
 # ============================================================================
 initialize_gitea_repos() {
@@ -662,7 +745,10 @@ initialize_gitea_repos() {
         push_to_gitea "${app}" "${SCRIPT_DIR}/gitops-source-code/${app}"
     done
     
-                log_success "Repositorios inicializados en Gitea"
+    log_success "Repositorios inicializados en Gitea"
+    
+    # Construir y pushear imágenes iniciales de custom apps
+    build_and_push_initial_images
 
         # Registrar explícitamente el repo principal en Argo CD (aunque sea público),
         # para evitar cualquier resolución/latencia inicial del reposerver
@@ -753,6 +839,12 @@ bootstrap_gitops() {
     kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml >/dev/null 2>&1 || true
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-image-updater -n argocd --timeout=60s >/dev/null 2>&1 || true
     log_success "argo-image-updater instalado y ejecutándose"
+    
+    # Configurar webhooks Gitea → Argo Events
+    setup_gitea_webhooks
+    
+    # Crear token Gitea para workflows
+    create_gitea_ci_token
 
     # Confirmar accesibilidad (en caso de que el parche se haya demorado)
     log_info "Confirmando Argo CD accesible en NodePort 30080..."
