@@ -135,10 +135,6 @@ resolve_latest_versions() {
     sleep 0.2
     if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.7.3"; fi
     
-    ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj-labs argocd-image-updater)
-    sleep 0.2
-    if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.17.0"; fi
-    
     KARGO_VERSION=$(latest_github_release akuity kargo)
     sleep 0.2
     if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v1.8.3"; fi
@@ -193,7 +189,6 @@ resolve_latest_versions() {
     echo "  - sealed-secrets:   ${SEALED_SECRETS_VERSION}"
     echo "  - gitea:            ${GITEA_VERSION}"
     echo "  - argo-events:      ${ARGO_EVENTS_CHART_VERSION} (Helm chart)"
-    echo "  - argo-image-upd:   ${ARGO_IMAGE_UPDATER_VERSION}"
     echo "  - argo-rollouts:    ${ARGO_ROLLOUTS_VERSION}"
     echo "  - argo-workflows:   ${ARGO_WORKFLOWS_VERSION}"
     echo "  - dashboard:        ${DASHBOARD_VERSION}"
@@ -237,12 +232,6 @@ update_manifests_with_latest_versions() {
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" 2>/dev/null || true
     fi
 
-    # 4b) Argo Image Updater
-    if [ -n "$ARGO_IMAGE_UPDATER_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-image-updater/install.yaml" ]; then
-        sed -i "s#quay.io/argoprojlabs/argocd-image-updater:v[0-9][^ \n\r]*#quay.io/argoprojlabs/argocd-image-updater:${ARGO_IMAGE_UPDATER_VERSION}#" \
-            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-image-updater/install.yaml" 2>/dev/null || true
-    fi
-
     # 5) Kargo
     if [ -n "$KARGO_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/deployment.yaml" ]; then
         sed -i "s#ghcr.io/akuity/kargo:v[0-9][^ \n\r]*#ghcr.io/akuity/kargo:${KARGO_VERSION}#" \
@@ -267,7 +256,7 @@ update_manifests_with_latest_versions() {
     if [ -n "$GRAFANA_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/deployment.yaml" ]; then
         local GRAFANA_IMG_VER
         GRAFANA_IMG_VER=${GRAFANA_VERSION#v}
-        sed -i "s#grafana/grafana:[0-9][^ \n\r\.]*#grafana/grafana:${GRAFANA_IMG_VER}#" \
+        sed -i "s#grafana/grafana:[^ \n\r]*#grafana/grafana:${GRAFANA_IMG_VER}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/deployment.yaml" 2>/dev/null || true
     fi
     
@@ -758,6 +747,12 @@ bootstrap_gitops() {
     # Este patch es redundante pero asegura compatibilidad si el Git no se sincronizó aún
     kubectl wait --for=condition=available --timeout=60s deployment/argocd-applicationset-controller -n argocd 2>/dev/null || true
     log_success "Proyecto gitops-tools configurado"
+
+    # Instalar argo-image-updater en namespace argocd (best practice oficial - Method 1)
+    log_info "Instalando argo-image-updater en namespace argocd..."
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml >/dev/null 2>&1 || true
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-image-updater -n argocd --timeout=60s >/dev/null 2>&1 || true
+    log_success "argo-image-updater instalado y ejecutándose"
 
     # Confirmar accesibilidad (en caso de que el parche se haya demorado)
     log_info "Confirmando Argo CD accesible en NodePort 30080..."
