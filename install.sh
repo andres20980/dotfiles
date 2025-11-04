@@ -145,9 +145,10 @@ resolve_latest_versions() {
     
     DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
     sleep 0.2
-    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="kubernetes-dashboard-7.14.0"; fi
-    # Extraer solo número de versión para la imagen (kubernetes-dashboard-X.Y.Z -> vX.Y.Z)
-    DASHBOARD_IMAGE_TAG="v${DASHBOARD_VERSION#kubernetes-dashboard-}"
+    # Dashboard v7+ requiere arquitectura multi-container compleja
+    # Usamos v2.7.0 que es la última versión simple con una sola imagen
+    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v2.7.0"; fi
+    DASHBOARD_IMAGE_TAG="${DASHBOARD_VERSION}"
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     sleep 0.2
