@@ -129,6 +129,9 @@ resolve_latest_versions() {
     ARGO_WORKFLOWS_VERSION=$(latest_github_release argoproj argo-workflows)
     if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.6.2"; fi
     
+    ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj argo-cd-image-updater)
+    if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.15.0"; fi
+    
     KARGO_VERSION=$(latest_github_release akuity kargo)
     if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v0.11.0"; fi
     
@@ -137,6 +140,21 @@ resolve_latest_versions() {
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     if [ -z "$GITEA_VERSION" ]; then GITEA_VERSION="v1.22.0"; fi
+    
+    # Grafana - usar latest stable de grafana/grafana
+    GRAFANA_VERSION=$(latest_github_release grafana grafana)
+    if [ -z "$GRAFANA_VERSION" ]; then GRAFANA_VERSION="v11.4.0"; fi
+    
+    # Prometheus - usar latest de prometheus/prometheus
+    PROMETHEUS_VERSION=$(latest_github_release prometheus prometheus)
+    if [ -z "$PROMETHEUS_VERSION" ]; then PROMETHEUS_VERSION="v3.0.0"; fi
+    
+    # Redis - DockerHub latest stable (no GitHub releases)
+    REDIS_VERSION="7.4-alpine"
+    
+    # Registry - distribution/distribution
+    REGISTRY_VERSION=$(latest_github_release distribution distribution)
+    if [ -z "$REGISTRY_VERSION" ]; then REGISTRY_VERSION="v3.0.0"; fi
 
     # Helm chart version de argo-events
     helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
@@ -159,10 +177,15 @@ resolve_latest_versions() {
     echo "  - sealed-secrets:   ${SEALED_SECRETS_VERSION}"
     echo "  - gitea:            ${GITEA_VERSION}"
     echo "  - argo-events:      ${ARGO_EVENTS_CHART_VERSION} (Helm chart)"
+    echo "  - argo-image-upd:   ${ARGO_IMAGE_UPDATER_VERSION}"
     echo "  - argo-rollouts:    ${ARGO_ROLLOUTS_VERSION}"
     echo "  - argo-workflows:   ${ARGO_WORKFLOWS_VERSION}"
+    echo "  - dashboard:        ${DASHBOARD_VERSION}"
+    echo "  - grafana:          ${GRAFANA_VERSION}"
     echo "  - kargo:            ${KARGO_VERSION}"
-    echo "  - k8s-dashboard:    ${DASHBOARD_VERSION}"
+    echo "  - prometheus:       ${PROMETHEUS_VERSION}"
+    echo "  - redis:            ${REDIS_VERSION}"
+    echo "  - registry:         ${REGISTRY_VERSION}"
 }
 
 # ----------------------------------------------------------------------------
@@ -198,6 +221,12 @@ update_manifests_with_latest_versions() {
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" 2>/dev/null || true
     fi
 
+    # 4b) Argo Image Updater
+    if [ -n "$ARGO_IMAGE_UPDATER_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-image-updater/install.yaml" ]; then
+        sed -i "s#quay.io/argoprojlabs/argocd-image-updater:v[0-9][^ \n\r]*#quay.io/argoprojlabs/argocd-image-updater:${ARGO_IMAGE_UPDATER_VERSION}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-image-updater/install.yaml" 2>/dev/null || true
+    fi
+
     # 5) Kargo
     if [ -n "$KARGO_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/deployment.yaml" ]; then
         sed -i "s#ghcr.io/akuity/kargo:v[0-9][^ \n\r]*#ghcr.io/akuity/kargo:${KARGO_VERSION}#" \
@@ -216,6 +245,32 @@ update_manifests_with_latest_versions() {
         GITEA_IMG_VER=${GITEA_VERSION#v}
         sed -i "s#gitea/gitea:[0-9][^ \n\r]*#gitea/gitea:${GITEA_IMG_VER}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/gitea/deployment.yaml" 2>/dev/null || true
+    fi
+    
+    # 8) Grafana
+    if [ -n "$GRAFANA_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/deployment.yaml" ]; then
+        local GRAFANA_IMG_VER
+        GRAFANA_IMG_VER=${GRAFANA_VERSION#v}
+        sed -i "s#grafana/grafana:[0-9][^ \n\r\.]*#grafana/grafana:${GRAFANA_IMG_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/deployment.yaml" 2>/dev/null || true
+    fi
+    
+    # 9) Prometheus
+    if [ -n "$PROMETHEUS_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/prometheus/deployment.yaml" ]; then
+        sed -i "s#prom/prometheus:v[0-9][^ \n\r]*#prom/prometheus:${PROMETHEUS_VERSION}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/prometheus/deployment.yaml" 2>/dev/null || true
+    fi
+    
+    # 10) Redis
+    if [ -n "$REDIS_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/redis/deployment.yaml" ]; then
+        sed -i "s#redis:[0-9][^ \n\r\-]*-alpine#redis:${REDIS_VERSION}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/redis/deployment.yaml" 2>/dev/null || true
+    fi
+    
+    # 11) Registry
+    if [ -n "$REGISTRY_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/registry/deployment.yaml" ]; then
+        sed -i "s#registry:[0-9][^ \n\r]*#registry:${REGISTRY_VERSION#v}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/registry/deployment.yaml" 2>/dev/null || true
     fi
     
     log_success "Manifiestos actualizados con últimas versiones"
