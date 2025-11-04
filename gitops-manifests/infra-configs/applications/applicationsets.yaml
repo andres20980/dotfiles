@@ -11,11 +11,9 @@ spec:
       repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
       revision: HEAD
       directories:
-      - path: gitops-tools/argo-events
-      - path: gitops-tools/argo-image-updater
-      - path: gitops-tools/sealed-secrets
-  # redis se gestiona como Application individual para poder añadir anotaciones de UI
-      # sealed-secrets is bootstrapped directly (not via ArgoCD) to avoid circular dependency
+        # argo-events temporalmente deshabilitado hasta instalar backend NATS estable (Helm)
+        - path: gitops-tools/argo-image-updater
+        # sealed-secrets se instala fuera de Argo CD para evitar dependencia circular
   template:
     metadata:
       name: '{{path.basename}}'

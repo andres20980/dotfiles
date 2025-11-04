@@ -26,7 +26,7 @@ spec:
         fsGroup: 65532
       containers:
       - name: kargo
-        image: ghcr.io/akuity/kargo:v1.7.5
+        image: ghcr.io/akuity/kargo:v1.8.3
         command: ["/usr/local/bin/kargo", "api"]
         ports:
         - name: http

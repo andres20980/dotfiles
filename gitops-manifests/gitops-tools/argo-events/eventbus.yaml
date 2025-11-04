@@ -6,5 +6,7 @@ metadata:
 spec:
   nats:
     native:
-      replicas: 3
-      auth: token
+      # Para entorno local/Kind no necesitamos HA
+      replicas: 1
+      # Desactivar autenticación para evitar secretos requeridos en demo
+      auth: none

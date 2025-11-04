@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: gitea
-        image: gitea/gitea:1.22
+        image: gitea/gitea:1.25.0
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:

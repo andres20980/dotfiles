@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: custom-apps
+  namespace: argocd
+spec:
+  description: "Aplicaciones de ejemplo para aprendizaje"
+  sourceRepos:
+    - 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
+    - 'http://gitea.gitea.svc.cluster.local:3000/gitops/*'
+  destinations:
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

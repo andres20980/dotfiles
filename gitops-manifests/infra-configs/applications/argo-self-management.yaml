@@ -10,28 +10,13 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io/background
 spec:
-  project: argocd-config
-  sources:
-    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-      targetRevision: HEAD
-      path: projects
-      directory:
-        recurse: true
-    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-      targetRevision: HEAD
-      path: applications
-      directory:
-        recurse: true
-    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-      targetRevision: HEAD
-      path: repositories
-      directory:
-        recurse: true
-    - repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/argo-config.git
-      targetRevision: HEAD
-      path: configmaps
-      directory:
-        recurse: true
+  project: default
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+    targetRevision: HEAD
+    path: infra-configs/argocd-self
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

@@ -21,11 +21,15 @@ set -euo pipefail
 # Configuración
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLUSTER_NAME="gitops-local"
-ARGOCD_VERSION="v2.13.2"
-KIND_VERSION="v0.24.0"
-KUBECTL_VERSION="v1.31.0"
-HELM_VERSION="v3.16.2"
-SEALED_SECRETS_IMAGE="bitnami/sealed-secrets-controller:0.27.1"
+# Versiones: se resolverán dinámicamente a las últimas estables
+# (se rellenan en install_dependencies)
+ARGOCD_VERSION=""
+KIND_VERSION=""
+KUBECTL_VERSION=""
+HELM_VERSION=""
+KUBESEAL_VERSION=""
+SEALED_SECRETS_VERSION=""
+SEALED_SECRETS_IMAGE=""
 GITEA_USER="gitops"
 GITEA_PASSWORD="gitops"
 GITEA_URL_INTERNAL="http://gitea.gitea.svc.cluster.local:3000"
@@ -66,9 +70,146 @@ log_error() {
 }
 
 check_wsl() {
-    if ! grep -qi microsoft /proc/version; then
-        log_error "Este script está diseñado para WSL2"
-        exit 1
+    if grep -qi microsoft /proc/version; then
+        log_info "Entorno WSL detectado"
+        return 0
+    fi
+    if [ "$(uname -s)" = "Linux" ]; then
+        log_warn "No es WSL, pero es Linux. Continuamos (modo genérico)."
+        return 0
+    fi
+    log_error "SO no soportado automáticamente. Requiere Linux/WSL2."
+    exit 1
+}
+
+
+# ----------------------------------------------------------------------------
+# Resolución de últimas versiones estables
+# ----------------------------------------------------------------------------
+latest_github_release() {
+    # Uso: latest_github_release OWNER REPO  → imprime tag (p.ej. v2.13.2)
+    local owner="$1"; local repo="$2"
+    curl -fsSL "https://api.github.com/repos/${owner}/${repo}/releases/latest" | jq -r '.tag_name // empty'
+}
+
+resolve_latest_versions() {
+    # Valores por defecto (fallback) si no hay red o hay rate-limit
+    local DEF_ARGOCD="v2.13.2"
+    local DEF_KIND="v0.24.0"
+    local DEF_KUBECTL
+    DEF_KUBECTL=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || echo "v1.31.0")
+    local DEF_HELM="v3.16.2"
+    local DEF_SS="v0.27.1"
+
+    # kubectl estable desde dl.k8s.io
+    KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || true)
+    if [ -z "$KUBECTL_VERSION" ]; then KUBECTL_VERSION="$DEF_KUBECTL"; fi
+
+    # GitHub releases (no prerelease)
+    ARGOCD_VERSION=$(latest_github_release argoproj argo-cd)
+    KIND_VERSION=$(latest_github_release kubernetes-sigs kind)
+    HELM_VERSION=$(latest_github_release helm helm)
+    SEALED_SECRETS_VERSION=$(latest_github_release bitnami-labs sealed-secrets)
+
+    # Fallbacks si algo vino vacío
+    if [ -z "$ARGOCD_VERSION" ]; then ARGOCD_VERSION="$DEF_ARGOCD"; fi
+    if [ -z "$KIND_VERSION" ]; then KIND_VERSION="$DEF_KIND"; fi
+    if [ -z "$HELM_VERSION" ]; then HELM_VERSION="$DEF_HELM"; fi
+    if [ -z "$SEALED_SECRETS_VERSION" ]; then SEALED_SECRETS_VERSION="$DEF_SS"; fi
+
+    # Derivados
+    KUBESEAL_VERSION="$SEALED_SECRETS_VERSION"                     # p.ej. v0.27.1
+    local ss_no_v="${SEALED_SECRETS_VERSION#v}"                    # 0.27.1
+    SEALED_SECRETS_IMAGE="bitnami/sealed-secrets-controller:${ss_no_v}"
+
+    log_info "Versiones resueltas:" 
+    echo "  - kubectl:          ${KUBECTL_VERSION}"
+    echo "  - kind:             ${KIND_VERSION}"
+    echo "  - helm:             ${HELM_VERSION}"
+    echo "  - argo-cd:          ${ARGOCD_VERSION}"
+    echo "  - sealed-secrets:   ${SEALED_SECRETS_VERSION} (imagen ${SEALED_SECRETS_IMAGE})"
+}
+
+# ----------------------------------------------------------------------------
+# Resolución de últimas versiones de charts Helm utilizados en manifiestos
+# ----------------------------------------------------------------------------
+resolve_latest_chart_versions() {
+    # Repos helm requeridos
+    helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
+    helm repo update >/dev/null 2>&1 || true
+
+    # Última versión estable de argo-events
+    local ev
+    ev=$(helm search repo argo/argo-events --versions -o json 2>/dev/null | jq -r '[.[] | select(.name=="argo/argo-events" and (.version|test("-" )|not))][0].version' 2>/dev/null)
+    if [ -z "$ev" ] || [ "$ev" = "null" ]; then
+        ev="2.6.0"
+    fi
+    export ARGO_EVENTS_CHART_VERSION="$ev"
+    log_info "Charts resueltos: argo-events chart ${ARGO_EVENTS_CHART_VERSION}"
+}
+
+# ----------------------------------------------------------------------------
+# Actualiza manifiestos locales con las últimas versiones resueltas
+# ----------------------------------------------------------------------------
+update_manifests_with_latest_versions() {
+    log_info "Actualizando manifiestos a últimas versiones (sellado y charts)..."
+
+    # 1) Sealed Secrets controller image en controller.yaml
+    if [ -n "$SEALED_SECRETS_IMAGE" ]; then
+        sed -i "s#image: bitnami/sealed-secrets-controller:.*#image: ${SEALED_SECRETS_IMAGE}#" \
+          "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/controller.yaml" || true
+    fi
+
+    # 2) Argo Events Helm targetRevision en Application
+    if [ -n "$ARGO_EVENTS_CHART_VERSION" ]; then
+        sed -i "s#^\s*targetRevision: .*#    targetRevision: ${ARGO_EVENTS_CHART_VERSION}#" \
+          "${SCRIPT_DIR}/gitops-manifests/infra-configs/applications/argo-events-helm.yaml" || true
+    fi
+
+    # 3) Argo Rollouts (controller + dashboard)
+    local ROLLOUTS_VER
+    ROLLOUTS_VER=$(latest_github_release argoproj argo-rollouts)
+    if [ -n "$ROLLOUTS_VER" ]; then
+        sed -i "s#quay.io/argoproj/argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/argo-rollouts:${ROLLOUTS_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-rollouts/deployment.yaml" || true
+        sed -i "s#quay.io/argoproj/kubectl-argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/kubectl-argo-rollouts:${ROLLOUTS_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-rollouts/dashboard.yaml" || true
+    fi
+
+    # 4) Argo Workflows (controller + cli) en install.yaml auto-generado
+    local WORKFLOWS_VER
+    WORKFLOWS_VER=$(latest_github_release argoproj argo-workflows)
+    if [ -n "$WORKFLOWS_VER" ]; then
+        sed -i "s#quay.io/argoproj/workflow-controller:v[0-9][^ \n\r]*#quay.io/argoproj/workflow-controller:${WORKFLOWS_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" || true
+        sed -i "s#quay.io/argoproj/argocli:v[0-9][^ \n\r]*#quay.io/argoproj/argocli:${WORKFLOWS_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" || true
+    fi
+
+    # 5) Kargo (ghcr.io/akuity/kargo)
+    local KARGO_VER
+    KARGO_VER=$(latest_github_release akuity kargo)
+    if [ -n "$KARGO_VER" ]; then
+        sed -i "s#ghcr.io/akuity/kargo:v[0-9][^ \n\r]*#ghcr.io/akuity/kargo:${KARGO_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/deployment.yaml" || true
+    fi
+
+    # 6) Kubernetes Dashboard
+    local DASH_VER
+    DASH_VER=$(latest_github_release kubernetes dashboard)
+    if [ -n "$DASH_VER" ]; then
+        sed -i "s#kubernetesui/dashboard:v[0-9][^ \n\r]*#kubernetesui/dashboard:${DASH_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/dashboard/deployment.yaml" || true
+    fi
+
+    # 7) Gitea (strip 'v' en tag para image)
+    local GITEA_VER
+    GITEA_VER=$(latest_github_release go-gitea gitea)
+    if [ -n "$GITEA_VER" ]; then
+        local GITEA_IMG_VER
+        GITEA_IMG_VER=${GITEA_VER#v}
+        sed -i "s#gitea/gitea:[0-9][^ \n\r]*#gitea/gitea:${GITEA_IMG_VER}#" \
+            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/gitea/deployment.yaml" || true
     fi
 }
 
@@ -82,6 +223,14 @@ install_dependencies() {
     sudo apt-get update -qq
     sudo apt-get upgrade -y -qq
     
+    # Si no hay sudo sin interacción, evitamos colgarnos pidiendo contraseña
+    if ! sudo -n true 2>/dev/null; then
+        log_warn "No hay sudo sin contraseña. Saltando instalación de dependencias del sistema. Se asume que Docker, kubectl, kind y helm ya están instalados."
+        # Aun así resolvemos versiones para el resto de pasos
+        resolve_latest_versions
+        return 0
+    fi
+
     log_info "Instalando herramientas básicas..."
     sudo apt-get install -y -qq \
         apt-transport-https \
@@ -91,6 +240,9 @@ install_dependencies() {
         lsb-release \
         jq \
         git
+
+    # Resolver últimas versiones estables ahora que tenemos curl + jq
+    resolve_latest_versions
     
     # Docker
     if ! command -v docker &> /dev/null; then
@@ -112,6 +264,9 @@ install_dependencies() {
         log_success "Docker instalado"
     else
         log_info "Docker ya instalado"
+        # Asegurar que está actualizado (si hay repos configurados)
+        sudo apt-get update -qq || true
+        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || true
         sudo service docker start 2>/dev/null || true
     fi
     
@@ -123,7 +278,19 @@ install_dependencies() {
         rm kubectl
         log_success "kubectl instalado"
     else
-        log_info "kubectl ya instalado"
+        # Actualizar si la versión no coincide con la resuelta
+        local current
+        current=$(kubectl version --client -o json 2>/dev/null | jq -r '.clientVersion.gitVersion' | sed 's/+.*//')
+        if [ -z "$current" ]; then current=$(kubectl version --client --short 2>/dev/null | awk '{print $3}' | sed 's/+.*//'); fi
+        if [ "$current" != "$KUBECTL_VERSION" ]; then
+            log_info "Actualizando kubectl de ${current:-desconocida} a ${KUBECTL_VERSION}..."
+            curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            rm kubectl
+            log_success "kubectl actualizado a ${KUBECTL_VERSION}"
+        else
+            log_info "kubectl ya está en ${current} (ok)"
+        fi
     fi
     
     # kind
@@ -134,19 +301,42 @@ install_dependencies() {
         rm kind
         log_success "kind instalado"
     else
-        log_info "kind ya instalado"
+        # Actualizar si la versión no coincide con la resuelta
+        local current
+        current=$(kind --version 2>/dev/null | sed -E 's/.*version[[:space:]]+//; s/^v?/v/')
+        if [ "$current" != "$KIND_VERSION" ]; then
+            log_info "Actualizando kind de ${current:-desconocida} a ${KIND_VERSION}..."
+            curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+            sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+            rm kind
+            log_success "kind actualizado a ${KIND_VERSION}"
+        else
+            log_info "kind ya está en ${current} (ok)"
+        fi
     fi
     
     # helm
     if ! command -v helm &> /dev/null; then
         log_info "Instalando Helm ${HELM_VERSION}..."
-        curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o helm.tar.gz
+        curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o helm.tar.gz
         tar -zxf helm.tar.gz
         sudo install -o root -g root -m 0755 linux-amd64/helm /usr/local/bin/helm
         rm -rf helm.tar.gz linux-amd64
         log_success "Helm instalado"
     else
-        log_info "Helm ya instalado"
+        # Actualizar si la versión no coincide con la resuelta
+        local current
+        current=$(helm version --short 2>/dev/null | sed -E 's/\+.*//')
+        if [ "$current" != "$HELM_VERSION" ]; then
+            log_info "Actualizando Helm de ${current:-desconocida} a ${HELM_VERSION}..."
+            curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o helm.tar.gz
+            tar -zxf helm.tar.gz
+            sudo install -o root -g root -m 0755 linux-amd64/helm /usr/local/bin/helm
+            rm -rf helm.tar.gz linux-amd64
+            log_success "Helm actualizado a ${HELM_VERSION}"
+        else
+            log_info "Helm ya está en ${current} (ok)"
+        fi
     fi
     
     log_success "Todas las dependencias instaladas correctamente"
@@ -188,25 +378,6 @@ install_argocd() {
     log_info "Instalando Argo CD ${ARGOCD_VERSION}..."
     kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
     
-    log_info "Configurando Argo CD para entorno de aprendizaje..."
-    
-    # Patch: servidor inseguro (HTTP)
-    kubectl patch deployment argocd-server -n argocd --type='json' \
-        -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--insecure"}]'
-    
-    # Patch: deshabilitar autenticación
-    kubectl patch cm argocd-cm -n argocd --type=merge -p='{"data":{"users.anonymous.enabled":"true"}}'
-    
-    # Patch: dar permisos admin a usuario anónimo
-    kubectl patch cm argocd-rbac-cm -n argocd --type=merge -p='{"data":{"policy.default":"role:admin"}}'
-    
-    # Patch: servicio NodePort en 30080
-    kubectl patch svc argocd-server -n argocd --type='json' \
-        -p='[
-            {"op": "replace", "path": "/spec/type", "value": "NodePort"},
-            {"op": "add", "path": "/spec/ports/0/nodePort", "value": 30080}
-        ]'
-    
     log_info "Esperando a que Argo CD esté completamente listo..."
     kubectl wait --for=condition=available --timeout=300s \
         deployment/argocd-server \
@@ -218,8 +389,36 @@ install_argocd() {
     kubectl wait --for=condition=ready --timeout=300s \
         pod -l app.kubernetes.io/name=argocd-server -n argocd
     
-    log_success "Argo CD instalado y configurado"
-    log_info "URL: http://localhost:30080"
+    log_success "Argo CD instalado"
+    # Exponer inmediatamente en localhost vía NodePort y habilitar modo demo (HTTP + anónimo)
+    log_info "Exponiendo Argo CD en NodePort 30080 y habilitando modo demo (HTTP + anónimo)..."
+    kubectl -n argocd patch svc argocd-server \
+      --type merge \
+      -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":8080,"protocol":"TCP","nodePort":30080}]}}'
+
+    # Configuración de servidor inseguro (HTTP) y acceso anónimo para aprendizaje
+    kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}' || true
+    kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"users.anonymous.enabled":"true","timeout.reconciliation":"180s"}}' || true
+    kubectl -n argocd patch configmap argocd-rbac-cm --type merge -p '{"data":{"policy.default":"role:admin"}}' || true
+
+    # Reiniciar el server para aplicar cambios de ConfigMaps
+    kubectl -n argocd rollout restart deployment/argocd-server
+    kubectl -n argocd rollout status deployment/argocd-server --timeout=180s
+
+    # Confirmar que el Service quedó como NodePort 30080
+    local tries=0
+    while [ $tries -lt 60 ]; do
+        local np
+        np=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}' 2>/dev/null || true)
+        local st
+        st=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.type}' 2>/dev/null || true)
+        if [ "${st}" = "NodePort" ] && [ "${np}" = "30080" ]; then
+            log_success "Argo CD accesible en http://localhost:30080"
+            break
+        fi
+        tries=$((tries+1))
+        sleep 2
+    done
 }
 
 # ============================================================================
@@ -230,6 +429,9 @@ deploy_sealed_secrets_prebootstrap() {
 
     # Aplicar CRD primero (wave -10 en Git, aquí directo)
     kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/crd.yaml"
+
+    # Crear namespace requerido
+    kubectl create namespace sealed-secrets --dry-run=client -o yaml | kubectl apply -f -
 
     # Pre-cargar imagen en Kind para evitar problemas de pull en entornos sin acceso
     if ! docker image inspect "${SEALED_SECRETS_IMAGE}" >/dev/null 2>&1; then
@@ -395,24 +597,25 @@ initialize_gitea_repos() {
         push_to_gitea "${app}" "${SCRIPT_DIR}/gitops-source-code/${app}"
     done
     
-    # Configurar credenciales de repositorio en Argo CD
-    log_info "Configurando credenciales en Argo CD..."
-    cat <<EOF | kubectl apply -f -
+                log_success "Repositorios inicializados en Gitea"
+
+        # Registrar explícitamente el repo principal en Argo CD (aunque sea público),
+        # para evitar cualquier resolución/latencia inicial del reposerver
+        cat <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
-  name: gitea-repo-creds
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repo-creds
+    name: gitea-gitops-manifests-repo
+    namespace: argocd
+    labels:
+        argocd.argoproj.io/secret-type: repository
+type: Opaque
 stringData:
-  type: git
-  url: ${GITEA_URL_INTERNAL}/${GITEA_USER}
-  username: ${GITEA_USER}
-  password: ${GITEA_PASSWORD}
+    name: gitops-manifests
+    type: git
+    url: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
 EOF
-    
-    log_success "Repositorios inicializados en Gitea"
+        log_info "Repositorio gitops-manifests registrado en Argo CD"
 }
 
 # ============================================================================
@@ -427,9 +630,67 @@ bootstrap_gitops() {
     log_info "Esperando a que root-app sincronice..."
     sleep 10
     
-    # Forzar sync inicial
-    kubectl patch app root -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
-    
+    # Forzar sync/refresh inicial
+    kubectl patch app root -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' || true
+
+    # Esperar a que root esté Synced
+    log_info "Esperando a que la aplicación root entre en estado Synced..."
+    local tries=0
+    while [ $tries -lt 120 ]; do
+        local sync cond msg
+        sync=$(kubectl get app root -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
+        cond=$(kubectl get app root -n argocd -o jsonpath='{.status.conditions[0].type}' 2>/dev/null || true)
+        msg=$(kubectl get app root -n argocd -o jsonpath='{.status.conditions[0].message}' 2>/dev/null || true)
+        if [ "$sync" = "Synced" ]; then
+            log_success "root está Synced"
+            break
+        fi
+        # Si hay error, abortar y mostrar mensaje
+        if [[ "$cond" =~ Error|ComparisonError|Suspended|MissingResource ]]; then
+            log_error "La aplicación root está en estado de error: $cond"
+            echo "$msg"
+            exit 1
+        fi
+        # Re-intentar refresh cada cierto tiempo
+        if (( tries % 10 == 0 )); then
+            kubectl patch app root -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' >/dev/null 2>&1 || true
+        fi
+        tries=$((tries+1))
+        sleep 2
+    done
+
+    # Esperar a que se creen aplicaciones hijas clave (p.ej. argocd-self-config)
+    log_info "Esperando a que se creen aplicaciones hijas (argocd-self-config, gitops-tools, etc.)..."
+    tries=0
+    while [ $tries -lt 120 ]; do
+        if kubectl get app argocd-self-config -n argocd >/dev/null 2>&1; then
+            log_success "Aplicación argocd-self-config detectada"
+            break
+        fi
+        # Si no aparece, refrescar root y seguir esperando
+        if (( tries % 10 == 0 )); then
+            kubectl patch app root -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' >/dev/null 2>&1 || true
+        fi
+        tries=$((tries+1))
+        sleep 2
+    done
+
+    # Confirmar accesibilidad (en caso de que el parche se haya demorado)
+    log_info "Confirmando Argo CD accesible en NodePort 30080..."
+    local tries=0
+    while [ $tries -lt 30 ]; do
+        local np
+        np=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}' 2>/dev/null || true)
+        local st
+        st=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.type}' 2>/dev/null || true)
+        if [ "${st}" = "NodePort" ] && [ "${np}" = "30080" ]; then
+            log_success "Argo CD accesible en http://localhost:30080"
+            break
+        fi
+        tries=$((tries+1))
+        sleep 1
+    done
+
     log_success "GitOps activado - Argo CD gestionando desde Gitea"
 }
 
@@ -472,11 +733,14 @@ ensure_kubeseal_installed() {
     if command -v kubeseal >/dev/null 2>&1; then
         return 0
     fi
-    log_info "Instalando kubeseal (v0.27.1)..."
+    local ver="$KUBESEAL_VERSION"
+    if [ -z "$ver" ]; then ver="v0.27.1"; fi
+    log_info "Instalando kubeseal (${ver})..."
     local TMPD
     TMPD=$(mktemp -d)
     pushd "$TMPD" >/dev/null
-    curl -fsSL -o kubeseal.tar.gz https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.1/kubeseal-0.27.1-linux-amd64.tar.gz
+    local ver_no_v="${ver#v}"
+    curl -fsSL -o kubeseal.tar.gz "https://github.com/bitnami-labs/sealed-secrets/releases/download/${ver}/kubeseal-${ver_no_v}-linux-amd64.tar.gz"
     tar -xzf kubeseal.tar.gz kubeseal
     sudo install -m 0755 kubeseal /usr/local/bin/kubeseal
     popd >/dev/null
@@ -548,6 +812,8 @@ main() {
     check_wsl
     
     install_dependencies
+    resolve_latest_chart_versions
+    update_manifests_with_latest_versions
     create_cluster
     install_argocd
     deploy_sealed_secrets_prebootstrap

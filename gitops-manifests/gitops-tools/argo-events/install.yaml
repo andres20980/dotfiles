@@ -1,3 +1,17 @@
+# Deshabilitado a propósito: instalación legacy de Argo Events
+# Ahora Argo Events (controladores y CRDs) se instala vía Helm desde Argo CD.
+# Este archivo no define recursos para evitar conflictos.
+# 
+# Por favor, utiliza la aplicación basada en Helm definida en:
+#   infra-configs/applications/argo-events-helm.yaml
+# junto con los CRs en esta carpeta gestionados por:
+#   infra-configs/applications/argo-events-resources.yaml
+# 
+# (Contenido deshabilitado)
+# Argo Events install (legacy) - anteriormente utilizado para instalar controladores directamente
+# Mantener este archivo causó conflictos una vez que se introdujo la instalación basada en Helm.
+# Este archivo originalmente contenía CRDs, implementaciones de controladores y webhooks.
+# Se deja intencionalmente aquí para referencia histórica pero no debe aplicarse.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:

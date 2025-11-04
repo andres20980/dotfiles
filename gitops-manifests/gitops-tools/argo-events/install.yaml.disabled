@@ -1,0 +1,3 @@
+# Deshabilitado a propósito: instalación legacy de Argo Events
+# Ahora Argo Events (controladores y CRDs) se instala vía Helm desde Argo CD.
+# Este archivo no debe aplicarse. Se conserva solo como referencia histórica.
