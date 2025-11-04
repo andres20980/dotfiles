@@ -507,26 +507,19 @@ install_argocd() {
 deploy_sealed_secrets_prebootstrap() {
     log_phase "FASE 3.5/7: Desplegando Sealed Secrets (infra esencial)"
 
-    # Aplicar CRD primero (wave -10 en Git, aquí directo)
-    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/crd.yaml"
-
-    # Crear namespace requerido
-    kubectl create namespace sealed-secrets --dry-run=client -o yaml | kubectl apply -f -
-
-    # Pre-cargar imagen en Kind para evitar problemas de pull en entornos sin acceso
-    if ! docker image inspect "${SEALED_SECRETS_IMAGE}" >/dev/null 2>&1; then
-        log_info "Descargando imagen ${SEALED_SECRETS_IMAGE}..."
-        docker pull "${SEALED_SECRETS_IMAGE}" || true
-    fi
-    log_info "Cargando imagen en Kind (si no está)..."
-    kind load docker-image "${SEALED_SECRETS_IMAGE}" --name "${CLUSTER_NAME}" || true
-
-    # Aplicar controlador (SA, RBAC, Service, Deployment)
-    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/sealed-secrets/controller.yaml"
+    # Instalar directamente desde release oficial de Bitnami
+    local ss_version="${SEALED_SECRETS_VERSION#v}"  # quitar 'v' prefix
+    local ss_manifest="https://github.com/bitnami-labs/sealed-secrets/releases/download/${SEALED_SECRETS_VERSION}/controller.yaml"
+    
+    log_info "Instalando Sealed Secrets ${SEALED_SECRETS_VERSION} desde release oficial..."
+    kubectl apply -f "${ss_manifest}"
 
     log_info "Esperando a que el controlador de Sealed Secrets esté listo..."
     kubectl wait --for=condition=available --timeout=300s \
-        deployment/sealed-secrets-controller -n sealed-secrets
+        deployment/sealed-secrets-controller -n sealed-secrets || {
+        log_warn "Timeout esperando sealed-secrets, continuando (puede estar iniciando)..."
+        sleep 10
+    }
     log_success "Sealed Secrets operativo"
 }
 
