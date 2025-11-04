@@ -1,5 +1,11 @@
 # kind-config.yaml
-# Configuración para un clúster de kind con red host para acceso desde Windows
+# Configuración para un clúster de kind con puertos expuestos para GitOps
+# Rangos de puertos:
+#   30080-30099: GitOps Tools principales (ArgoCD, Gitea, Grafana, etc.)
+#   30100-30149: Registry, CI/CD y herramientas de build
+#   30150-30199: Custom Apps (app-reloj, visor-gitops, futuras apps)
+#   30200-30249: Futuras GitOps Tools adicionales
+#   30443: HTTPS/Dashboard
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: gitops-local
@@ -11,12 +17,15 @@ nodes:
 - role: control-plane
   # Configuración para exponer puertos
   extraPortMappings:
-  - containerPort: 30080
-    hostPort: 30080
-    protocol: TCP
+  # HTTPS/Dashboard
   - containerPort: 30443
     hostPort: 30443
     protocol: TCP
+  
+  # GitOps Tools principales (30080-30099)
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP  # ArgoCD
   - containerPort: 30081
     hostPort: 30081
     protocol: TCP
@@ -25,34 +34,46 @@ nodes:
     protocol: TCP
   - containerPort: 30083
     hostPort: 30083
-    protocol: TCP
+    protocol: TCP  # Gitea
   - containerPort: 30084
     hostPort: 30084
     protocol: TCP
   - containerPort: 30085
     hostPort: 30085
     protocol: TCP
+  - containerPort: 30086
+    hostPort: 30086
+    protocol: TCP  # Grafana
+  - containerPort: 30087
+    hostPort: 30087
+    protocol: TCP
+  - containerPort: 30088
+    hostPort: 30088
+    protocol: TCP
+  - containerPort: 30089
+    hostPort: 30089
+    protocol: TCP
   - containerPort: 30090
     hostPort: 30090
-    protocol: TCP
+    protocol: TCP  # Prometheus
   - containerPort: 30091
     hostPort: 30091
-    protocol: TCP
+    protocol: TCP  # Kargo
   - containerPort: 30092
     hostPort: 30092
-    protocol: TCP
+    protocol: TCP  # Redis
   - containerPort: 30093
     hostPort: 30093
-    protocol: TCP
+    protocol: TCP  # Argo Workflows
   - containerPort: 30094
     hostPort: 30094
-    protocol: TCP
+    protocol: TCP  # Argo Rollouts
   - containerPort: 30095
     hostPort: 30095
     protocol: TCP
   - containerPort: 30096
     hostPort: 30096
-    protocol: TCP
+    protocol: TCP  # Registry UI
   - containerPort: 30097
     hostPort: 30097
     protocol: TCP
@@ -61,4 +82,199 @@ nodes:
     protocol: TCP
   - containerPort: 30099
     hostPort: 30099
+    protocol: TCP
+  
+  # Registry y CI/CD (30100-30149)
+  - containerPort: 30100
+    hostPort: 30100
+    protocol: TCP  # Docker Registry (primary)
+  - containerPort: 30101
+    hostPort: 30101
+    protocol: TCP
+  - containerPort: 30102
+    hostPort: 30102
+    protocol: TCP
+  - containerPort: 30103
+    hostPort: 30103
+    protocol: TCP
+  - containerPort: 30104
+    hostPort: 30104
+    protocol: TCP
+  - containerPort: 30105
+    hostPort: 30105
+    protocol: TCP
+  - containerPort: 30106
+    hostPort: 30106
+    protocol: TCP
+  - containerPort: 30107
+    hostPort: 30107
+    protocol: TCP
+  - containerPort: 30108
+    hostPort: 30108
+    protocol: TCP
+  - containerPort: 30109
+    hostPort: 30109
+    protocol: TCP
+  - containerPort: 30110
+    hostPort: 30110
+    protocol: TCP
+  - containerPort: 30111
+    hostPort: 30111
+    protocol: TCP
+  - containerPort: 30112
+    hostPort: 30112
+    protocol: TCP
+  - containerPort: 30113
+    hostPort: 30113
+    protocol: TCP
+  - containerPort: 30114
+    hostPort: 30114
+    protocol: TCP
+  - containerPort: 30115
+    hostPort: 30115
+    protocol: TCP
+  - containerPort: 30116
+    hostPort: 30116
+    protocol: TCP
+  - containerPort: 30117
+    hostPort: 30117
+    protocol: TCP
+  - containerPort: 30118
+    hostPort: 30118
+    protocol: TCP
+  - containerPort: 30119
+    hostPort: 30119
+    protocol: TCP
+  - containerPort: 30120
+    hostPort: 30120
+    protocol: TCP
+  
+  # Custom Apps (30150-30199)
+  - containerPort: 30150
+    hostPort: 30150
+    protocol: TCP  # app-reloj
+  - containerPort: 30151
+    hostPort: 30151
+    protocol: TCP  # visor-gitops
+  - containerPort: 30152
+    hostPort: 30152
+    protocol: TCP
+  - containerPort: 30153
+    hostPort: 30153
+    protocol: TCP
+  - containerPort: 30154
+    hostPort: 30154
+    protocol: TCP
+  - containerPort: 30155
+    hostPort: 30155
+    protocol: TCP
+  - containerPort: 30156
+    hostPort: 30156
+    protocol: TCP
+  - containerPort: 30157
+    hostPort: 30157
+    protocol: TCP
+  - containerPort: 30158
+    hostPort: 30158
+    protocol: TCP
+  - containerPort: 30159
+    hostPort: 30159
+    protocol: TCP
+  - containerPort: 30160
+    hostPort: 30160
+    protocol: TCP
+  - containerPort: 30161
+    hostPort: 30161
+    protocol: TCP
+  - containerPort: 30162
+    hostPort: 30162
+    protocol: TCP
+  - containerPort: 30163
+    hostPort: 30163
+    protocol: TCP
+  - containerPort: 30164
+    hostPort: 30164
+    protocol: TCP
+  - containerPort: 30165
+    hostPort: 30165
+    protocol: TCP
+  - containerPort: 30166
+    hostPort: 30166
+    protocol: TCP
+  - containerPort: 30167
+    hostPort: 30167
+    protocol: TCP
+  - containerPort: 30168
+    hostPort: 30168
+    protocol: TCP
+  - containerPort: 30169
+    hostPort: 30169
+    protocol: TCP
+  - containerPort: 30170
+    hostPort: 30170
+    protocol: TCP
+  
+  # Futuras GitOps Tools (30200-30249)
+  - containerPort: 30200
+    hostPort: 30200
+    protocol: TCP
+  - containerPort: 30201
+    hostPort: 30201
+    protocol: TCP
+  - containerPort: 30202
+    hostPort: 30202
+    protocol: TCP
+  - containerPort: 30203
+    hostPort: 30203
+    protocol: TCP
+  - containerPort: 30204
+    hostPort: 30204
+    protocol: TCP
+  - containerPort: 30205
+    hostPort: 30205
+    protocol: TCP
+  - containerPort: 30206
+    hostPort: 30206
+    protocol: TCP
+  - containerPort: 30207
+    hostPort: 30207
+    protocol: TCP
+  - containerPort: 30208
+    hostPort: 30208
+    protocol: TCP
+  - containerPort: 30209
+    hostPort: 30209
+    protocol: TCP
+  - containerPort: 30210
+    hostPort: 30210
+    protocol: TCP
+  - containerPort: 30211
+    hostPort: 30211
+    protocol: TCP
+  - containerPort: 30212
+    hostPort: 30212
+    protocol: TCP
+  - containerPort: 30213
+    hostPort: 30213
+    protocol: TCP
+  - containerPort: 30214
+    hostPort: 30214
+    protocol: TCP
+  - containerPort: 30215
+    hostPort: 30215
+    protocol: TCP
+  - containerPort: 30216
+    hostPort: 30216
+    protocol: TCP
+  - containerPort: 30217
+    hostPort: 30217
+    protocol: TCP
+  - containerPort: 30218
+    hostPort: 30218
+    protocol: TCP
+  - containerPort: 30219
+    hostPort: 30219
+    protocol: TCP
+  - containerPort: 30220
+    hostPort: 30220
     protocol: TCP

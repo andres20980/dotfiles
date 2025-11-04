@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: visor-gitops
-        image: docker-registry.registry.svc.cluster.local:5000/visor-gitops:latest
+        image: localhost:30087/visor-gitops:v1.0.0
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

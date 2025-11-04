@@ -13,4 +13,4 @@ spec:
   - name: http
     port: 80
     targetPort: 3000
-    nodePort: 30099
+    nodePort: 30150  # Custom apps range

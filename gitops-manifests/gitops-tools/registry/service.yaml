@@ -11,6 +11,6 @@ spec:
   - name: registry
     port: 5000
     targetPort: 5000
-    nodePort: 30087  # Registry accesible en localhost:30087
+    nodePort: 30100  # Registry accesible en localhost:30100 (rango CI/CD)
   selector:
     app: docker-registry

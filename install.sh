@@ -875,7 +875,7 @@ complete_custom_apps_cicd() {
     # Esperar unos segundos adicionales para que el servicio esté completamente listo
     sleep 5
     
-    local registry_url="localhost:30087"
+    local registry_url="localhost:30100"
     
     # Construir y pushear imágenes para cada custom app
     for app in app-reloj visor-gitops; do
@@ -906,13 +906,13 @@ complete_custom_apps_cicd() {
     
     # Actualizar app-reloj deployment
     if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml" ]; then
-        sed -i "s#image:.*#image: localhost:30087/app-reloj:v1.0.0#" \
+        sed -i "s#image:.*#image: localhost:30100/app-reloj:v1.0.0#" \
             "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
     fi
     
     # Actualizar visor-gitops deployment
     if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml" ]; then
-        sed -i "s#image:.*#image: localhost:30087/visor-gitops:v1.0.0#" \
+        sed -i "s#image:.*#image: localhost:30100/visor-gitops:v1.0.0#" \
             "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml"
     fi
     
