@@ -144,7 +144,12 @@ resolve_latest_versions() {
     # Dashboard v7+ requiere arquitectura multi-container compleja
     # Usamos v2.7.0 que es la última versión simple con una sola imagen
     if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v2.7.0"; fi
-    DASHBOARD_IMAGE_TAG="${DASHBOARD_VERSION}"
+    # Extraer solo la versión del tag (puede venir como "kubernetes-dashboard-7.14.0" o "v2.7.0")
+    if [[ "$DASHBOARD_VERSION" =~ ^kubernetes-dashboard-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+        DASHBOARD_IMAGE_TAG="v${BASH_REMATCH[1]}"
+    else
+        DASHBOARD_IMAGE_TAG="${DASHBOARD_VERSION}"
+    fi
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     sleep 0.2
@@ -550,35 +555,6 @@ deploy_gitea() {
 }
 
 # ============================================================================
-# BUILD Y PUSH IMÁGENES INICIALES DE CUSTOM APPS
-# ============================================================================
-build_and_push_initial_images() {
-    log_info "Construyendo y pusheando imágenes iniciales de custom apps..."
-    
-    local registry_url="localhost:30087"
-    
-    for app in app-reloj visor-gitops; do
-        local app_dir="${SCRIPT_DIR}/gitops-source-code/${app}"
-        
-        if [ ! -f "${app_dir}/Dockerfile" ]; then
-            log_warn "App ${app} no tiene Dockerfile, saltando build"
-            continue
-        fi
-        
-        log_info "Building ${app}:latest..."
-        if docker build -t "${registry_url}/${app}:latest" "${app_dir}" >/dev/null 2>&1; then
-            log_info "Pushing ${app}:latest to local registry..."
-            if docker push "${registry_url}/${app}:latest" >/dev/null 2>&1; then
-                log_success "✓ ${app}:latest disponible en registry"
-            else
-                log_warn "Failed to push ${app}:latest (registry puede no estar listo)"
-            fi
-        else
-            log_warn "Failed to build ${app}:latest"
-        fi
-    done
-}
-
 # ============================================================================
 # CONFIGURAR WEBHOOKS EN GITEA
 # ============================================================================
@@ -754,8 +730,8 @@ initialize_gitea_repos() {
     
     log_success "Repositorios inicializados en Gitea"
     
-    # Construir y pushear imágenes iniciales de custom apps
-    build_and_push_initial_images
+    # NO construir imágenes aquí - el registry aún no está desplegado
+    # Las imágenes se construirán después del bootstrap GitOps
 
         # Registrar explícitamente el repo principal en Argo CD (aunque sea público),
         # para evitar cualquier resolución/latencia inicial del reposerver
@@ -870,6 +846,109 @@ bootstrap_gitops() {
     done
 
     log_success "GitOps activado - Argo CD gestionando desde Gitea"
+}
+
+# ============================================================================
+# FASE 6.5: COMPLETAR CI/CD DE CUSTOM APPS
+# ============================================================================
+complete_custom_apps_cicd() {
+    log_phase "FASE 6.5/7: Completando CI/CD de custom apps"
+    
+    log_info "Esperando a que registry esté disponible..."
+    local max_wait=60
+    local count=0
+    while [ $count -lt $max_wait ]; do
+        if kubectl get deployment docker-registry -n registry >/dev/null 2>&1 && \
+           kubectl wait --for=condition=available --timeout=5s deployment/docker-registry -n registry >/dev/null 2>&1; then
+            log_success "Registry está disponible"
+            break
+        fi
+        count=$((count + 1))
+        sleep 2
+    done
+    
+    if [ $count -ge $max_wait ]; then
+        log_warn "Registry no disponible, saltando build de imágenes"
+        return 0
+    fi
+    
+    # Esperar unos segundos adicionales para que el servicio esté completamente listo
+    sleep 5
+    
+    local registry_url="localhost:30087"
+    
+    # Construir y pushear imágenes para cada custom app
+    for app in app-reloj visor-gitops; do
+        local app_dir="${SCRIPT_DIR}/gitops-source-code/${app}"
+        
+        if [ ! -f "${app_dir}/Dockerfile" ]; then
+            log_warn "App ${app} no tiene Dockerfile, saltando"
+            continue
+        fi
+        
+        log_info "Construyendo ${app}:v1.0.0..."
+        if docker build -t "${registry_url}/${app}:v1.0.0" -t "${registry_url}/${app}:latest" "${app_dir}" >/dev/null 2>&1; then
+            log_success "✓ Imagen ${app} construida"
+            
+            log_info "Pusheando ${app} a registry local..."
+            if docker push "${registry_url}/${app}:v1.0.0" >/dev/null 2>&1 && \
+               docker push "${registry_url}/${app}:latest" >/dev/null 2>&1; then
+                log_success "✓ ${app}:v1.0.0 y :latest disponibles en registry"
+            else
+                log_warn "Failed to push ${app} (puede requerir retry manual)"
+            fi
+        else
+            log_warn "Failed to build ${app}"
+        fi
+    done
+    
+    log_info "Actualizando manifests de custom apps para usar imágenes del registry..."
+    
+    # Actualizar app-reloj deployment
+    if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml" ]; then
+        sed -i "s#image:.*#image: localhost:30087/app-reloj:v1.0.0#" \
+            "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
+    fi
+    
+    # Actualizar visor-gitops deployment
+    if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml" ]; then
+        sed -i "s#image:.*#image: localhost:30087/visor-gitops:v1.0.0#" \
+            "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml"
+    fi
+    
+    log_info "Commiteando y pusheando cambios a Gitea..."
+    cd "${SCRIPT_DIR}/gitops-manifests"
+    git add custom-apps/
+    git commit -m "feat: update custom apps to use registry images v1.0.0" --allow-empty
+    git push gitea main
+    cd "${SCRIPT_DIR}"
+    
+    log_info "Esperando a que ArgoCD sincronice las custom apps..."
+    sleep 10
+    
+    # Forzar refresh de las aplicaciones
+    kubectl patch app app-reloj -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' 2>/dev/null || true
+    kubectl patch app visor-gitops -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' 2>/dev/null || true
+    
+    log_info "Verificando despliegue de custom apps..."
+    sleep 15
+    
+    local app_reloj_status=$(kubectl get deployment app-reloj -n app-reloj -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+    local visor_status=$(kubectl get deployment visor-gitops -n visor-gitops -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+    
+    if [ "$app_reloj_status" = "1" ]; then
+        log_success "✓ app-reloj desplegado correctamente"
+    else
+        log_warn "app-reloj aún no está disponible (puede estar iniciando)"
+    fi
+    
+    if [ "$visor_status" = "1" ]; then
+        log_success "✓ visor-gitops desplegado correctamente"
+    else
+        log_warn "visor-gitops aún no está disponible (puede estar iniciando)"
+    fi
+    
+    log_success "CI/CD de custom apps completado"
 }
 
 # ============================================================================
@@ -1008,6 +1087,7 @@ main() {
     deploy_gitea
     initialize_gitea_repos
     bootstrap_gitops
+    complete_custom_apps_cicd
     verify_deployment
 }
 
