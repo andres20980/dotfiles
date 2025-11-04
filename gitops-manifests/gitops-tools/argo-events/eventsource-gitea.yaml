@@ -15,3 +15,7 @@ spec:
       port: "12000"
       endpoint: /app-reloj
       method: POST
+    visor-gitops:
+      port: "12000"
+      endpoint: /visor-gitops
+      method: POST

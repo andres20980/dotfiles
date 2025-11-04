@@ -44,22 +44,22 @@ data:
     set -e
     echo "📝 Updating Kubernetes manifests..."
     
-    # Clone gitops repo (using token from environment)
+    # Clone gitops-manifests repo
     cd /tmp
-    git clone http://${GITEA_USER}:${GITEA_TOKEN}@gitea.gitea.svc.cluster.local:3000/gitops/custom-apps.git
-    cd custom-apps
+    git clone http://${GITEA_USER}:${GITEA_PASSWORD}@gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+    cd gitops-manifests
     
-    # Check if app directory exists
-    if [ ! -d "$IMAGE_NAME" ]; then
-      echo "❌ Directory $IMAGE_NAME not found in manifests repo"
+    # Check if app directory exists in custom-apps
+    if [ ! -d "custom-apps/${IMAGE_NAME}" ]; then
+      echo "❌ Directory custom-apps/${IMAGE_NAME} not found in manifests repo"
       exit 1
     fi
     
-    cd "$IMAGE_NAME"
+    cd "custom-apps/${IMAGE_NAME}"
     
     # Update image tag in kustomization.yaml
     if [ -f "kustomization.yaml" ]; then
-      sed -i "s|newTag:.*|newTag: $COMMIT_SHA|g" kustomization.yaml
+      sed -i "s|newTag:.*|newTag: ${COMMIT_SHA}|g" kustomization.yaml
       
       # Commit and push
       git config user.name "Argo Workflows"
@@ -69,7 +69,7 @@ data:
       if git diff --staged --quiet; then
         echo "ℹ️ No changes to commit"
       else
-        git commit -m "ci: update $IMAGE_NAME image to $COMMIT_SHA"
+        git commit -m "ci: update ${IMAGE_NAME} image to ${COMMIT_SHA}"
         git push
         echo "✅ Manifests updated and pushed"
       fi

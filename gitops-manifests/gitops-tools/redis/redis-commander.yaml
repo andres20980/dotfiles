@@ -23,6 +23,10 @@ spec:
         env:
         - name: REDIS_HOSTS
           value: "local:redis.redis.svc.cluster.local:6379"
+        - name: HTTP_USER
+          value: ""
+        - name: HTTP_PASSWORD
+          value: ""
         resources:
           requests:
             cpu: 25m

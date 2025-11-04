@@ -113,6 +113,16 @@ spec:
         value: "{{inputs.parameters.registry}}"
       - name: COMMIT_SHA
         value: "{{inputs.parameters.commit-sha}}"
+      - name: GITEA_USER
+        valueFrom:
+          secretKeyRef:
+            name: gitea-ci-token
+            key: username
+      - name: GITEA_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: gitea-ci-token
+            key: password
       volumeMounts:
       - name: workspace
         mountPath: /workspace
