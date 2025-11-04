@@ -139,17 +139,10 @@ resolve_latest_versions() {
     sleep 0.2
     if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v1.8.3"; fi
     
-    DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
-    sleep 0.2
-    # Dashboard v7+ requiere arquitectura multi-container compleja
-    # Usamos v2.7.0 que es la última versión simple con una sola imagen
-    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v2.7.0"; fi
-    # Extraer solo la versión del tag (puede venir como "kubernetes-dashboard-7.14.0" o "v2.7.0")
-    if [[ "$DASHBOARD_VERSION" =~ ^kubernetes-dashboard-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-        DASHBOARD_IMAGE_TAG="v${BASH_REMATCH[1]}"
-    else
-        DASHBOARD_IMAGE_TAG="${DASHBOARD_VERSION}"
-    fi
+    # Dashboard: forzar v2.7.0 (última versión estable single-container)
+    # v7+ requiere arquitectura multi-container compleja no apta para este entorno
+    DASHBOARD_VERSION="v2.7.0"
+    DASHBOARD_IMAGE_TAG="v2.7.0"
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     sleep 0.2
@@ -563,7 +556,7 @@ setup_gitea_webhooks() {
     
     local eventsource_url="http://gitea-webhook-eventsource-svc.argo-events.svc.cluster.local:12000"
     
-    for app in app-reloj visor-gitops; do
+    for app in app-reloj; do
         log_info "Configurando webhook para ${app}..."
         
         # Crear webhook via API
@@ -723,7 +716,7 @@ initialize_gitea_repos() {
     push_to_gitea "gitops-manifests" "${SCRIPT_DIR}/gitops-manifests"
     
     # Crear y pushear aplicaciones de source code
-    for app in app-reloj visor-gitops; do
+    for app in app-reloj; do
         create_gitea_repo "${app}"
         push_to_gitea "${app}" "${SCRIPT_DIR}/gitops-source-code/${app}"
     done
@@ -878,7 +871,7 @@ complete_custom_apps_cicd() {
     local registry_url="localhost:30100"
     
     # Construir y pushear imágenes para cada custom app
-    for app in app-reloj visor-gitops; do
+    for app in app-reloj; do
         local app_dir="${SCRIPT_DIR}/gitops-source-code/${app}"
         
         if [ ! -f "${app_dir}/Dockerfile" ]; then
@@ -910,12 +903,6 @@ complete_custom_apps_cicd() {
             "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
     fi
     
-    # Actualizar visor-gitops deployment
-    if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml" ]; then
-        sed -i "s#image:.*#image: localhost:30100/visor-gitops:v1.0.0#" \
-            "${SCRIPT_DIR}/gitops-manifests/custom-apps/visor-gitops/deployment.yaml"
-    fi
-    
     log_info "Commiteando y pusheando cambios a Gitea..."
     cd "${SCRIPT_DIR}/gitops-manifests"
     git add custom-apps/
@@ -928,24 +915,16 @@ complete_custom_apps_cicd() {
     
     # Forzar refresh de las aplicaciones
     kubectl patch app app-reloj -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' 2>/dev/null || true
-    kubectl patch app visor-gitops -n argocd --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' 2>/dev/null || true
     
     log_info "Verificando despliegue de custom apps..."
     sleep 15
     
     local app_reloj_status=$(kubectl get deployment app-reloj -n app-reloj -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
-    local visor_status=$(kubectl get deployment visor-gitops -n visor-gitops -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
     
     if [ "$app_reloj_status" = "1" ]; then
         log_success "✓ app-reloj desplegado correctamente"
     else
         log_warn "app-reloj aún no está disponible (puede estar iniciando)"
-    fi
-    
-    if [ "$visor_status" = "1" ]; then
-        log_success "✓ visor-gitops desplegado correctamente"
-    else
-        log_warn "visor-gitops aún no está disponible (puede estar iniciando)"
     fi
     
     log_success "CI/CD de custom apps completado"

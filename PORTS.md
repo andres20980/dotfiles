@@ -36,10 +36,9 @@ Puertos para aplicaciones custom desarrolladas en este entorno de aprendizaje.
 
 | Puerto | App | URL | Descripción |
 |--------|-----|-----|-------------|
-| 30150 | app-reloj | http://localhost:30150 | App de ejemplo: reloj |
-| 30151 | visor-gitops | http://localhost:30151 | App de ejemplo: visor GitOps |
+| 30150 | app-reloj | http://localhost:30150 | App de ejemplo: reloj con CI/CD |
 
-**Puertos disponibles**: 30152-30199 (48 puertos libres para nuevas custom apps)
+**Puertos disponibles**: 30151-30199 (49 puertos libres para nuevas custom apps)
 
 ### 🔮 Futuras GitOps Tools (30200-30249)
 Reservado para herramientas GitOps adicionales que se añadan posteriormente.
