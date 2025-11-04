@@ -122,30 +122,46 @@ resolve_latest_versions() {
     local ss_no_v="${SEALED_SECRETS_VERSION#v}"                    # 0.27.1
     SEALED_SECRETS_IMAGE="bitnami/sealed-secrets-controller:${ss_no_v}"
 
+    # Resolver versiones de GitOps tools
+    ARGO_ROLLOUTS_VERSION=$(latest_github_release argoproj argo-rollouts)
+    if [ -z "$ARGO_ROLLOUTS_VERSION" ]; then ARGO_ROLLOUTS_VERSION="v1.8.0"; fi
+    
+    ARGO_WORKFLOWS_VERSION=$(latest_github_release argoproj argo-workflows)
+    if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.6.2"; fi
+    
+    KARGO_VERSION=$(latest_github_release akuity kargo)
+    if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v0.11.0"; fi
+    
+    DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
+    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v3.1.0"; fi
+    
+    GITEA_VERSION=$(latest_github_release go-gitea gitea)
+    if [ -z "$GITEA_VERSION" ]; then GITEA_VERSION="v1.22.0"; fi
+
+    # Helm chart version de argo-events
+    helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
+    helm repo update >/dev/null 2>&1 || true
+    local ev
+    ev=$(helm search repo argo/argo-events --versions -o json 2>/dev/null | jq -r '[.[] | select(.name=="argo/argo-events" and (.version|test("-" )|not))][0].version' 2>/dev/null)
+    if [ -z "$ev" ] || [ "$ev" = "null" ]; then
+        ev="2.6.0"
+    fi
+    ARGO_EVENTS_CHART_VERSION="$ev"
+
     log_info "Versiones resueltas:" 
     echo "  - kubectl:          ${KUBECTL_VERSION}"
     echo "  - kind:             ${KIND_VERSION}"
     echo "  - helm:             ${HELM_VERSION}"
     echo "  - argo-cd:          ${ARGOCD_VERSION}"
     echo "  - sealed-secrets:   ${SEALED_SECRETS_VERSION} (imagen ${SEALED_SECRETS_IMAGE})"
-}
-
-# ----------------------------------------------------------------------------
-# Resolución de últimas versiones de charts Helm utilizados en manifiestos
-# ----------------------------------------------------------------------------
-resolve_latest_chart_versions() {
-    # Repos helm requeridos
-    helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
-    helm repo update >/dev/null 2>&1 || true
-
-    # Última versión estable de argo-events
-    local ev
-    ev=$(helm search repo argo/argo-events --versions -o json 2>/dev/null | jq -r '[.[] | select(.name=="argo/argo-events" and (.version|test("-" )|not))][0].version' 2>/dev/null)
-    if [ -z "$ev" ] || [ "$ev" = "null" ]; then
-        ev="2.6.0"
-    fi
-    export ARGO_EVENTS_CHART_VERSION="$ev"
-    log_info "Charts resueltos: argo-events chart ${ARGO_EVENTS_CHART_VERSION}"
+    echo ""
+    echo "  GitOps Tools:"
+    echo "  - argo-events:      ${ARGO_EVENTS_CHART_VERSION} (Helm chart)"
+    echo "  - argo-rollouts:    ${ARGO_ROLLOUTS_VERSION}"
+    echo "  - argo-workflows:   ${ARGO_WORKFLOWS_VERSION}"
+    echo "  - kargo:            ${KARGO_VERSION}"
+    echo "  - k8s-dashboard:    ${DASHBOARD_VERSION}"
+    echo "  - gitea:            ${GITEA_VERSION}"
 }
 
 # ----------------------------------------------------------------------------
@@ -166,48 +182,38 @@ update_manifests_with_latest_versions() {
           "${SCRIPT_DIR}/gitops-manifests/infra-configs/applications/argo-events-helm.yaml" || true
     fi
 
-    # 3) Argo Rollouts (controller + dashboard)
-    local ROLLOUTS_VER
-    ROLLOUTS_VER=$(latest_github_release argoproj argo-rollouts)
-    if [ -n "$ROLLOUTS_VER" ]; then
-        sed -i "s#quay.io/argoproj/argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/argo-rollouts:${ROLLOUTS_VER}#" \
+    # 3) Argo Rollouts (controller + dashboard) - usar variable ya resuelta
+    if [ -n "$ARGO_ROLLOUTS_VERSION" ]; then
+        sed -i "s#quay.io/argoproj/argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/argo-rollouts:${ARGO_ROLLOUTS_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-rollouts/deployment.yaml" || true
-        sed -i "s#quay.io/argoproj/kubectl-argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/kubectl-argo-rollouts:${ROLLOUTS_VER}#" \
+        sed -i "s#quay.io/argoproj/kubectl-argo-rollouts:v[0-9][^ \n\r]*#quay.io/argoproj/kubectl-argo-rollouts:${ARGO_ROLLOUTS_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-rollouts/dashboard.yaml" || true
     fi
 
-    # 4) Argo Workflows (controller + cli) en install.yaml auto-generado
-    local WORKFLOWS_VER
-    WORKFLOWS_VER=$(latest_github_release argoproj argo-workflows)
-    if [ -n "$WORKFLOWS_VER" ]; then
-        sed -i "s#quay.io/argoproj/workflow-controller:v[0-9][^ \n\r]*#quay.io/argoproj/workflow-controller:${WORKFLOWS_VER}#" \
+    # 4) Argo Workflows (controller + cli) - usar variable ya resuelta
+    if [ -n "$ARGO_WORKFLOWS_VERSION" ]; then
+        sed -i "s#quay.io/argoproj/workflow-controller:v[0-9][^ \n\r]*#quay.io/argoproj/workflow-controller:${ARGO_WORKFLOWS_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" || true
-        sed -i "s#quay.io/argoproj/argocli:v[0-9][^ \n\r]*#quay.io/argoproj/argocli:${WORKFLOWS_VER}#" \
+        sed -i "s#quay.io/argoproj/argocli:v[0-9][^ \n\r]*#quay.io/argoproj/argocli:${ARGO_WORKFLOWS_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" || true
     fi
 
-    # 5) Kargo (ghcr.io/akuity/kargo)
-    local KARGO_VER
-    KARGO_VER=$(latest_github_release akuity kargo)
-    if [ -n "$KARGO_VER" ]; then
-        sed -i "s#ghcr.io/akuity/kargo:v[0-9][^ \n\r]*#ghcr.io/akuity/kargo:${KARGO_VER}#" \
+    # 5) Kargo - usar variable ya resuelta
+    if [ -n "$KARGO_VERSION" ]; then
+        sed -i "s#ghcr.io/akuity/kargo:v[0-9][^ \n\r]*#ghcr.io/akuity/kargo:${KARGO_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/deployment.yaml" || true
     fi
 
-    # 6) Kubernetes Dashboard
-    local DASH_VER
-    DASH_VER=$(latest_github_release kubernetes dashboard)
-    if [ -n "$DASH_VER" ]; then
-        sed -i "s#kubernetesui/dashboard:v[0-9][^ \n\r]*#kubernetesui/dashboard:${DASH_VER}#" \
+    # 6) Kubernetes Dashboard - usar variable ya resuelta
+    if [ -n "$DASHBOARD_VERSION" ]; then
+        sed -i "s#kubernetesui/dashboard:v[0-9][^ \n\r]*#kubernetesui/dashboard:${DASHBOARD_VERSION}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/dashboard/deployment.yaml" || true
     fi
 
-    # 7) Gitea (strip 'v' en tag para image)
-    local GITEA_VER
-    GITEA_VER=$(latest_github_release go-gitea gitea)
-    if [ -n "$GITEA_VER" ]; then
+    # 7) Gitea - usar variable ya resuelta (strip 'v' en tag para image)
+    if [ -n "$GITEA_VERSION" ]; then
         local GITEA_IMG_VER
-        GITEA_IMG_VER=${GITEA_VER#v}
+        GITEA_IMG_VER=${GITEA_VERSION#v}
         sed -i "s#gitea/gitea:[0-9][^ \n\r]*#gitea/gitea:${GITEA_IMG_VER}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/gitea/deployment.yaml" || true
     fi
@@ -812,7 +818,6 @@ main() {
     check_wsl
     
     install_dependencies
-    resolve_latest_chart_versions
     update_manifests_with_latest_versions
     create_cluster
     install_argocd
