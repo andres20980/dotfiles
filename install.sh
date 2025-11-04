@@ -748,6 +748,12 @@ bootstrap_gitops() {
         sleep 2
     done
 
+    # Parchear proyecto gitops-tools para permitir repos Helm (necesario para argo-events)
+    log_info "Configurando proyecto gitops-tools para permitir repos Helm..."
+    sleep 5  # Esperar a que el proyecto se cree
+    kubectl patch appproject gitops-tools -n argocd --type=json -p='[{"op": "replace", "path": "/spec/sourceRepos", "value": ["*", "https://argoproj.github.io/argo-helm"]}]' 2>/dev/null || \
+        log_warn "No se pudo parchear proyecto gitops-tools (se creará después)"
+
     # Confirmar accesibilidad (en caso de que el parche se haya demorado)
     log_info "Confirmando Argo CD accesible en NodePort 30080..."
     local tries=0
