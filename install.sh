@@ -96,8 +96,7 @@ resolve_latest_versions() {
     # Valores por defecto (fallback) si no hay red o hay rate-limit
     local DEF_ARGOCD="v2.13.2"
     local DEF_KIND="v0.24.0"
-    local DEF_KUBECTL
-    DEF_KUBECTL=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || echo "v1.31.0")
+    local DEF_KUBECTL="v1.31.0"
     local DEF_HELM="v3.16.2"
     local DEF_SS="v0.27.1"
 
