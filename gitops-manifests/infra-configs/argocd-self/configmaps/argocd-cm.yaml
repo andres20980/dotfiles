@@ -20,3 +20,9 @@ data:
         hs.status = "Healthy"
         hs.message = "SealedSecret gestionado por el controlador"
         return hs
+
+  # Helm repositories para ApplicationSets
+  repositories: |
+    - name: argo
+      type: helm
+      url: https://argoproj.github.io/argo-helm

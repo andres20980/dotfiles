@@ -7,6 +7,8 @@ spec:
   description: "Herramientas de plataforma (monitoring, git server, registry, argo suite)"
   sourceRepos:
     - 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
+    - 'https://argoproj.github.io/argo-helm'  # Helm repo para argo-events chart
+    - '*'  # Permitir cualquier repo público
   destinations:
     - namespace: '*'
       server: https://kubernetes.default.svc

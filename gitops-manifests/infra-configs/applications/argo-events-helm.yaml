@@ -9,7 +9,7 @@ spec:
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argo-events
-    targetRevision: 2.4.16
+    targetRevision: 2.4.17
     helm:
       releaseName: argo-events
       values: |

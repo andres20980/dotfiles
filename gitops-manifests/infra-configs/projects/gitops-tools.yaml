@@ -9,6 +9,7 @@ spec:
   description: "GitOps tools y herramientas de infraestructura gestionadas por ArgoCD"
   sourceRepos:
     - '*'
+    - 'https://argoproj.github.io/argo-helm'  # Helm repo para argo-events
   destinations:
     - namespace: '*'  # 🎯 Permitir cualquier namespace para máxima flexibilidad GitOps
       server: https://kubernetes.default.svc
