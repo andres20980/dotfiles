@@ -146,6 +146,8 @@ resolve_latest_versions() {
     DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
     sleep 0.2
     if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="kubernetes-dashboard-7.14.0"; fi
+    # Extraer solo número de versión para la imagen (kubernetes-dashboard-X.Y.Z -> vX.Y.Z)
+    DASHBOARD_IMAGE_TAG="v${DASHBOARD_VERSION#kubernetes-dashboard-}"
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     sleep 0.2
@@ -247,8 +249,8 @@ update_manifests_with_latest_versions() {
     fi
 
     # 6) Kubernetes Dashboard
-    if [ -n "$DASHBOARD_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/dashboard/deployment.yaml" ]; then
-        sed -i "s#kubernetesui/dashboard:v[0-9][^ \n\r]*#kubernetesui/dashboard:${DASHBOARD_VERSION}#" \
+    if [ -n "$DASHBOARD_IMAGE_TAG" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/dashboard/deployment.yaml" ]; then
+        sed -i "s#kubernetesui/dashboard:[^ \n\r]*#kubernetesui/dashboard:${DASHBOARD_IMAGE_TAG}#" \
             "${SCRIPT_DIR}/gitops-manifests/gitops-tools/dashboard/deployment.yaml" 2>/dev/null || true
     fi
 
