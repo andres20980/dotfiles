@@ -128,7 +128,7 @@ resolve_latest_versions() {
     ARGO_WORKFLOWS_VERSION=$(latest_github_release argoproj argo-workflows)
     if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.6.2"; fi
     
-    ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj argo-cd-image-updater)
+    ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj-labs argocd-image-updater)
     if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.15.0"; fi
     
     KARGO_VERSION=$(latest_github_release akuity kargo)
@@ -334,6 +334,10 @@ install_dependencies() {
     
     # kubectl
     if ! command -v kubectl &> /dev/null; then
+        # Fallback si KUBECTL_VERSION está vacío
+        if [ -z "$KUBECTL_VERSION" ]; then
+            KUBECTL_VERSION="v1.31.0"
+        fi
         log_info "Instalando kubectl ${KUBECTL_VERSION}..."
         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
         sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
