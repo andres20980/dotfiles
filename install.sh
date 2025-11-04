@@ -155,14 +155,14 @@ resolve_latest_versions() {
     echo "  - helm:             ${HELM_VERSION}"
     echo "  - argo-cd:          ${ARGOCD_VERSION}"
     echo ""
-    echo "  GitOps Tools:"
+    echo "  GitOps Tools (orden de instalación):"
     echo "  - sealed-secrets:   ${SEALED_SECRETS_VERSION}"
+    echo "  - gitea:            ${GITEA_VERSION}"
     echo "  - argo-events:      ${ARGO_EVENTS_CHART_VERSION} (Helm chart)"
     echo "  - argo-rollouts:    ${ARGO_ROLLOUTS_VERSION}"
     echo "  - argo-workflows:   ${ARGO_WORKFLOWS_VERSION}"
     echo "  - kargo:            ${KARGO_VERSION}"
     echo "  - k8s-dashboard:    ${DASHBOARD_VERSION}"
-    echo "  - gitea:            ${GITEA_VERSION}"
 }
 
 # ----------------------------------------------------------------------------
