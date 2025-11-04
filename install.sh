@@ -614,21 +614,26 @@ setup_gitea_webhooks() {
 }
 
 # ============================================================================
-# CREAR SECRET GITEA TOKEN PARA CI/CD
+# VERIFICAR SECRET GITEA TOKEN PARA CI/CD
 # ============================================================================
-create_gitea_ci_token() {
-    log_info "Creando token Gitea para CI/CD workflows..."
+verify_gitea_ci_token() {
+    log_info "Verificando que gitea-ci-token esté disponible en argo-workflows..."
     
-    # Para simplificar, usamos usuario/password básico
-    # En producción: usar tokens de API reales
-    kubectl create secret generic gitea-ci-token \
-        -n argo-workflows \
-        --from-literal=username="${GITEA_USER}" \
-        --from-literal=password="${GITEA_PASSWORD}" \
-        --from-literal=token="${GITEA_PASSWORD}" \
-        --dry-run=client -o yaml | kubectl apply -f -
+    # El secret se crea via SealedSecret en generate_initial_sealed_secrets
+    # ArgoCD lo despliega automáticamente cuando sincroniza argo-workflows
     
-    log_success "✓ Secret gitea-ci-token creado en argo-workflows"
+    local max_wait=60
+    local count=0
+    while [ $count -lt $max_wait ]; do
+        if kubectl get secret gitea-ci-token -n argo-workflows >/dev/null 2>&1; then
+            log_success "✓ Secret gitea-ci-token disponible en argo-workflows"
+            return 0
+        fi
+        count=$((count + 1))
+        sleep 2
+    done
+    
+    log_warn "Secret gitea-ci-token no detectado aún (ArgoCD lo desplegará desde SealedSecret)"
 }
 
 
@@ -732,7 +737,9 @@ initialize_gitea_repos() {
         cd "${SCRIPT_DIR}"
     }
     
-    # Generar SealedSecrets iniciales (Grafana, Kargo) antes del primer push
+    # Generar SealedSecrets iniciales ANTES del primer push
+    # (requiere que sealed-secrets esté desplegado y operativo)
+    log_info "Generando SealedSecrets antes de push inicial..."
     generate_initial_sealed_secrets || log_warn "No se pudieron generar SealedSecrets iniciales (continuamos)"
 
     # Crear y pushear gitops-manifests
@@ -843,8 +850,8 @@ bootstrap_gitops() {
     # Configurar webhooks Gitea → Argo Events
     setup_gitea_webhooks
     
-    # Crear token Gitea para workflows
-    create_gitea_ci_token
+    # Verificar token Gitea para workflows (desplegado via SealedSecret)
+    verify_gitea_ci_token
 
     # Confirmar accesibilidad (en caso de que el parche se haya demorado)
     log_info "Confirmando Argo CD accesible en NodePort 30080..."
@@ -919,7 +926,7 @@ ensure_kubeseal_installed() {
 }
 
 generate_initial_sealed_secrets() {
-    log_info "Generando SealedSecrets iniciales (Grafana, Kargo)..."
+    log_info "Generando SealedSecrets iniciales (Grafana, Kargo, Gitea-token para Workflows)..."
 
     # Asegura sealed-secrets listo (en caso de ejecución fuera de orden)
     if ! kubectl get deploy -n sealed-secrets sealed-secrets-controller >/dev/null 2>&1; then
@@ -938,7 +945,7 @@ generate_initial_sealed_secrets() {
              --controller-namespace=sealed-secrets \
              --fetch-cert > "$CERT_FILE"
 
-    # 1) Grafana: password admin
+    # 1) Grafana: password admin "gitops"
     mkdir -p "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana"
     kubectl create secret generic grafana-admin \
         --namespace=grafana \
@@ -947,7 +954,7 @@ generate_initial_sealed_secrets() {
         kubeseal --cert="$CERT_FILE" --format=yaml > \
         "${SCRIPT_DIR}/gitops-manifests/gitops-tools/grafana/sealed-secret.yaml"
 
-    # 2) Kargo: credenciales admin (entorno de aprendizaje)
+    # 2) Kargo: credenciales admin "admin/gitops"
     mkdir -p "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo"
     cat <<'EOF' | kubeseal --cert="$CERT_FILE" --format=yaml > "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/sealed-secret.yaml"
 apiVersion: v1
@@ -967,7 +974,18 @@ stringData:
   ADMIN_ACCOUNT_TOKEN_TTL: "24h"
 EOF
 
-    log_success "SealedSecrets generados en gitops-manifests/gitops-tools/{grafana,kargo}"
+    # 3) Gitea token para argo-workflows (usando usuario/password para CI/CD)
+    mkdir -p "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows"
+    kubectl create secret generic gitea-ci-token \
+        --namespace=argo-workflows \
+        --from-literal=username="${GITEA_USER}" \
+        --from-literal=password="${GITEA_PASSWORD}" \
+        --from-literal=token="${GITEA_PASSWORD}" \
+        --dry-run=client -o yaml | \
+        kubeseal --cert="$CERT_FILE" --format=yaml > \
+        "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/sealed-secret-gitea.yaml"
+
+    log_success "SealedSecrets generados en gitops-manifests/gitops-tools/{grafana,kargo,argo-workflows}"
 }
 
 # ============================================================================
