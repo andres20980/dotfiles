@@ -95,12 +95,12 @@ latest_github_release() {
 }
 
 resolve_latest_versions() {
-    # Valores por defecto (fallback) si no hay red o hay rate-limit
-    local DEF_ARGOCD="v2.13.2"
-    local DEF_KIND="v0.24.0"
-    local DEF_KUBECTL="v1.31.0"
-    local DEF_HELM="v3.16.2"
-    local DEF_SS="v0.27.1"
+    # Valores por defecto (fallback) - ACTUALIZADOS a versiones estables recientes
+    local DEF_ARGOCD="v3.1.9"
+    local DEF_KIND="v0.30.0"
+    local DEF_KUBECTL="v1.34.1"
+    local DEF_HELM="v3.19.0"
+    local DEF_SS="v0.32.2"
 
     # kubectl estable desde dl.k8s.io
     KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null || echo "$DEF_KUBECTL")
@@ -129,27 +129,27 @@ resolve_latest_versions() {
     # Resolver versiones de GitOps tools
     ARGO_ROLLOUTS_VERSION=$(latest_github_release argoproj argo-rollouts)
     sleep 0.2
-    if [ -z "$ARGO_ROLLOUTS_VERSION" ]; then ARGO_ROLLOUTS_VERSION="v1.8.0"; fi
+    if [ -z "$ARGO_ROLLOUTS_VERSION" ]; then ARGO_ROLLOUTS_VERSION="v1.8.3"; fi
     
     ARGO_WORKFLOWS_VERSION=$(latest_github_release argoproj argo-workflows)
     sleep 0.2
-    if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.6.2"; fi
+    if [ -z "$ARGO_WORKFLOWS_VERSION" ]; then ARGO_WORKFLOWS_VERSION="v3.7.3"; fi
     
     ARGO_IMAGE_UPDATER_VERSION=$(latest_github_release argoproj-labs argocd-image-updater)
     sleep 0.2
-    if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.15.0"; fi
+    if [ -z "$ARGO_IMAGE_UPDATER_VERSION" ]; then ARGO_IMAGE_UPDATER_VERSION="v0.17.0"; fi
     
     KARGO_VERSION=$(latest_github_release akuity kargo)
     sleep 0.2
-    if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v0.11.0"; fi
+    if [ -z "$KARGO_VERSION" ]; then KARGO_VERSION="v1.8.3"; fi
     
     DASHBOARD_VERSION=$(latest_github_release kubernetes dashboard)
     sleep 0.2
-    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="v3.1.0"; fi
+    if [ -z "$DASHBOARD_VERSION" ]; then DASHBOARD_VERSION="kubernetes-dashboard-7.14.0"; fi
     
     GITEA_VERSION=$(latest_github_release go-gitea gitea)
     sleep 0.2
-    if [ -z "$GITEA_VERSION" ]; then GITEA_VERSION="v1.22.0"; fi
+    if [ -z "$GITEA_VERSION" ]; then GITEA_VERSION="v1.25.0"; fi
     
     # Grafana - usar latest stable de grafana/grafana
     GRAFANA_VERSION=$(latest_github_release grafana grafana)
