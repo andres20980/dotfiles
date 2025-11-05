@@ -12,7 +12,7 @@ spec:
       eventName: app-reloj
       filters:
         data:
-          - path: header.X-Gitea-Event.0
+          - path: header.X-Gitea-Event
             type: string
             value:
               - push

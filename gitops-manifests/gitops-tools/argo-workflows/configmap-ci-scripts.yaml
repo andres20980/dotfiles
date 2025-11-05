@@ -21,59 +21,58 @@ data:
       git checkout "$COMMIT_SHA"
     fi
     
+    # Extraer versión del package.json si existe
+    if [ -f "package.json" ]; then
+      VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+      echo "v${VERSION}" > /workspace/.version
+      echo "📦 Versión detectada: v${VERSION}"
+    else
+      echo "v1.0.0" > /workspace/.version
+      echo "⚠️ package.json no encontrado, usando versión por defecto: v1.0.0"
+    fi
+    
     echo "✅ Repository ready"
     ls -la
-
-  docker-build-push.sh: |
-    #!/bin/sh
-    set -e
-    echo "🐳 Building and pushing Docker image..."
-    /kaniko/executor \
-      --dockerfile=/workspace/Dockerfile \
-      --context=/workspace \
-      --destination="$IMAGE_REGISTRY/$IMAGE_NAME:$COMMIT_SHA" \
-      --destination="$IMAGE_REGISTRY/$IMAGE_NAME:latest" \
-      --insecure \
-      --skip-tls-verify \
-      --cache=true \
-      --cache-ttl=24h
-    echo "✅ Image pushed: $IMAGE_REGISTRY/$IMAGE_NAME:$COMMIT_SHA"
 
   update-manifests.sh: |
     #!/bin/sh
     set -e
-    echo "📝 Updating Kubernetes manifests..."
+    
+    echo "=== Update Manifests Script ==="
+    echo "IMAGE_NAME: $IMAGE_NAME"
+    echo "REGISTRY: $REGISTRY"
+    echo "VERSION: $VERSION"
+    echo "COMMIT_SHA: $COMMIT_SHA"
     
     # Clone gitops-manifests repo
-    cd /tmp
-    git clone http://${GITEA_USER}:${GITEA_PASSWORD}@gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
-    cd gitops-manifests
+    cd /workspace
+    git clone http://${GITEA_USER}:${GITEA_PASSWORD}@gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git manifests
+    cd manifests
     
-    # Check if app directory exists in custom-apps
-    if [ ! -d "custom-apps/${IMAGE_NAME}" ]; then
-      echo "❌ Directory custom-apps/${IMAGE_NAME} not found in manifests repo"
-      exit 1
-    fi
+    # Configure git
+    git config user.name "CI Bot"
+    git config user.email "ci@local.dev"
     
-    cd "custom-apps/${IMAGE_NAME}"
+    # Update kustomization.yaml with sem-ver tag
+    cd custom-apps/${IMAGE_NAME}
     
-    # Update image tag in kustomization.yaml
-    if [ -f "kustomization.yaml" ]; then
-      sed -i "s|newTag:.*|newTag: ${COMMIT_SHA}|g" kustomization.yaml
-      
-      # Commit and push
-      git config user.name "Argo Workflows"
-      git config user.email "argo@gitops.local"
-      git add .
-      
-      if git diff --staged --quiet; then
-        echo "ℹ️ No changes to commit"
-      else
-        git commit -m "ci: update ${IMAGE_NAME} image to ${COMMIT_SHA}"
-        git push
-        echo "✅ Manifests updated and pushed"
-      fi
+    echo "Current kustomization.yaml:"
+    cat kustomization.yaml
+    
+    # Update with VERSION (sem-ver)
+    sed -i "s|newName:.*|newName: ${REGISTRY}/${IMAGE_NAME}|g" kustomization.yaml
+    sed -i "s|newTag:.*|newTag: ${VERSION}|g" kustomization.yaml
+    
+    echo "Updated kustomization.yaml:"
+    cat kustomization.yaml
+    
+    # Commit and push
+    git add kustomization.yaml
+    if git diff --cached --quiet; then
+      echo "No changes to commit (already up to date)"
     else
-      echo "❌ kustomization.yaml not found"
-      exit 1
+      git commit -m "chore: update ${IMAGE_NAME} to ${VERSION} (${COMMIT_SHA})"
+      git push origin main
     fi
+    
+    echo "=== Manifests updated successfully ==="

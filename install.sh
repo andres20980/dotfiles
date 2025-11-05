@@ -931,6 +931,68 @@ complete_custom_apps_cicd() {
 }
 
 # ============================================================================
+# FASE 6.6: PARCHES POST-BOOTSTRAP
+# ============================================================================
+apply_post_bootstrap_patches() {
+    log_phase "FASE 6.6/7: Aplicando parches post-bootstrap"
+    
+    log_info "Parcheando EventSource sensor deployment para usar SA correcta..."
+    # Esperar a que el deployment exista
+    local max_wait=30
+    local count=0
+    while [ $count -lt $max_wait ]; do
+        if kubectl get deployment eventsource-gitea-eventsource-svc -n argo-events >/dev/null 2>&1; then
+            break
+        fi
+        count=$((count + 1))
+        sleep 2
+    done
+    
+    if [ $count -lt $max_wait ]; then
+        kubectl patch deployment eventsource-gitea-eventsource-svc -n argo-events \
+            --type merge \
+            -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sa"}}}}' || true
+        log_success "✓ EventSource SA parcheado"
+    else
+        log_warn "EventSource deployment no encontrado, saltando patch"
+    fi
+    
+    # Esperar un momento antes de parchear el sensor
+    sleep 5
+    
+    log_info "Parcheando Sensor deployment para usar SA correcta..."
+    count=0
+    while [ $count -lt $max_wait ]; do
+        if kubectl get deployment sensor-gitea-sensor -n argo-events >/dev/null 2>&1; then
+            break
+        fi
+        count=$((count + 1))
+        sleep 2
+    done
+    
+    if [ $count -lt $max_wait ]; then
+        kubectl patch deployment sensor-gitea-sensor -n argo-events \
+            --type merge \
+            -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sensor-sa"}}}}' || true
+        log_success "✓ Sensor SA parcheado"
+    else
+        log_warn "Sensor deployment no encontrado, saltando patch"
+    fi
+    
+    log_info "Esperando a que los pods se reinicien con las nuevas SAs..."
+    sleep 10
+    
+    log_info "Verificando configuración de registry en containerd..."
+    if docker exec ${CLUSTER_NAME}-control-plane cat /etc/containerd/config.toml | grep -q "docker-registry.registry.svc.cluster.local:5000"; then
+        log_success "✓ Containerd configurado para registry insecure"
+    else
+        log_warn "Configuración de registry no detectada en containerd"
+    fi
+    
+    log_success "Parches post-bootstrap aplicados"
+}
+
+# ============================================================================
 # FASE 7: VERIFICACIÓN
 # ============================================================================
 verify_deployment() {
@@ -949,16 +1011,30 @@ verify_deployment() {
     log_success "╚════════════════════════════════════════════════════════════╝"
     echo ""
     echo -e "${CYAN}URLs de acceso:${NC}"
-    echo -e "  ${GREEN}•${NC} Argo CD:  http://localhost:30080"
-    echo -e "  ${GREEN}•${NC} Gitea:    http://localhost:30083"
+    echo -e "  ${GREEN}•${NC} Argo CD:          http://localhost:30080"
+    echo -e "  ${GREEN}•${NC} Gitea:            http://localhost:30083"
     echo -e "     └─ Usuario: ${GITEA_USER} / Contraseña: ${GITEA_PASSWORD}"
+    echo -e "  ${GREEN}•${NC} Registry:         http://localhost:30100"
+    echo -e "  ${GREEN}•${NC} Argo Workflows:   http://localhost:30096"
+    echo -e "  ${GREEN}•${NC} App Reloj:        http://localhost:30150"
+    echo -e "  ${GREEN}•${NC} Dashboard:        http://localhost:30091"
+    echo -e "  ${GREEN}•${NC} Grafana:          http://localhost:30086 (admin/gitops)"
+    echo -e "  ${GREEN}•${NC} Prometheus:       http://localhost:30090"
+    echo ""
+    echo -e "${CYAN}Pipeline CI/CD:${NC}"
+    echo -e "  ${GREEN}1.${NC} Push a gitops-source-code/app-reloj"
+    echo -e "  ${GREEN}2.${NC} Webhook trigger Argo Events → Argo Workflows"
+    echo -e "  ${GREEN}3.${NC} Build con 3 tags: v{semver}, {commit-sha}, latest"
+    echo -e "  ${GREEN}4.${NC} Update kustomization.yaml con sem-ver"
+    echo -e "  ${GREEN}5.${NC} ArgoCD auto-sync → K8s deploy"
     echo ""
     echo -e "${CYAN}Próximos pasos:${NC}"
     echo -e "  ${GREEN}1.${NC} Accede a Argo CD para ver el despliegue automático"
     echo -e "  ${GREEN}2.${NC} Revisa los repositorios en Gitea"
-    echo -e "  ${GREEN}3.${NC} Haz cambios en los repos y observa el auto-sync"
+    echo -e "  ${GREEN}3.${NC} Haz cambios en app-reloj y observa el pipeline completo"
     echo ""
     echo -e "${YELLOW}💡 Gitea es tu source of truth - todos los cambios deben ir ahí${NC}"
+    echo -e "${YELLOW}💡 Registry configurado para HTTP insecure (localhost:30100)${NC}"
     echo ""
 }
 
@@ -1067,6 +1143,7 @@ main() {
     initialize_gitea_repos
     bootstrap_gitops
     complete_custom_apps_cicd
+    apply_post_bootstrap_patches
     verify_deployment
 }
 

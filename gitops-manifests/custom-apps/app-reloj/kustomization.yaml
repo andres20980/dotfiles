@@ -4,6 +4,6 @@ resources:
   - deployment.yaml
   - service.yaml
 images:
-  - name: app-reloj
-    newName: docker-registry.registry.svc.cluster.local:5000/app-reloj
-    newTag: latest
+- name: app-reloj
+  newName: docker-registry.registry.svc.cluster.local:5000/app-reloj
+  newTag: v1.2.0

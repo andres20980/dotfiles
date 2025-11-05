@@ -1,0 +1,75 @@
+---
+# ServiceAccount for Argo Workflows execution
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-workflow-sa
+  namespace: argo-workflows
+
+---
+# Role to allow workflows to create pods, access secrets, create PVCs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflow-role
+  namespace: argo-workflows
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - create
+      - delete
+      - get
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflowtaskresults
+    verbs:
+      - create
+      - patch
+      - update
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflowtaskresults
+    verbs:
+      - create
+      - patch
+      - get
+      - list
+
+---
+# RoleBinding for workflow SA
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-role-binding
+  namespace: argo-workflows
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-sa
+    namespace: argo-workflows
+roleRef:
+  kind: Role
+  name: argo-workflow-role
+  apiGroup: rbac.authorization.k8s.io

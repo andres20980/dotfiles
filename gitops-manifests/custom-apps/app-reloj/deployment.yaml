@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
       - name: app-reloj
-        image: localhost:30100/app-reloj:v1.0.0
+        # Imagen base simplificada; Kustomize (kustomization.yaml) gestionará registry y tag (newName/newTag)
+        image: app-reloj:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

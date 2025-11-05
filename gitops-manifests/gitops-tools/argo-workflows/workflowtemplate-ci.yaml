@@ -50,6 +50,8 @@ spec:
             value: "{{workflow.parameters.registry}}"
           - name: commit-sha
             value: "{{workflow.parameters.commit-sha}}"
+          - name: version
+            value: "{{steps.checkout.outputs.parameters.version}}"
     - - name: update-version
         template: update-manifests
         arguments:
@@ -60,6 +62,8 @@ spec:
             value: "{{workflow.parameters.registry}}"
           - name: commit-sha
             value: "{{workflow.parameters.commit-sha}}"
+          - name: version
+            value: "{{steps.checkout.outputs.parameters.version}}"
 
   - name: git-clone
     container:
@@ -82,6 +86,11 @@ spec:
       - name: repo-url
       - name: branch
       - name: commit-sha
+    outputs:
+      parameters:
+      - name: version
+        valueFrom:
+          path: /workspace/.version
 
   - name: docker-build
     container:
@@ -89,6 +98,7 @@ spec:
       args:
         - --dockerfile=/workspace/Dockerfile
         - --context=/workspace
+        - --destination={{inputs.parameters.registry}}/{{inputs.parameters.image-name}}:{{inputs.parameters.version}}
         - --destination={{inputs.parameters.registry}}/{{inputs.parameters.image-name}}:{{inputs.parameters.commit-sha}}
         - --destination={{inputs.parameters.registry}}/{{inputs.parameters.image-name}}:latest
         - --insecure
@@ -101,6 +111,7 @@ spec:
       - name: image-name
       - name: registry
       - name: commit-sha
+      - name: version
 
   - name: update-manifests
     container:
@@ -113,6 +124,8 @@ spec:
         value: "{{inputs.parameters.registry}}"
       - name: COMMIT_SHA
         value: "{{inputs.parameters.commit-sha}}"
+      - name: VERSION
+        value: "{{inputs.parameters.version}}"
       - name: GITEA_USER
         valueFrom:
           secretKeyRef:
@@ -133,3 +146,4 @@ spec:
       - name: image-name
       - name: registry
       - name: commit-sha
+      - name: version

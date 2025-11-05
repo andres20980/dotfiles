@@ -13,6 +13,19 @@ networking:
   # Usar la red del host para que los puertos NodePort sean accesibles desde Windows
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker-registry.registry.svc.cluster.local:5000"]
+        endpoint = ["http://docker-registry.registry.svc.cluster.local:5000"]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:30100"]
+        endpoint = ["http://localhost:30100"]
+    [plugins."io.containerd.grpc.v1.cri".registry.configs]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."docker-registry.registry.svc.cluster.local:5000".tls]
+        insecure_skip_verify = true
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:30100".tls]
+        insecure_skip_verify = true
 nodes:
 - role: control-plane
   # Configuración para exponer puertos
