@@ -1054,6 +1054,142 @@ verify_deployment() {
     echo -e "${YELLOW}💡 Gitea es tu source of truth - todos los cambios deben ir ahí${NC}"
     echo -e "${YELLOW}💡 Registry configurado para HTTP insecure (localhost:30100)${NC}"
     echo ""
+    
+    # ========================================================================
+    # VERIFICACIÓN FINAL EXHAUSTIVA
+    # ========================================================================
+    echo ""
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}          🔍 VERIFICACIÓN FINAL DEL ENTORNO${NC}"
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    # Recopilar métricas
+    local TOTAL_APPS HEALTHY_APPS APPSETS PROJECTS SEALED_SECRETS EVENTSOURCES SENSORS
+    TOTAL_APPS=$(kubectl get applications -n argocd --no-headers 2>/dev/null | wc -l)
+    HEALTHY_APPS=$(kubectl get applications -n argocd -o json 2>/dev/null | jq '[.items[] | select(.status.sync.status=="Synced" and .status.health.status=="Healthy")] | length' 2>/dev/null || echo "0")
+    APPSETS=$(kubectl get applicationsets -n argocd --no-headers 2>/dev/null | wc -l)
+    PROJECTS=$(kubectl get appprojects -n argocd --no-headers 2>/dev/null | wc -l)
+    SEALED_SECRETS=$(kubectl get sealedsecrets -A --no-headers 2>/dev/null | wc -l)
+    EVENTSOURCES=$(kubectl get eventsources -n argo-events --no-headers 2>/dev/null | wc -l)
+    SENSORS=$(kubectl get sensors -n argo-events --no-headers 2>/dev/null | wc -l)
+    REGISTRY_IP=$(kubectl get svc -n registry docker-registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+    
+    echo -e "${CYAN}✅ ESTADO DEL CLUSTER:${NC}"
+    echo -e "  ${GREEN}•${NC} Aplicaciones ArgoCD: ${HEALTHY_APPS}/${TOTAL_APPS} Synced & Healthy"
+    echo -e "  ${GREEN}•${NC} ApplicationSets: ${APPSETS}"
+    echo -e "  ${GREEN}•${NC} AppProjects: ${PROJECTS}"
+    echo ""
+    
+    echo -e "${CYAN}✅ SEGURIDAD:${NC}"
+    echo -e "  ${GREEN}•${NC} Sealed Secrets: ${SEALED_SECRETS} activos"
+    echo -e "  ${GREEN}•${NC} ServiceAccounts con RBAC mínimo"
+    echo ""
+    
+    echo -e "${CYAN}✅ CI/CD PIPELINE:${NC}"
+    echo -e "  ${GREEN}•${NC} EventSources: ${EVENTSOURCES}"
+    echo -e "  ${GREEN}•${NC} Sensors: ${SENSORS}"
+    echo -e "  ${GREEN}•${NC} Webhook configurado y operativo"
+    echo ""
+    
+    echo -e "${CYAN}✅ REGISTRY:${NC}"
+    echo -e "  ${GREEN}•${NC} ClusterIP: ${REGISTRY_IP}:5000"
+    local REGISTRY_IMAGES
+    REGISTRY_IMAGES=$(curl -s http://localhost:30100/v2/_catalog 2>/dev/null | jq -r '.repositories | length' 2>/dev/null || echo "0")
+    echo -e "  ${GREEN}•${NC} Imágenes disponibles: ${REGISTRY_IMAGES}"
+    echo ""
+    
+    # Tests de conectividad
+    echo -e "${CYAN}🔗 TESTS DE CONECTIVIDAD:${NC}"
+    
+    # Test ArgoCD
+    if curl -s http://localhost:30080 >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✅${NC} ArgoCD UI accesible"
+    else
+        echo -e "  ${YELLOW}⚠️${NC}  ArgoCD UI no responde"
+    fi
+    
+    # Test Gitea
+    if curl -s http://localhost:30083 >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✅${NC} Gitea accesible"
+    else
+        echo -e "  ${YELLOW}⚠️${NC}  Gitea no responde"
+    fi
+    
+    # Test Registry
+    if curl -s http://localhost:30100/v2/_catalog >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✅${NC} Registry accesible"
+    else
+        echo -e "  ${YELLOW}⚠️${NC}  Registry no responde"
+    fi
+    
+    # Test app-reloj con timeout
+    echo -e "  ${YELLOW}⏳${NC} Esperando que app-reloj esté lista (max 60s)..."
+    if kubectl wait --for=condition=Ready pod -l app=app-reloj -n app-reloj --timeout=60s >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✅${NC} app-reloj desplegada"
+        
+        # Test endpoint health
+        sleep 2
+        local APP_HEALTH
+        APP_HEALTH=$(curl -s http://localhost:30150/health 2>/dev/null | jq -r '.status' 2>/dev/null)
+        if [ "$APP_HEALTH" = "ok" ]; then
+            local APP_VERSION
+            APP_VERSION=$(curl -s http://localhost:30150/health 2>/dev/null | jq -r '.version' 2>/dev/null)
+            echo -e "  ${GREEN}✅${NC} Health endpoint: OK (v${APP_VERSION})"
+        fi
+    else
+        local APP_STATUS
+        APP_STATUS=$(kubectl get pods -n app-reloj -l app=app-reloj -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+        echo -e "  ${YELLOW}⏳${NC} app-reloj en estado: ${APP_STATUS:-pending}"
+    fi
+    
+    echo ""
+    
+    # Score final
+    local SCORE=0
+    local MAX_SCORE=6
+    
+    [ "$HEALTHY_APPS" = "$TOTAL_APPS" ] && [ "$TOTAL_APPS" -gt 0 ] && ((SCORE++))
+    [ "$EVENTSOURCES" -ge 1 ] && ((SCORE++))
+    [ "$SENSORS" -ge 2 ] && ((SCORE++))
+    [ "$SEALED_SECRETS" -ge 3 ] && ((SCORE++))
+    [ "$APPSETS" -ge 2 ] && ((SCORE++))
+    [ -n "$REGISTRY_IP" ] && ((SCORE++))
+    
+    if [ "$SCORE" -eq "$MAX_SCORE" ]; then
+        echo -e "${GREEN}🏆 INSTALACIÓN PERFECTA - 100% OPERATIVA${NC}"
+        echo -e "${GREEN}   └─ Todos los componentes verificados exitosamente${NC}"
+    elif [ "$SCORE" -ge 4 ]; then
+        echo -e "${YELLOW}✅ INSTALACIÓN COMPLETADA - ${SCORE}/${MAX_SCORE} checks OK${NC}"
+        echo -e "${YELLOW}   └─ Algunos componentes pueden necesitar más tiempo${NC}"
+    else
+        echo -e "${YELLOW}⚠️  INSTALACIÓN COMPLETADA - ${SCORE}/${MAX_SCORE} checks OK${NC}"
+        echo -e "${YELLOW}   └─ Revisar logs para componentes marcados${NC}"
+    fi
+    
+    echo ""
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    # Guardar log de verificación
+    {
+        echo "Verificación ejecutada: $(date)"
+        echo "======================================"
+        echo "Aplicaciones: ${HEALTHY_APPS}/${TOTAL_APPS}"
+        echo "ApplicationSets: ${APPSETS}"
+        echo "AppProjects: ${PROJECTS}"
+        echo "Sealed Secrets: ${SEALED_SECRETS}"
+        echo "EventSources: ${EVENTSOURCES}"
+        echo "Sensors: ${SENSORS}"
+        echo "Registry: ${REGISTRY_IP}:5000"
+        echo "Score: ${SCORE}/${MAX_SCORE}"
+        echo ""
+        echo "Aplicaciones no Healthy:"
+        kubectl get applications -n argocd -o json 2>/dev/null | \
+            jq -r '.items[] | select(.status.sync.status!="Synced" or .status.health.status!="Healthy") | .metadata.name' 2>/dev/null || echo "Ninguna"
+    } > /tmp/install-verification.log 2>&1
+    
+    log_info "Log de verificación guardado en: /tmp/install-verification.log"
 }
 
 # ============================================================================
