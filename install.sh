@@ -897,9 +897,24 @@ complete_custom_apps_cicd() {
     
     log_info "Actualizando manifests de custom apps para usar imágenes del registry..."
     
-    # Actualizar app-reloj deployment
+    # Obtener ClusterIP del registry
+    local registry_ip=$(kubectl get svc docker-registry -n registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "localhost")
+    local registry_port="5000"
+    
+    # Actualizar kustomization.yaml de app-reloj con ClusterIP
+    if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/kustomization.yaml" ]; then
+        # Actualizar newName con ClusterIP del registry
+        sed -i "s#newName:.*#newName: ${registry_ip}:${registry_port}/app-reloj#" \
+            "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/kustomization.yaml"
+        # Actualizar newTag a v1.0.0
+        sed -i "s#newTag:.*#newTag: v1.0.0#" \
+            "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/kustomization.yaml"
+        log_success "✓ Kustomization actualizado con registry ${registry_ip}:${registry_port}"
+    fi
+    
+    # Asegurar que deployment.yaml usa imagen base sin registry
     if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml" ]; then
-        sed -i "s#image:.*#image: localhost:30100/app-reloj:v1.0.0#" \
+        sed -i "s#image:.*app-reloj.*#image: app-reloj:latest#" \
             "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
     fi
     
@@ -936,42 +951,15 @@ complete_custom_apps_cicd() {
 apply_post_bootstrap_patches() {
     log_phase "FASE 6.6/7: Aplicando parches post-bootstrap"
     
-    log_info "Parcheando EventSource sensor deployment para usar SA correcta..."
-    # Esperar a que el deployment exista
-    local max_wait=30
-    local count=0
-    while [ $count -lt $max_wait ]; do
-        if kubectl get deployment eventsource-gitea-eventsource-svc -n argo-events >/dev/null 2>&1; then
-            break
-        fi
-        count=$((count + 1))
-        sleep 2
-    done
+    # Esperar a que los deployments de argo-events se creen
+    log_info "Esperando a que Argo Events despliegue recursos..."
+    sleep 15
     
-    if [ $count -lt $max_wait ]; then
-        kubectl patch deployment eventsource-gitea-eventsource-svc -n argo-events \
-            --type merge \
-            -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sa"}}}}' || true
-        log_success "✓ EventSource SA parcheado"
-    else
-        log_warn "EventSource deployment no encontrado, saltando patch"
-    fi
-    
-    # Esperar un momento antes de parchear el sensor
-    sleep 5
-    
+    # Parchear Sensor deployment para usar SA correcta (el nombre tiene sufijo aleatorio)
     log_info "Parcheando Sensor deployment para usar SA correcta..."
-    count=0
-    while [ $count -lt $max_wait ]; do
-        if kubectl get deployment sensor-gitea-sensor -n argo-events >/dev/null 2>&1; then
-            break
-        fi
-        count=$((count + 1))
-        sleep 2
-    done
-    
-    if [ $count -lt $max_wait ]; then
-        kubectl patch deployment sensor-gitea-sensor -n argo-events \
+    local sensor_deployment=$(kubectl get deployment -n argo-events -l sensor-name=gitea-workflow-trigger -o name 2>/dev/null | head -1)
+    if [ -n "$sensor_deployment" ]; then
+        kubectl patch "$sensor_deployment" -n argo-events \
             --type merge \
             -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sensor-sa"}}}}' || true
         log_success "✓ Sensor SA parcheado"
@@ -979,8 +967,38 @@ apply_post_bootstrap_patches() {
         log_warn "Sensor deployment no encontrado, saltando patch"
     fi
     
-    log_info "Esperando a que los pods se reinicien con las nuevas SAs..."
-    sleep 10
+    # Corregir webhook URL para usar el servicio correcto
+    log_info "Corrigiendo webhook URL en Gitea..."
+    sleep 5
+    local webhook_id=$(curl -s http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks -u gitops:gitops 2>/dev/null | jq -r '.[0].id' 2>/dev/null || echo "")
+    if [ -n "$webhook_id" ] && [ "$webhook_id" != "null" ]; then
+        curl -s -X PATCH "http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks/$webhook_id" \
+            -u gitops:gitops \
+            -H "Content-Type: application/json" \
+            -d '{"config":{"url":"http://gitea-webhook-nodeport.argo-events.svc.cluster.local:12000/app-reloj","content_type":"json"},"active":true}' >/dev/null 2>&1
+        log_success "✓ Webhook URL corregida"
+    else
+        log_warn "No se pudo corregir webhook URL"
+    fi
+    
+    # Obtener ClusterIP del registry y configurar containerd
+    log_info "Configurando registry ClusterIP en containerd..."
+    local registry_ip=$(kubectl get svc docker-registry -n registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+    if [ -n "$registry_ip" ]; then
+        docker exec ${CLUSTER_NAME}-control-plane sh -c "cat >> /etc/containerd/config.toml << 'EOF'
+    [plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"${registry_ip}:5000\"]
+      [plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"${registry_ip}:5000\".tls]
+        insecure_skip_verify = true
+    [plugins.\"io.containerd.grpc.v1.cri\".registry.mirrors.\"${registry_ip}:5000\"]
+      endpoint = [\"http://${registry_ip}:5000\"]
+EOF
+" 2>/dev/null || true
+        docker exec ${CLUSTER_NAME}-control-plane systemctl restart containerd 2>/dev/null || true
+        sleep 5
+        log_success "✓ Containerd configurado para registry ClusterIP: ${registry_ip}:5000"
+    else
+        log_warn "No se pudo obtener ClusterIP del registry"
+    fi
     
     log_info "Verificando configuración de registry en containerd..."
     if docker exec ${CLUSTER_NAME}-control-plane cat /etc/containerd/config.toml | grep -q "docker-registry.registry.svc.cluster.local:5000"; then
