@@ -1,5 +1,5 @@
 ---
-# ApplicationSet para custom-apps (visor-gitops, app-reloj)
+# ApplicationSet para custom-apps (auto-discovery de apps en custom-apps/)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -11,13 +11,10 @@ spec:
       repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
       revision: HEAD
       directories:
-      - path: custom-apps/visor-gitops
-      - path: custom-apps/app-reloj
+      - path: custom-apps/*
   template:
     metadata:
       name: '{{path.basename}}'
-      annotations:
-        argocd.argoproj.io/external-url: 'http://localhost:{{if eq .path.basename "visor-gitops"}}30098{{else}}30099{{end}}'
     spec:
       project: custom-apps
       source:

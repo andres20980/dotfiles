@@ -11,16 +11,15 @@ Puertos reservados para herramientas GitOps core del ecosistema Argo y Kubernete
 |--------|-------------|-----|-------------|
 | 30080 | ArgoCD | http://localhost:30080 | Motor GitOps principal |
 | 30083 | Gitea | http://localhost:30083 | Source of Truth (Git) |
+| 30084 | Argo Rollouts Dashboard | http://localhost:30084 | Despliegues avanzados |
 | 30086 | Grafana | http://localhost:30086 | Observabilidad y dashboards |
 | 30090 | Prometheus | http://localhost:30090 | Métricas y monitoreo |
-| 30091 | Kargo | http://localhost:30091 | Progressive Delivery |
-| 30092 | Redis | http://localhost:30092 | Cache y pub/sub |
-| 30093 | Argo Workflows | http://localhost:30093 | CI/CD workflows |
-| 30094 | Argo Rollouts | http://localhost:30094 | Despliegues avanzados |
-| 30096 | Registry UI | http://localhost:30096 | Interfaz web del registry |
-| 30443 | Dashboard | https://localhost:30443 | Kubernetes Dashboard |
+| 30091 | K8s Dashboard | http://localhost:30091 | Panel de Kubernetes |
+| 30095 | Kargo | http://localhost:30095 | Progressive Delivery |
+| 30096 | Argo Workflows | http://localhost:30096 | CI/CD workflows |
+| 30097 | Redis Commander | http://localhost:30097 | Interfaz de Redis |
 
-**Puertos disponibles**: 30081-30082, 30084-30085, 30087-30089, 30095, 30097-30099
+**Puertos disponibles**: 30081-30082, 30085, 30087-30089, 30092-30094, 30098-30099
 
 ### 🐳 Registry y CI/CD (30100-30149)
 Puertos dedicados a Docker Registry, herramientas de build y CI/CD adicionales.
@@ -43,7 +42,11 @@ Puertos para aplicaciones custom desarrolladas en este entorno de aprendizaje.
 ### 🔮 Futuras GitOps Tools (30200-30249)
 Reservado para herramientas GitOps adicionales que se añadan posteriormente.
 
-**Puertos disponibles**: 30200-30249 (50 puertos libres)
+| Puerto | Herramienta | URL | Descripción |
+|--------|-------------|-----|-------------|
+| 30200 | Argo Events (EventSource) | http://localhost:30200 | Webhook receiver para CI/CD |
+
+**Puertos disponibles**: 30201-30249 (49 puertos libres)
 
 Ejemplos de herramientas que podrían añadirse:
 - Tekton

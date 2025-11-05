@@ -5,6 +5,8 @@ metadata:
   namespace: app-reloj
   labels:
     app: app-reloj
+  annotations:
+    link.argocd.argoproj.io/external-link: 'http://localhost:30150'
 spec:
   type: NodePort
   selector:
