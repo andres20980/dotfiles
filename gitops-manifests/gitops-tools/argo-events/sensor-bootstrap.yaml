@@ -1,0 +1,376 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: bootstrap-sensor
+  namespace: argo-events
+  annotations:
+    gitops/bootstrap: "relaxed-filter"
+spec:
+  template:
+    serviceAccountName: argo-events-sensor-sa
+  dependencies:
+    - name: new-repo-push
+      eventSourceName: gitea-bootstrap
+      eventName: bootstrap
+  triggers:
+    - template:
+        name: bootstrap-app
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: bootstrap-
+                namespace: argo-workflows
+              spec:
+                serviceAccountName: argo-workflows-sa
+                entrypoint: bootstrap
+                arguments:
+                  parameters:
+                    - name: app-name
+                      value: "{{body.repository.name}}"
+                    - name: repo-url
+                      value: "http://gitea.gitea.svc:3000/gitops/{{body.repository.name}}.git"
+                    - name: commit-sha
+                      value: "{{body.after}}"
+                templates:
+                  # Template principal
+                  - name: bootstrap
+                    steps:
+                      - - name: check-if-bootstrapped
+                          template: check-bootstrap-marker
+                      
+                      - - name: generate-manifests
+                          template: create-k8s-manifests
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                      
+                      - - name: create-ci-pipeline
+                          template: setup-ci-cd
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                      
+                      - - name: create-argocd-app
+                          template: setup-argocd
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                      
+                      - - name: setup-webhook
+                          template: configure-webhook
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                      
+                      - - name: mark-bootstrapped
+                          template: mark-as-bootstrapped
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                      
+                      - - name: trigger-first-build
+                          template: initial-ci-build
+                          when: "{{steps.check-if-bootstrapped.outputs.result}} == not-bootstrapped"
+                  
+                  # 1. Verificar si ya está bootstrapped
+                  - name: check-bootstrap-marker
+                    script:
+                      image: alpine/git:latest
+                      command: [sh]
+                      source: |
+                        #!/bin/sh
+                        set -e
+                        git clone {{workflow.parameters.repo-url}} /tmp/repo 2>/dev/null || {
+                          echo "error-cloning"
+                          exit 0
+                        }
+                        cd /tmp/repo
+                        if [ -f ".gitops-bootstrapped" ]; then
+                          echo "already-bootstrapped"
+                        else
+                          echo "not-bootstrapped"
+                        fi
+                  
+                  # 2. Generar manifests K8s automáticamente
+                  - name: create-k8s-manifests
+                    script:
+                      image: alpine/git:latest
+                      command: [sh]
+                      source: |
+                        #!/bin/sh
+                        set -e
+                        APP_NAME="{{workflow.parameters.app-name}}"
+                        
+                        # Clone repo de la app para detectar configuración
+                        git clone {{workflow.parameters.repo-url}} /tmp/app
+                        cd /tmp/app
+                        
+                        # Detectar puerto del Dockerfile
+                        PORT=$(grep -oP 'EXPOSE\s+\K\d+' Dockerfile 2>/dev/null || echo "3000")
+                        echo "Puerto detectado: $PORT"
+                        
+                        # Detectar versión de package.json si existe
+                        if [ -f "package.json" ]; then
+                          VERSION=$(grep -oP '"version":\s*"\K[^"]+' package.json 2>/dev/null || echo "1.0.0")
+                        else
+                          VERSION="1.0.0"
+                        fi
+                        echo "Versión detectada: $VERSION"
+                        
+                        # Clone gitops-manifests
+                        git clone http://gitops:gitops@gitea.gitea.svc:3000/gitops/gitops-manifests.git /tmp/manifests
+                        cd /tmp/manifests
+                        git config user.email "bootstrap@gitops.local"
+                        git config user.name "GitOps Bootstrap"
+                        
+                        # Crear directorio para la app
+                        mkdir -p custom-apps/${APP_NAME}
+                        
+                        # Generar deployment.yaml
+                        cat > custom-apps/${APP_NAME}/deployment.yaml <<EOF
+                        apiVersion: apps/v1
+                        kind: Deployment
+                        metadata:
+                          name: ${APP_NAME}
+                          labels:
+                            app: ${APP_NAME}
+                        spec:
+                          replicas: 1
+                          selector:
+                            matchLabels:
+                              app: ${APP_NAME}
+                          template:
+                            metadata:
+                              labels:
+                                app: ${APP_NAME}
+                                version: "${VERSION}"
+                            spec:
+                              containers:
+                              - name: ${APP_NAME}
+                                image: registry.registry.svc.cluster.local:5000/${APP_NAME}:${VERSION}
+                                ports:
+                                - containerPort: ${PORT}
+                                  protocol: TCP
+                                env:
+                                - name: PORT
+                                  value: "${PORT}"
+                                resources:
+                                  requests:
+                                    cpu: 50m
+                                    memory: 64Mi
+                                  limits:
+                                    cpu: 200m
+                                    memory: 256Mi
+                                livenessProbe:
+                                  httpGet:
+                                    path: /health
+                                    port: ${PORT}
+                                  initialDelaySeconds: 10
+                                  periodSeconds: 10
+                                readinessProbe:
+                                  httpGet:
+                                    path: /health
+                                    port: ${PORT}
+                                  initialDelaySeconds: 5
+                                  periodSeconds: 5
+                        EOF
+                        
+                        # Generar service.yaml con NodePort aleatorio
+                        NODEPORT=$((30000 + RANDOM % 3000))
+                        cat > custom-apps/${APP_NAME}/service.yaml <<EOF
+                        apiVersion: v1
+                        kind: Service
+                        metadata:
+                          name: ${APP_NAME}
+                          labels:
+                            app: ${APP_NAME}
+                        spec:
+                          type: NodePort
+                          ports:
+                          - port: 80
+                            targetPort: ${PORT}
+                            nodePort: ${NODEPORT}
+                            protocol: TCP
+                            name: http
+                          selector:
+                            app: ${APP_NAME}
+                        EOF
+                        
+                        # Generar kustomization.yaml
+                        cat > custom-apps/${APP_NAME}/kustomization.yaml <<EOF
+                        apiVersion: kustomize.config.k8s.io/v1beta1
+                        kind: Kustomization
+                        resources:
+                          - deployment.yaml
+                          - service.yaml
+                        images:
+                          - name: registry.registry.svc.cluster.local:5000/${APP_NAME}
+                            newTag: "${VERSION}"
+                        EOF
+                        
+                        # Commit y push
+                        git add custom-apps/${APP_NAME}
+                        git commit -m "feat(bootstrap): generar manifests automáticos para ${APP_NAME} v${VERSION}"
+                        git push http://gitops:gitops@gitea.gitea.svc:3000/gitops/gitops-manifests.git main
+                        
+                        echo "✅ Manifests generados para ${APP_NAME} en puerto ${PORT}"
+                  
+                  # 3. Crear EventSource + Sensor CI/CD
+                  - name: setup-ci-cd
+                    resource:
+                      action: apply
+                      manifest: |
+                        apiVersion: argoproj.io/v1alpha1
+                        kind: EventSource
+                        metadata:
+                          name: gitea-{{workflow.parameters.app-name}}
+                          namespace: argo-events
+                        spec:
+                          webhook:
+                            {{workflow.parameters.app-name}}:
+                              port: "12000"
+                              endpoint: /{{workflow.parameters.app-name}}
+                              method: POST
+                        ---
+                        apiVersion: argoproj.io/v1alpha1
+                        kind: Sensor
+                        metadata:
+                          name: {{workflow.parameters.app-name}}-ci
+                          namespace: argo-events
+                        spec:
+                          template:
+                            serviceAccountName: argo-events-sensor-sa
+                          dependencies:
+                            - name: push
+                              eventSourceName: gitea-{{workflow.parameters.app-name}}
+                              eventName: {{workflow.parameters.app-name}}
+                              filters:
+                                data:
+                                  - path: body.ref
+                                    type: string
+                                    value:
+                                      - "refs/heads/main"
+                          triggers:
+                            - template:
+                                name: ci-{{workflow.parameters.app-name}}
+                                argoWorkflow:
+                                  operation: submit
+                                  source:
+                                    resource:
+                                      apiVersion: argoproj.io/v1alpha1
+                                      kind: Workflow
+                                      metadata:
+                                        generateName: ci-{{workflow.parameters.app-name}}-
+                                        namespace: argo-workflows
+                                      spec:
+                                        workflowTemplateRef:
+                                          name: ci-generic
+                                        arguments:
+                                          parameters:
+                                            - name: app-name
+                                              value: "{{workflow.parameters.app-name}}"
+                                            - name: repo-url
+                                              value: "{{workflow.parameters.repo-url}}"
+                                            - name: commit-sha
+                                              value: "{{body.after}}"
+                                            - name: manifests-repo
+                                              value: "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"
+                  
+                  # 4. Crear Application ArgoCD
+                  - name: setup-argocd
+                    resource:
+                      action: apply
+                      manifest: |
+                        apiVersion: argoproj.io/v1alpha1
+                        kind: Application
+                        metadata:
+                          name: {{workflow.parameters.app-name}}
+                          namespace: argocd
+                          labels:
+                            app: {{workflow.parameters.app-name}}
+                            bootstrapped: "true"
+                        spec:
+                          project: custom-apps
+                          source:
+                            repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+                            targetRevision: HEAD
+                            path: custom-apps/{{workflow.parameters.app-name}}
+                          destination:
+                            server: https://kubernetes.default.svc
+                            namespace: custom-apps
+                          syncPolicy:
+                            automated:
+                              prune: true
+                              selfHeal: true
+                            syncOptions:
+                              - CreateNamespace=true
+                              - PrunePropagationPolicy=foreground
+                              - PruneLast=true
+                  
+                  # 5. Configurar webhook CI/CD en Gitea
+                  - name: configure-webhook
+                    script:
+                      image: curlimages/curl:latest
+                      command: [sh]
+                      source: |
+                        #!/bin/sh
+                        APP_NAME="{{workflow.parameters.app-name}}"
+                        
+                        # Webhook para CI/CD (puerto 12000)
+                        curl -X POST \
+                          -u "gitops:gitops" \
+                          -H "Content-Type: application/json" \
+                          http://gitea.gitea.svc:3000/api/v1/repos/gitops/${APP_NAME}/hooks \
+                          -d "{
+                            \"type\": \"gitea\",
+                            \"config\": {
+                              \"url\": \"http://gitea-webhook-eventsource-svc.argo-events.svc:12000/${APP_NAME}\",
+                              \"content_type\": \"json\"
+                            },
+                            \"events\": [\"push\"],
+                            \"active\": true
+                          }"
+                        
+                        echo "✅ Webhook CI/CD configurado para ${APP_NAME}"
+                  
+                  # 6. Marcar como bootstrapped
+                  - name: mark-as-bootstrapped
+                    script:
+                      image: alpine/git:latest
+                      command: [sh]
+                      source: |
+                        #!/bin/sh
+                        set -e
+                        git clone {{workflow.parameters.repo-url}} /tmp/repo
+                        cd /tmp/repo
+                        
+                        echo "Bootstrapped on $(date)" > .gitops-bootstrapped
+                        echo "App: {{workflow.parameters.app-name}}" >> .gitops-bootstrapped
+                        echo "Commit: {{workflow.parameters.commit-sha}}" >> .gitops-bootstrapped
+                        
+                        git config user.email "bootstrap@gitops.local"
+                        git config user.name "GitOps Bootstrap"
+                        git add .gitops-bootstrapped
+                        git commit -m "chore: marcar como bootstrapped por GitOps"
+                        git push http://gitops:gitops@gitea.gitea.svc:3000/gitops/{{workflow.parameters.app-name}}.git main
+                        
+                        echo "✅ Repo marcado como bootstrapped"
+                  
+                  # 7. Lanzar primer build CI/CD
+                  - name: initial-ci-build
+                    resource:
+                      action: create
+                      manifest: |
+                        apiVersion: argoproj.io/v1alpha1
+                        kind: Workflow
+                        metadata:
+                          generateName: ci-{{workflow.parameters.app-name}}-initial-
+                          namespace: argo-workflows
+                        spec:
+                          workflowTemplateRef:
+                            name: ci-generic
+                          arguments:
+                            parameters:
+                              - name: app-name
+                                value: "{{workflow.parameters.app-name}}"
+                              - name: repo-url
+                                value: "{{workflow.parameters.repo-url}}"
+                              - name: commit-sha
+                                value: "{{workflow.parameters.commit-sha}}"
+                              - name: manifests-repo
+                                value: "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"
