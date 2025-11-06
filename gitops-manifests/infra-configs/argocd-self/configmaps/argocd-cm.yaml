@@ -12,6 +12,11 @@ data:
   # Reconciliación un poco más rápida para ver cambios durante el aprendizaje
   timeout.reconciliation: "180s"
 
+  # Ignorar warnings de Helm/kubectl sobre anotaciones faltantes (UI más limpia)
+  resource.compareoptions: |
+    ignoreAggregatedRoles: true
+  resource.ignoreResourceUpdatesEnabled: "true"
+
   # Custom health para SealedSecrets y otras pequeñas mejoras UX
   resource.customizations: |
     bitnami.com/SealedSecret:
