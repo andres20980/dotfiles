@@ -712,6 +712,11 @@ initialize_gitea_repos() {
     log_info "Generando SealedSecrets antes de push inicial..."
     generate_initial_sealed_secrets || log_warn "No se pudieron generar SealedSecrets iniciales (continuamos)"
 
+    # Limpiar sensors legacy antes del push (evita que ArgoCD los sincronice)
+    log_info "Limpiando sensors legacy antes del push..."
+    rm -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-events/sensor-visor-gitops.yaml" 2>/dev/null || true
+    log_success "✓ Sensors legacy eliminados"
+
     # Crear y pushear gitops-manifests
     create_gitea_repo "gitops-manifests"
     push_to_gitea "gitops-manifests" "${SCRIPT_DIR}/gitops-manifests"
