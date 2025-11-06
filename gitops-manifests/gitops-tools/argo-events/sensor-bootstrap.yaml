@@ -13,6 +13,12 @@ spec:
     - name: new-repo-push
       eventSourceName: gitea-bootstrap
       eventName: bootstrap
+      filters:
+        data:
+          - path: body.ref
+            type: string
+            value:
+              - "refs/heads/main"
   triggers:
     - template:
         name: bootstrap-app
@@ -215,61 +221,63 @@ spec:
                     resource:
                       action: apply
                       manifest: |
-                        apiVersion: argoproj.io/v1alpha1
-                        kind: EventSource
-                        metadata:
-                          name: gitea-{{workflow.parameters.app-name}}
-                          namespace: argo-events
-                        spec:
-                          webhook:
-                            {{workflow.parameters.app-name}}:
-                              port: "12000"
-                              endpoint: /{{workflow.parameters.app-name}}
-                              method: POST
-                        ---
-                        apiVersion: argoproj.io/v1alpha1
-                        kind: Sensor
-                        metadata:
-                          name: {{workflow.parameters.app-name}}-ci
-                          namespace: argo-events
-                        spec:
-                          template:
-                            serviceAccountName: argo-events-sensor-sa
-                          dependencies:
-                            - name: push
-                              eventSourceName: gitea-{{workflow.parameters.app-name}}
-                              eventName: {{workflow.parameters.app-name}}
-                              filters:
-                                data:
-                                  - path: body.ref
-                                    type: string
-                                    value:
-                                      - "refs/heads/main"
-                          triggers:
-                            - template:
-                                name: ci-{{workflow.parameters.app-name}}
-                                argoWorkflow:
-                                  operation: submit
-                                  source:
-                                    resource:
-                                      apiVersion: argoproj.io/v1alpha1
-                                      kind: Workflow
-                                      metadata:
-                                        generateName: ci-{{workflow.parameters.app-name}}-
-                                        namespace: argo-workflows
-                                      spec:
-                                        workflowTemplateRef:
-                                          name: ci-generic
-                                        arguments:
-                                          parameters:
-                                            - name: app-name
-                                              value: "{{workflow.parameters.app-name}}"
-                                            - name: repo-url
-                                              value: "{{workflow.parameters.repo-url}}"
-                                            - name: commit-sha
-                                              value: "{{body.after}}"
-                                            - name: manifests-repo
-                                              value: "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"
+                        apiVersion: v1
+                        kind: List
+                        items:
+                          - apiVersion: argoproj.io/v1alpha1
+                            kind: EventSource
+                            metadata:
+                              name: gitea-{{workflow.parameters.app-name}}
+                              namespace: argo-events
+                            spec:
+                              webhook:
+                                {{workflow.parameters.app-name}}:
+                                  port: "12000"
+                                  endpoint: /{{workflow.parameters.app-name}}
+                                  method: POST
+                          - apiVersion: argoproj.io/v1alpha1
+                            kind: Sensor
+                            metadata:
+                              name: {{workflow.parameters.app-name}}-ci
+                              namespace: argo-events
+                            spec:
+                              template:
+                                serviceAccountName: argo-events-sensor-sa
+                              dependencies:
+                                - name: push
+                                  eventSourceName: gitea-{{workflow.parameters.app-name}}
+                                  eventName: {{workflow.parameters.app-name}}
+                                  filters:
+                                    data:
+                                      - path: body.ref
+                                        type: string
+                                        value:
+                                          - "refs/heads/main"
+                              triggers:
+                                - template:
+                                    name: ci-{{workflow.parameters.app-name}}
+                                    argoWorkflow:
+                                      operation: submit
+                                      source:
+                                        resource:
+                                          apiVersion: argoproj.io/v1alpha1
+                                          kind: Workflow
+                                          metadata:
+                                            generateName: ci-{{workflow.parameters.app-name}}-
+                                            namespace: argo-workflows
+                                          spec:
+                                            workflowTemplateRef:
+                                              name: ci-generic
+                                            arguments:
+                                              parameters:
+                                                - name: app-name
+                                                  value: "{{workflow.parameters.app-name}}"
+                                                - name: repo-url
+                                                  value: "{{workflow.parameters.repo-url}}"
+                                                - name: commit-sha
+                                                  value: "{{body.after}}"
+                                                - name: manifests-repo
+                                                  value: "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"
                   
                   # 4. Crear Application ArgoCD
                   - name: setup-argocd
