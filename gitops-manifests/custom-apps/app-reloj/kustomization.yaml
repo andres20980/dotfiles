@@ -6,4 +6,4 @@ resources:
 images:
 - name: app-reloj
   newName: 10.96.224.44:5000/app-reloj
-  newTag: v1.0.0
+  newTag: v1.3.0

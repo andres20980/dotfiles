@@ -14,6 +14,12 @@ data:
   # Polling más rápido para desarrollo (30 segundos en lugar de 3 minutos)
   timeout.reconciliation: 30s
   timeout.hard.reconciliation: 60s
+  
+  # Ignorar warnings de Helm/kubectl sobre anotaciones faltantes
+  resource.compareoptions: |
+    ignoreAggregatedRoles: true
+  resource.ignoreResourceUpdatesEnabled: "true"
+  
   # Configuración para repositorios Git
   repository.credentials: |
     - url: http://gitea.gitea.svc.cluster.local:3000
