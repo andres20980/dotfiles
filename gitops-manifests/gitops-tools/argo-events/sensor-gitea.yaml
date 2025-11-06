@@ -3,9 +3,12 @@ kind: Sensor
 metadata:
   name: gitea-workflow-trigger
   namespace: argo-events
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   eventBusName: default
-  serviceAccountName: argo-events-sensor-sa
+  template:
+    serviceAccountName: argo-events-sensor-sa
   dependencies:
     - name: push-event
       eventSourceName: gitea-webhook
@@ -47,7 +50,7 @@ spec:
                     - name: image-name
                       value: "app-reloj"
                     - name: registry
-                      value: "docker-registry.registry.svc.cluster.local:5000"
+                      value: "10.96.224.44:5000"
           parameters:
             # Commit SHA desde webhook
             - src:

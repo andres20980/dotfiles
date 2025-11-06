@@ -5,5 +5,5 @@ resources:
   - service.yaml
 images:
 - name: app-reloj
-  newName: 10.96.254.231:5000/app-reloj
-  newTag: v1.3.0
+  newName: 10.96.224.44:5000/app-reloj
+  newTag: v1.0.0

@@ -5,6 +5,8 @@ kind: ServiceAccount
 metadata:
   name: argo-events-sensor-sa
   namespace: argo-events
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 
 ---
 # Role to create Workflows in argo-workflows namespace
@@ -31,9 +33,14 @@ kind: RoleBinding
 metadata:
   name: sensor-workflow-creator-binding
   namespace: argo-workflows
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 subjects:
   - kind: ServiceAccount
     name: argo-events-sensor-sa
+    namespace: argo-events
+  - kind: ServiceAccount
+    name: default
     namespace: argo-events
 roleRef:
   kind: Role

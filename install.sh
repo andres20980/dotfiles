@@ -34,6 +34,7 @@ GITEA_USER="gitops"
 GITEA_PASSWORD="gitops"
 GITEA_URL_INTERNAL="http://gitea.gitea.svc.cluster.local:3000"
 GITEA_URL_EXTERNAL="http://localhost:30083"
+REGISTRY_CLUSTER_IP="10.96.224.44"  # ClusterIP fija del registry (definida en registry/service.yaml)
 
 # Colores
 RED='\033[0;31m'
@@ -897,8 +898,8 @@ complete_custom_apps_cicd() {
     
     log_info "Actualizando manifests de custom apps para usar imágenes del registry..."
     
-    # Obtener ClusterIP del registry
-    local registry_ip=$(kubectl get svc docker-registry -n registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "localhost")
+    # Usar ClusterIP fija del registry (configurada en service.yaml)
+    local registry_ip="${REGISTRY_CLUSTER_IP}"
     local registry_port="5000"
     
     # Actualizar kustomization.yaml de app-reloj con ClusterIP
@@ -955,17 +956,78 @@ apply_post_bootstrap_patches() {
     log_info "Esperando a que Argo Events despliegue recursos..."
     sleep 15
     
-    # Parchear Sensor deployment para usar SA correcta (el nombre tiene sufijo aleatorio)
-    log_info "Parcheando Sensor deployment para usar SA correcta..."
-    local sensor_deployment=$(kubectl get deployment -n argo-events -l sensor-name=gitea-workflow-trigger -o name 2>/dev/null | head -1)
-    if [ -n "$sensor_deployment" ]; then
-        kubectl patch "$sensor_deployment" -n argo-events \
-            --type merge \
-            -p '{"spec":{"template":{"spec":{"serviceAccountName":"argo-events-sensor-sa"}}}}' || true
-        log_success "✓ Sensor SA parcheado"
+    # CRÍTICO: Argo Events Sensor controller a veces ignora spec.template.serviceAccountName
+    # y crea el Deployment con SA "default". Solución: garantizar RBAC para AMBAS SAs.
+    log_info "Verificando y asegurando RBAC para Sensors (SA correcta + fallback)..."
+    
+    # Verificar que el RoleBinding tiene ambas ServiceAccounts
+    local current_subjects=$(kubectl get rolebinding sensor-workflow-creator-binding -n argo-workflows -o json 2>/dev/null | jq -r '.subjects | length' || echo "0")
+    
+    if [ "$current_subjects" -lt 2 ]; then
+        log_info "Agregando SA 'default' como fallback en RoleBinding..."
+        kubectl patch rolebinding sensor-workflow-creator-binding -n argo-workflows --type=json -p='[
+            {
+                "op": "add",
+                "path": "/subjects/-",
+                "value": {
+                    "kind": "ServiceAccount",
+                    "name": "default",
+                    "namespace": "argo-events"
+                }
+            }
+        ]' 2>/dev/null || true
+        log_success "✓ RBAC actualizado: ambas SAs tienen permisos"
     else
-        log_warn "Sensor deployment no encontrado, saltando patch"
+        log_success "✓ RBAC ya configurado correctamente"
     fi
+    
+    # Verificar qué SA está usando el pod del Sensor (informativo, no bloqueante)
+    local sensor_sa=""
+    local tries_sa=0
+    while [ $tries_sa -lt 20 ]; do
+        sensor_sa=$(kubectl get pods -n argo-events -l sensor-name=gitea-workflow-trigger -o jsonpath='{.items[0].spec.serviceAccountName}' 2>/dev/null || echo "")
+        if [ -n "$sensor_sa" ]; then
+            break
+        fi
+        tries_sa=$((tries_sa+1))
+        sleep 2
+    done
+    
+    if [ "$sensor_sa" = "argo-events-sensor-sa" ]; then
+        log_success "✓ Sensor usa SA correcta: argo-events-sensor-sa"
+    elif [ "$sensor_sa" = "default" ]; then
+        log_info "ℹ️  Sensor usa SA fallback 'default' (permisos OK, comportamiento conocido de Argo Events)"
+    else
+        log_warn "⚠️  Sensor SA: '$sensor_sa' (inesperado, pero RBAC cubre ambos casos)"
+    fi
+
+    # Función para esperar salud de aplicaciones clave antes de CI/CD (refuerzo de fiabilidad GitOps)
+    wait_apps_health() {
+        local apps=(argocd-self-config argo-workflows argo-events registry)
+        log_info "Esperando salud de aplicaciones clave antes de continuar (timeout 300s)..."
+        local start=$(date +%s)
+        while true; do
+            local all_ok=true
+            for app in "${apps[@]}"; do
+                local sync=$(kubectl get app "$app" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
+                local health=$(kubectl get app "$app" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
+                if [ "$sync" != "Synced" ] || [[ ! "$health" =~ ^Healthy$ ]]; then
+                    all_ok=false
+                    log_info "↻ Aún esperando: $app (sync=$sync health=$health)"
+                fi
+            done
+            if $all_ok; then
+                log_success "✓ Todas las aplicaciones clave Synced & Healthy"
+                break
+            fi
+            if [ $(( $(date +%s) - start )) -ge 300 ]; then
+                log_warn "Timeout esperando salud completa; continuando de todas formas"
+                break
+            fi
+            sleep 5
+        done
+    }
+    wait_apps_health
     
     # Corregir webhook URL para usar el servicio correcto
     log_info "Corrigiendo webhook URL en Gitea..."
@@ -981,9 +1043,9 @@ apply_post_bootstrap_patches() {
         log_warn "No se pudo corregir webhook URL"
     fi
     
-    # Obtener ClusterIP del registry y configurar containerd
+    # Configurar registry ClusterIP en containerd
     log_info "Configurando registry ClusterIP en containerd..."
-    local registry_ip=$(kubectl get svc docker-registry -n registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+    local registry_ip="${REGISTRY_CLUSTER_IP}"
     if [ -n "$registry_ip" ]; then
         docker exec ${CLUSTER_NAME}-control-plane sh -c "cat >> /etc/containerd/config.toml << 'EOF'
     [plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"${registry_ip}:5000\"]
@@ -997,7 +1059,7 @@ EOF
         sleep 5
         log_success "✓ Containerd configurado para registry ClusterIP: ${registry_ip}:5000"
     else
-        log_warn "No se pudo obtener ClusterIP del registry"
+        log_warn "No se pudo configurar registry ClusterIP"
     fi
     
     log_info "Verificando configuración de registry en containerd..."

@@ -3,9 +3,12 @@ kind: Sensor
 metadata:
   name: gitea-visor-trigger
   namespace: argo-events
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   eventBusName: default
-  serviceAccountName: argo-events-sensor-sa
+  template:
+    serviceAccountName: argo-events-sensor-sa
   dependencies:
     - name: push-event
       eventSourceName: gitea-webhook

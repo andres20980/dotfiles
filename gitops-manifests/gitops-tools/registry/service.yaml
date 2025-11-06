@@ -7,6 +7,7 @@ metadata:
     app: docker-registry
 spec:
   type: NodePort
+  clusterIP: 10.96.224.44  # ClusterIP fija para referencias en kustomization
   ports:
   - name: registry
     port: 5000
