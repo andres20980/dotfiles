@@ -1,33 +1,22 @@
-# Grafana Secrets Management
+# Gestión de Secretos de Grafana
 
-**⚠️ IMPORTANT**: Admin password is managed via SealedSecrets (not hardcoded).
+**⚠️ IMPORTANTE**: La contraseña de administrador se gestiona con SealedSecrets (nunca en claro en Git).
 
-## SealedSecret Generation
+## Generación del SealedSecret
 
-The Grafana admin password is generated dynamically during installation using **SealedSecrets**.
+La contraseña de administrador de Grafana se genera dinámicamente durante la instalación usando **SealedSecrets**.
 
-- **Function**: `create_grafana_secret()` in `install.sh`
-- **Generated file**: `sealed-secret.yaml` (created during installation)
-- **Credentials location**: `~/.gitops-credentials/grafana-admin.txt`
+- **Función**: `generate_initial_sealed_secrets()` en `install.sh`
+- **Archivo generado**: `sealed-secret.yaml` (creado durante instalación)
+- **Ubicación credenciales**: `~/.gitops-credentials/grafana-admin.txt`
 
-## Configuration
+## Configuración
 
-Grafana is configured for easy POC access:
-- **Anonymous access**: Enabled (no login required for viewing)
-- **Admin account**: Still available with secure password
-- **User signup**: Disabled
-- **Auto-assign role**: Admin for all users
-
-# Gestión de secretos de Grafana
-
-Importante: la contraseña de administrador se gestiona con SealedSecrets (nunca en claro en Git).
-
-## ¿Cómo se genera?
-
-Durante la instalación, `install.sh` ejecuta `generate_initial_sealed_secrets()` que:
-- Obtiene la clave pública del controlador de Sealed Secrets
-- Genera `gitops-tools/grafana/sealed-secret.yaml` con la contraseña admin
-- Realiza commit/push al repo `gitops-manifests` en Gitea
+Grafana está configurado para acceso fácil en POC:
+- **Acceso anónimo**: Habilitado (no requiere login para visualizar)
+- **Cuenta admin**: Disponible con contraseña segura
+- **Registro usuarios**: Deshabilitado
+- **Rol auto-asignado**: Admin para todos los usuarios
 
 ## Campos del SealedSecret
 
@@ -37,11 +26,19 @@ Durante la instalación, `install.sh` ejecuta `generate_initial_sealed_secrets()
 
 Tras la instalación:
 ```bash
-http://localhost:<nodeport-grafana>
+# Ver credenciales
+cat ~/.gitops-credentials/grafana-admin.txt
+
+# Acceder a la interfaz
+http://localhost:30086
 ```
+
+Usuario: `admin`  
+Contraseña: Ver archivo de credenciales
 
 ## Ventajas de SealedSecrets
 
-- No hay contraseñas en texto plano en Git
-- Se puede versionar de forma segura
-- Compatible con GitOps puro
+- ✅ Secretos encriptados con clave específica del cluster
+- ✅ Seguro versionar `sealed-secret.yaml` en Git
+- ✅ No hay credenciales hardcodeadas en el repositorio
+- ✅ Sigue best practices de GitOps
