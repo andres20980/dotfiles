@@ -21,25 +21,25 @@ spec:
             template: check-bootstrap-marker
         - - name: generate-manifests
             template: create-k8s-manifests
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
         - - name: create-ci-eventsource
             template: setup-ci-eventsource
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
           - name: create-ci-sensor
             template: setup-ci-sensor
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
         - - name: create-argocd-app
             template: setup-argocd
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
         - - name: setup-webhook
             template: configure-webhook
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
         - - name: mark-bootstrapped
             template: mark-as-bootstrapped
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
         - - name: trigger-first-build
             template: initial-ci-build
-            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not-bootstrapped'"
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
     - name: check-bootstrap-marker
       script:
         image: alpine/git:latest
@@ -48,14 +48,14 @@ spec:
           #!/bin/sh
           set -e
           git clone {{workflow.parameters.repo-url}} /tmp/repo 2>/dev/null || {
-            echo "error-cloning"
+            echo "error_cloning"
             exit 0
           }
           cd /tmp/repo
           if [ -f ".gitops-bootstrapped" ]; then
-            echo "already-bootstrapped"
+            echo "already_bootstrapped"
           else
-            echo "not-bootstrapped"
+            echo "not_bootstrapped"
           fi
     - name: create-k8s-manifests
       script:
