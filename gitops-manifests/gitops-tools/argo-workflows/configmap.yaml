@@ -3,6 +3,4 @@ kind: ConfigMap
 metadata:
   name: workflow-controller-configmap
   namespace: argo-workflows
-data:
-  config: |
-    instanceID: default
+data: {}

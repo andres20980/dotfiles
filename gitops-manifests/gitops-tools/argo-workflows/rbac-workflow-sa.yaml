@@ -8,6 +8,7 @@ metadata:
 
 ---
 # Role to allow workflows to create pods, access secrets, create PVCs
+# Best practices según docs oficiales v3.4+: workflowtaskresults (create, patch)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -47,16 +48,6 @@ rules:
     verbs:
       - create
       - patch
-      - update
-  - apiGroups:
-      - argoproj.io
-    resources:
-      - workflowtaskresults
-    verbs:
-      - create
-      - patch
-      - get
-      - list
 
 ---
 # RoleBinding for workflow SA
