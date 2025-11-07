@@ -3137,7 +3137,7 @@ spec:
         - --configmap
         - workflow-controller-configmap
         - --executor-image
-        - quay.io/argoproj/workflow-controller:v3.7.3
+        - quay.io/argoproj/argoexec:v3.7.3
         - --namespaced
         - --managed-namespace
         - argo-workflows
