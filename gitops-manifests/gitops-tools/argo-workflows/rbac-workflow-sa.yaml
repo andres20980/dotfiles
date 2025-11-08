@@ -22,7 +22,6 @@ rules:
       - pods/log
     verbs:
       - create
-      - get
       - list
       - watch
       - delete
@@ -35,6 +34,19 @@ rules:
       - list
   - apiGroups:
       - ""
+
+      ---
+      # Permissions in argocd namespace to create/manage Application objects for bootstrap
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: argo-workflow-argocd-role
+        namespace: argocd
+      rules:
+        - apiGroups: ["argoproj.io"]
+          resources:
+            - applications
+          verbs: ["create", "get", "list", "watch", "update", "patch"]
     resources:
       - persistentvolumeclaims
     verbs:
@@ -92,4 +104,19 @@ subjects:
 roleRef:
   kind: Role
   name: argo-workflow-events-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-argocd-role-binding
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-sa
+    namespace: argo-workflows
+roleRef:
+  kind: Role
+  name: argo-workflow-argocd-role
   apiGroup: rbac.authorization.k8s.io
