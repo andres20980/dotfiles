@@ -19,6 +19,9 @@ spec:
       steps:
         - - name: check-if-bootstrapped
             template: check-bootstrap-marker
+        - - name: handle-clone-error
+            template: fail-clone
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'error_cloning'"
         - - name: generate-manifests
             template: create-k8s-manifests
             when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
@@ -40,6 +43,9 @@ spec:
         - - name: trigger-first-build
             template: initial-ci-build
             when: "{{steps.check-if-bootstrapped.outputs.result}} == 'not_bootstrapped'"
+        - - name: already-bootstrapped-info
+            template: info-already-bootstrapped
+            when: "{{steps.check-if-bootstrapped.outputs.result}} == 'already_bootstrapped'"
     - name: check-bootstrap-marker
       script:
         image: alpine/git:latest
@@ -48,15 +54,30 @@ spec:
           #!/bin/sh
           set -e
           git clone {{workflow.parameters.repo-url}} /tmp/repo 2>/dev/null || {
-            echo "error_cloning"
+            printf "error_cloning"
             exit 0
           }
           cd /tmp/repo
           if [ -f ".gitops-bootstrapped" ]; then
-            echo "already_bootstrapped"
+            printf "already_bootstrapped"
           else
-            echo "not_bootstrapped"
+            printf "not_bootstrapped"
           fi
+    - name: fail-clone
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          #!/bin/sh
+          echo "❌ Error clonando el repositorio {{workflow.parameters.repo-url}}" >&2
+          exit 1
+    - name: info-already-bootstrapped
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          #!/bin/sh
+          echo "ℹ️ Repositorio ya bootstrapped, no se repite provisión completa"
     - name: create-k8s-manifests
       script:
         image: alpine/git:latest
