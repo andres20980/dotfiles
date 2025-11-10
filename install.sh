@@ -223,13 +223,10 @@ update_manifests_with_latest_versions() {
                 "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-rollouts/dashboard.yaml" 2>/dev/null || true
     fi
 
-    # 4) Argo Workflows (controller + cli)
-    if [ -n "$ARGO_WORKFLOWS_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" ]; then
-        sed -i "s#quay.io/argoproj/workflow-controller:v[0-9][^ \n\r]*#quay.io/argoproj/workflow-controller:${ARGO_WORKFLOWS_VERSION}#" \
-            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" 2>/dev/null || true
-        sed -i "s#quay.io/argoproj/argocli:v[0-9][^ \n\r]*#quay.io/argoproj/argocli:${ARGO_WORKFLOWS_VERSION}#" \
-            "${SCRIPT_DIR}/gitops-manifests/gitops-tools/argo-workflows/install.yaml" 2>/dev/null || true
-    fi
+    # 4) Argo Workflows - usa install.yaml oficial (stable branch)
+    # No se modifica; se descarga desde upstream en cada actualización
+    # Para actualizar: curl -fsSL https://raw.githubusercontent.com/argoproj/argo-workflows/stable/manifests/install.yaml > gitops-tools/argo-workflows/install.yaml
+    # Luego: sed -i 's/namespace: argo$/namespace: argo-workflows/g' gitops-tools/argo-workflows/install.yaml
 
     # 5) Kargo
     if [ -n "$KARGO_VERSION" ] && [ -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/kargo/deployment.yaml" ]; then

@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-workflows
+
+resources:
+  # 1. Install oficial (CRDs, controller, server, RBAC base)
+  - install.yaml
+  
+  # 2. RBAC adicional para workflows CI
+  - rbac-workflow-sa.yaml
+  
+  # 3. Secrets para CI/CD
+  - sealed-secret-gitea.yaml
+  
+  # 4. ConfigMap con scripts CI
+  - configmap-ci-scripts.yaml
+  
+  # 5. WorkflowTemplate genérico CI
+  - workflowtemplate-ci-generic.yaml
+  
+  # 6. Service NodePort para acceso externo (overlay sobre ClusterIP)
+  - service-nodeport.yaml
