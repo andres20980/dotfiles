@@ -11,13 +11,15 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: argocd-config
+  project: default
   source:
     # Durante instalación: usa GitHub
     # Después de migración: apuntará a Gitea
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
     targetRevision: main
     path: gitops-manifests/infra-configs/argocd-manifests
+    # Forzar uso de Kustomize (incluye AppProjects)
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
