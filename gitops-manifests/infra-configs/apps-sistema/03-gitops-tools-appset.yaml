@@ -37,33 +37,35 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{path.basename}}'
+      {{- if or (eq .path.basename "dashboard") (eq .path.basename "grafana") (eq .path.basename "kargo") (eq .path.basename "prometheus") (eq .path.basename "argo-workflows") (eq .path.basename "argo-rollouts") (eq .path.basename "registry") (eq .path.basename "redis") }}
       # Enlaces externos en UI de ArgoCD
       info:
-        {{- if eq .path.basename "dashboard" }}
+      {{- if eq .path.basename "dashboard" }}
         - name: 'Dashboard UI'
           value: 'http://localhost:30090'
-        {{- else if eq .path.basename "grafana" }}
+      {{- else if eq .path.basename "grafana" }}
         - name: 'Grafana UI'
           value: 'http://localhost:30030'
-        {{- else if eq .path.basename "kargo" }}
+      {{- else if eq .path.basename "kargo" }}
         - name: 'Kargo UI'
           value: 'http://localhost:30040'
-        {{- else if eq .path.basename "prometheus" }}
+      {{- else if eq .path.basename "prometheus" }}
         - name: 'Prometheus UI'
           value: 'http://localhost:30010'
-        {{- else if eq .path.basename "argo-workflows" }}
+      {{- else if eq .path.basename "argo-workflows" }}
         - name: 'Workflows UI'
           value: 'http://localhost:30050'
-        {{- else if eq .path.basename "argo-rollouts" }}
+      {{- else if eq .path.basename "argo-rollouts" }}
         - name: 'Rollouts Dashboard'
           value: 'http://localhost:30100'
-        {{- else if eq .path.basename "registry" }}
+      {{- else if eq .path.basename "registry" }}
         - name: 'Registry UI'
           value: 'http://localhost:30020'
-        {{- else if eq .path.basename "redis" }}
+      {{- else if eq .path.basename "redis" }}
         - name: 'Redis Commander'
           value: 'http://localhost:30070'
-        {{- end }}
+      {{- end }}
+      {{- end }}
       syncPolicy:
         automated:
           prune: true
