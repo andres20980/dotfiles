@@ -13,7 +13,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/andres20980/dotfiles.git
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
     targetRevision: main
     path: gitops-manifests/gitops-tools/gitea
   destination:
