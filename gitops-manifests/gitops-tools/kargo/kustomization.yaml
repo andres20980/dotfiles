@@ -10,8 +10,8 @@ resources:
   # 2. RBAC
   - rbac.yaml
   
-  # 3. Secret encriptado (admin credentials)
-  - sealed-secret.yaml
+  # 3. Secret (admin credentials - usar sealed-secret en producción)
+  - secret.yaml
   
   # 4. ConfigMap
   - configmap.yaml
@@ -21,3 +21,6 @@ resources:
   
   # 6. Service
   - service.yaml
+  - networkpolicy.yaml
+  - ingress.yaml
+  - pdb.yaml
