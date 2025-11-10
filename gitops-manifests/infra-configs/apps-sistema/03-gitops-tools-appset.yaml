@@ -26,26 +26,26 @@ spec:
     metadata:
       name: '{{.path.basename}}'
       namespace: argocd
-      {{- if or (eq .path.basename "dashboard") (eq .path.basename "grafana") (eq .path.basename "kargo") (eq .path.basename "prometheus") (eq .path.basename "argo-workflows") (eq .path.basename "argo-rollouts") (eq .path.basename "registry") (eq .path.basename "redis") }}
+{{- if or (eq .path.basename "dashboard") (eq .path.basename "grafana") (eq .path.basename "kargo") (eq .path.basename "prometheus") (eq .path.basename "argo-workflows") (eq .path.basename "argo-rollouts") (eq .path.basename "registry") (eq .path.basename "redis") }}
       annotations:
-        {{- if eq .path.basename "dashboard" }}
+{{- if eq .path.basename "dashboard" }}
         link.argocd.argoproj.io/external-link: http://localhost:30090
-        {{- else if eq .path.basename "grafana" }}
+{{- else if eq .path.basename "grafana" }}
         link.argocd.argoproj.io/external-link: http://localhost:30030
-        {{- else if eq .path.basename "kargo" }}
+{{- else if eq .path.basename "kargo" }}
         link.argocd.argoproj.io/external-link: http://localhost:30040
-        {{- else if eq .path.basename "prometheus" }}
+{{- else if eq .path.basename "prometheus" }}
         link.argocd.argoproj.io/external-link: http://localhost:30010
-        {{- else if eq .path.basename "argo-workflows" }}
+{{- else if eq .path.basename "argo-workflows" }}
         link.argocd.argoproj.io/external-link: http://localhost:30050
-        {{- else if eq .path.basename "argo-rollouts" }}
+{{- else if eq .path.basename "argo-rollouts" }}
         link.argocd.argoproj.io/external-link: http://localhost:30100
-        {{- else if eq .path.basename "registry" }}
+{{- else if eq .path.basename "registry" }}
         link.argocd.argoproj.io/external-link: http://localhost:30020
-        {{- else if eq .path.basename "redis" }}
+{{- else if eq .path.basename "redis" }}
         link.argocd.argoproj.io/external-link: http://localhost:30070
-        {{- end }}
-      {{- end }}
+{{- end }}
+{{- end }}
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
