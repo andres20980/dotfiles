@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-events
+
+resources:
+  # 1. EventBus (prerequisito para EventSources y Sensors)
+  - eventbus.yaml
+  
+  # 2. RBAC para Sensors
+  - rbac-sensor.yaml
+  
+  # 3. EventSource unificado (endpoints múltiples)
+  - eventsource-gitea.yaml
+  
+  # 4. Sensors (reaccionan a eventos)
+  - sensor-gitea-push.yaml
+  - sensor-app-calendar-ci.yaml
+  
+  # 5. NetworkPolicy (seguridad)
+  - networkpolicy-eventsource-webhook.yaml
+  
+  # 6. Service NodePort (acceso externo para webhooks)
+  - service-gitea-webhook.yaml
