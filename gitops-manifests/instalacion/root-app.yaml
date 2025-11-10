@@ -20,7 +20,7 @@ spec:
     # URL interna de Gitea dentro del cluster
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
     targetRevision: main
-    path: infra-configs/apps-sistema
+    path: gitops-manifests/infra-configs/apps-sistema
   
   destination:
     server: https://kubernetes.default.svc
