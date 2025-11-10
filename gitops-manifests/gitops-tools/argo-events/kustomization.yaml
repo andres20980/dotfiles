@@ -18,7 +18,6 @@ resources:
   
   # 4. Sensors (reaccionan a eventos)
   - sensor-gitea-push.yaml
-  - sensor-app-calendar-ci.yaml
   
   # 5. NetworkPolicy (seguridad)
   - networkpolicy-eventsource-webhook.yaml
