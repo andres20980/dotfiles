@@ -8,6 +8,10 @@
 !.env.example
 *credentials*
 *secrets*
+# Excepciones: manifests de gitops necesarios
+!gitops-manifests/**/sealed-secrets/
+!gitops-manifests/**/*-secret*.yaml
+!gitops-manifests/**/*secrets*.yaml
 *.key
 *.pem
 *.p12
