@@ -24,6 +24,26 @@ spec:
     metadata:
       name: '{{path.basename}}'
       namespace: argocd
+      annotations:
+        # URLs externas según herramienta
+        link.argocd.argoproj.io/external-link: >-
+          {{- if eq .path.basename "argo-workflows" -}}
+          http://localhost:30091
+          {{- else if eq .path.basename "argo-rollouts" -}}
+          http://localhost:30084
+          {{- else if eq .path.basename "argo-events" -}}
+          http://localhost:30200
+          {{- else if eq .path.basename "grafana" -}}
+          http://localhost:30082
+          {{- else if eq .path.basename "kargo" -}}
+          http://localhost:30085
+          {{- else if eq .path.basename "prometheus" -}}
+          http://localhost:30081
+          {{- else if eq .path.basename "registry" -}}
+          http://localhost:30096
+          {{- else if eq .path.basename "dashboard" -}}
+          http://localhost:30090
+          {{- end -}}
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
