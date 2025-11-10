@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  # 1. AppProjects (deben existir antes que las Applications)
+  - projects/argocd-config.yaml
+  - projects/gitops-tools.yaml
+  - projects/custom-apps.yaml
+  - projects/applications.yaml
+  
+  # 2. ConfigMaps de ArgoCD (configuración)
+  - configmaps/argocd-cm.yaml
+  - configmaps/argocd-cmd-params-cm.yaml
+  - configmaps/argocd-rbac-cm.yaml
+  
+  # 3. Service NodePort para acceso externo
+  - service/argocd-server-nodeport.yaml

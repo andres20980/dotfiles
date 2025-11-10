@@ -3,16 +3,22 @@ kind: AppProject
 metadata:
   name: argocd-config
   namespace: argocd
+  finalizers:
+    - argocd.argoproj.io/resources-finalizer
 spec:
-  description: "Proyecto para que Argo CD se gestione a sí mismo"
+  description: "ArgoCD self-management configuration (Admin only)"
   sourceRepos:
-    - 'http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git'
+    - '*'
   destinations:
+    # Solo puede desplegar en el namespace de ArgoCD
     - namespace: argocd
       server: https://kubernetes.default.svc
+  # Permisos completos en el namespace argocd (necesario para self-management)
   clusterResourceWhitelist:
     - group: '*'
       kind: '*'
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
+  # Sin roles - solo admins pueden gestionar este proyecto
+  roles: []

@@ -11,7 +11,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: argocd-config
   source:
     # Durante instalación: usa GitHub
     # Después de migración: apuntará a Gitea
