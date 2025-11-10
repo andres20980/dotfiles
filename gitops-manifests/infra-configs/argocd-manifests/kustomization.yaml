@@ -5,10 +5,9 @@ namespace: argocd
 
 resources:
   # 1. AppProjects (deben existir antes que las Applications)
-  - projects/argocd-config.yaml
+  - projects/argo.yaml
   - projects/gitops-tools.yaml
   - projects/custom-apps.yaml
-  - projects/applications.yaml
   
   # 2. ConfigMaps de ArgoCD (configuración)
   - configmaps/argocd-cm.yaml

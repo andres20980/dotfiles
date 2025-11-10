@@ -49,6 +49,10 @@ spec:
             duration: 5s
             maxDuration: 3m
   templatePatch: |
+    {{- if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}
+    spec:
+      project: argo
+    {{- end }}
     {{- if eq .path.basename "dashboard" }}
     metadata:
       annotations:
