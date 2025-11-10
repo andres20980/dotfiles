@@ -552,32 +552,9 @@ deploy_gitea() {
 setup_gitea_webhooks() {
     log_info "Configurando webhooks Gitea → Argo Events..."
     
-    local eventsource_url="http://gitea-webhook-eventsource-svc.argo-events.svc.cluster.local:12000"
-    
-    for app in app-reloj; do
-        log_info "Configurando webhook para ${app}..."
-        
-        # Crear webhook via API
-        curl -X POST "${GITEA_URL_EXTERNAL}/api/v1/repos/gitops/${app}/hooks" \
-            -u "${GITEA_USER}:${GITEA_PASSWORD}" \
-            -H "Content-Type: application/json" \
-            -d "{
-                \"type\": \"gitea\",
-                \"config\": {
-                    \"url\": \"${eventsource_url}/${app}\",
-                    \"content_type\": \"json\",
-                    \"http_method\": \"POST\"
-                },
-                \"events\": [\"push\"],
-                \"active\": true
-            }" >/dev/null 2>&1
-        
-        if [ $? -eq 0 ]; then
-            log_success "✓ Webhook ${app} configurado"
-        else
-            log_warn "Failed to configure webhook for ${app} (puede ya existir)"
-        fi
-    done
+    # Webhooks se configurarán cuando se desplieguen custom-apps
+    # Por ahora no hay apps custom desplegadas
+    log_info "Custom-apps vacías, webhooks se configurarán cuando se añadan apps"
 }
 
 # ============================================================================
@@ -610,18 +587,66 @@ verify_gitea_ci_token() {
 initialize_gitea_repos() {
     log_phase "FASE 5/7: Inicializando repositorios en Gitea"
     
-    # Crear usuario admin en Gitea
-    log_info "Creando usuario admin en Gitea..."
-    kubectl exec -n gitea deployment/gitea -- su git -c "\
-        gitea admin user create \
-        --admin \
-        --username ${GITEA_USER} \
-        --password ${GITEA_PASSWORD} \
-        --email ${GITEA_USER}@gitops.local \
-        --must-change-password=false" 2>/dev/null || log_info "Usuario ya existe"
+    # Crear usuario admin en Gitea via API de instalación inicial
+    log_info "Configurando usuario admin en Gitea..."
+    
+    # Gitea permite crear el primer usuario admin via API sin autenticación
+    # en el endpoint /user/sign_up durante la instalación inicial
+    local install_data='{
+        "db_type": "sqlite3",
+        "db_host": "localhost:3306",
+        "db_name": "gitea",
+        "db_user": "root",
+        "db_passwd": "",
+        "db_schema": "",
+        "charset": "utf8mb4",
+        "app_name": "Gitea: GitOps Platform",
+        "repo_root_path": "/data/git/repositories",
+        "lfs_root_path": "/data/git/lfs",
+        "run_user": "git",
+        "domain": "localhost",
+        "ssh_port": "30022",
+        "http_port": "3000",
+        "app_url": "http://localhost:30083/",
+        "log_root_path": "/data/gitea/log",
+        "smtp_host": "",
+        "smtp_from": "",
+        "smtp_user": "",
+        "smtp_passwd": "",
+        "enable_open_id_sign_in": false,
+        "enable_open_id_sign_up": false,
+        "default_allow_create_organization": true,
+        "default_enable_timetracking": true,
+        "no_reply_address": "noreply.localhost",
+        "password_algorithm": "pbkdf2",
+        "admin_name": "'${GITEA_USER}'",
+        "admin_passwd": "'${GITEA_PASSWORD}'",
+        "admin_confirm_passwd": "'${GITEA_PASSWORD}'",
+        "admin_email": "'${GITEA_USER}'@gitops.local"
+    }'
+    
+    # Intentar configuración inicial (solo funciona si Gitea no está inicializado)
+    curl -X POST "${GITEA_URL_EXTERNAL}/user/sign_up" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        --data-urlencode "db_type=sqlite3" \
+        --data-urlencode "db_host=localhost:3306" \
+        --data-urlencode "db_name=gitea" \
+        --data-urlencode "app_name=Gitea: GitOps Platform" \
+        --data-urlencode "repo_root_path=/data/git/repositories" \
+        --data-urlencode "run_user=git" \
+        --data-urlencode "domain=localhost" \
+        --data-urlencode "ssh_port=30022" \
+        --data-urlencode "http_port=3000" \
+        --data-urlencode "app_url=http://localhost:30083/" \
+        --data-urlencode "log_root_path=/data/gitea/log" \
+        --data-urlencode "admin_name=${GITEA_USER}" \
+        --data-urlencode "admin_passwd=${GITEA_PASSWORD}" \
+        --data-urlencode "admin_confirm_passwd=${GITEA_PASSWORD}" \
+        --data-urlencode "admin_email=${GITEA_USER}@gitops.local" \
+        >/dev/null 2>&1 || log_info "Gitea ya inicializado"
     
     # Esperar un momento para que el usuario esté disponible
-    sleep 3
+    sleep 5
     
     # Crear token de API
     log_info "Creando token de API en Gitea..."
@@ -718,11 +743,11 @@ initialize_gitea_repos() {
     create_gitea_repo "gitops-manifests"
     push_to_gitea "gitops-manifests" "${SCRIPT_DIR}/gitops-manifests"
     
-    # Crear y pushear aplicaciones de source code
-    for app in app-reloj; do
-        create_gitea_repo "${app}"
-        push_to_gitea "${app}" "${SCRIPT_DIR}/gitops-source-code/${app}"
-    done
+    # Crear repositorios de source code cuando se añadan apps custom
+    # for app in app-reloj; do
+    #     create_gitea_repo "${app}"
+    #     push_to_gitea "${app}" "${SCRIPT_DIR}/gitops-source-code/${app}"
+    # done
     
     log_success "Repositorios inicializados en Gitea"
     
@@ -1005,7 +1030,7 @@ apply_post_bootstrap_patches() {
 
     # Función para esperar salud de aplicaciones clave antes de CI/CD (refuerzo de fiabilidad GitOps)
     wait_apps_health() {
-        local apps=(argocd-self-config argo-workflows argo-events registry)
+        local apps=(argocd-self argo-workflows argo-events registry)
         log_info "Esperando salud de aplicaciones clave antes de continuar (timeout 300s)..."
         local start=$(date +%s)
         while true; do
@@ -1031,19 +1056,19 @@ apply_post_bootstrap_patches() {
     }
     wait_apps_health
     
-    # Corregir webhook URL para usar el servicio correcto
-    log_info "Corrigiendo webhook URL en Gitea..."
-    sleep 5
-    local webhook_id=$(curl -s http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks -u gitops:gitops 2>/dev/null | jq -r '.[0].id' 2>/dev/null || echo "")
-    if [ -n "$webhook_id" ] && [ "$webhook_id" != "null" ]; then
-        curl -s -X PATCH "http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks/$webhook_id" \
-            -u gitops:gitops \
-            -H "Content-Type: application/json" \
-            -d '{"config":{"url":"http://gitea-webhook-nodeport.argo-events.svc.cluster.local:12000/app-reloj","content_type":"json"},"active":true}' >/dev/null 2>&1
-        log_success "✓ Webhook URL corregida"
-    else
-        log_warn "No se pudo corregir webhook URL"
-    fi
+    # Corregir webhook URL cuando se añadan custom-apps
+    # log_info "Corrigiendo webhook URL en Gitea..."
+    # sleep 5
+    # local webhook_id=$(curl -s http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks -u gitops:gitops 2>/dev/null | jq -r '.[0].id' 2>/dev/null || echo "")
+    # if [ -n "$webhook_id" ] && [ "$webhook_id" != "null" ]; then
+    #     curl -s -X PATCH "http://localhost:30083/api/v1/repos/gitops/app-reloj/hooks/$webhook_id" \
+    #         -u gitops:gitops \
+    #         -H "Content-Type: application/json" \
+    #         -d '{"config":{"url":"http://gitea-webhook-nodeport.argo-events.svc.cluster.local:12000/app-reloj","content_type":"json"},"active":true}' >/dev/null 2>&1
+    #     log_success "✓ Webhook URL corregida"
+    # else
+    #     log_warn "No se pudo corregir webhook URL"
+    # fi
     
     # Configurar registry ClusterIP en containerd
     log_info "Configurando registry ClusterIP en containerd..."
@@ -1360,7 +1385,7 @@ main() {
     deploy_gitea
     initialize_gitea_repos
     bootstrap_gitops
-    complete_custom_apps_cicd
+    # complete_custom_apps_cicd  # Deshabilitado - custom-apps vacías
     apply_post_bootstrap_patches
     verify_deployment
 }
