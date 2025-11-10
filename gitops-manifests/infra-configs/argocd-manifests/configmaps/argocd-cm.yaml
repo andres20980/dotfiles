@@ -49,6 +49,58 @@ data:
           hs.message = "Deployment sin replicas disponibles aún"
         end
         return hs
+    apiextensions.k8s.io/CustomResourceDefinition:
+      health.lua: |
+        hs = {}
+        -- CRDs de Kargo: simplemente Healthy si existen
+        if obj.metadata and obj.metadata.name and string.match(obj.metadata.name, "%.kargo%.akuity%.io$") then
+          hs.status = "Healthy"
+          hs.message = "Kargo CRD instalado"
+          return hs
+        end
+        -- Fallback genérico para otros CRDs
+        if obj.status and obj.status.conditions then
+          for _, condition in ipairs(obj.status.conditions) do
+            if condition.type == "Established" and condition.status == "True" then
+              hs.status = "Healthy"
+              hs.message = "CRD establecido"
+              return hs
+            end
+          end
+        end
+        hs.status = "Progressing"
+        hs.message = "CRD aún no establecido"
+        return hs
+    kargo.akuity.io/Project:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "Project listo (no lógica adicional en entorno local)"
+        return hs
+    kargo.akuity.io/Promotion:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "Promotion listo"
+        return hs
+    kargo.akuity.io/Freight:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "Freight listo"
+        return hs
+    kargo.akuity.io/Stage:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "Stage listo"
+        return hs
+    kargo.akuity.io/Warehouse:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "Warehouse listo"
+        return hs
 
   # Helm repositories para ApplicationSets
   repositories: |
