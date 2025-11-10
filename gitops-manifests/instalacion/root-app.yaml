@@ -21,6 +21,8 @@ spec:
     repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
     targetRevision: main
     path: gitops-manifests/infra-configs/apps-sistema
+    # Forzar Kustomize para apps-sistema
+    kustomize: {}
   
   destination:
     server: https://kubernetes.default.svc
