@@ -16,11 +16,11 @@ spec:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         revision: main
         directories:
-          - path: gitops-manifests/gitops-tools/*
+          - path: gitops-tools/*
           # Excluir herramientas ya desplegadas manualmente en waves anteriores
-          - path: gitops-manifests/gitops-tools/sealed-secrets
+          - path: gitops-tools/sealed-secrets
             exclude: true
-          - path: gitops-manifests/gitops-tools/gitea
+          - path: gitops-tools/gitea
             exclude: true
   template:
     metadata:

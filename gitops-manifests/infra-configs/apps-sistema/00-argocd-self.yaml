@@ -9,6 +9,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
     link.argocd.argoproj.io/external-link: http://localhost:30080
+  labels:
+    app.kubernetes.io/name: argocd-self
+    app.kubernetes.io/component: gitops-controller
+    app.kubernetes.io/part-of: gitops-platform
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
