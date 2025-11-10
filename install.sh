@@ -587,65 +587,40 @@ verify_gitea_ci_token() {
 initialize_gitea_repos() {
     log_phase "FASE 5/7: Inicializando repositorios en Gitea"
     
-    # Crear usuario admin en Gitea via API de instalación inicial
-    log_info "Configurando usuario admin en Gitea..."
+    log_info "Esperando a que Gitea esté completamente inicializado..."
     
-    # Gitea permite crear el primer usuario admin via API sin autenticación
-    # en el endpoint /user/sign_up durante la instalación inicial
-    local install_data='{
-        "db_type": "sqlite3",
-        "db_host": "localhost:3306",
-        "db_name": "gitea",
-        "db_user": "root",
-        "db_passwd": "",
-        "db_schema": "",
-        "charset": "utf8mb4",
-        "app_name": "Gitea: GitOps Platform",
-        "repo_root_path": "/data/git/repositories",
-        "lfs_root_path": "/data/git/lfs",
-        "run_user": "git",
-        "domain": "localhost",
-        "ssh_port": "30022",
-        "http_port": "3000",
-        "app_url": "http://localhost:30083/",
-        "log_root_path": "/data/gitea/log",
-        "smtp_host": "",
-        "smtp_from": "",
-        "smtp_user": "",
-        "smtp_passwd": "",
-        "enable_open_id_sign_in": false,
-        "enable_open_id_sign_up": false,
-        "default_allow_create_organization": true,
-        "default_enable_timetracking": true,
-        "no_reply_address": "noreply.localhost",
-        "password_algorithm": "pbkdf2",
-        "admin_name": "'${GITEA_USER}'",
-        "admin_passwd": "'${GITEA_PASSWORD}'",
-        "admin_confirm_passwd": "'${GITEA_PASSWORD}'",
-        "admin_email": "'${GITEA_USER}'@gitops.local"
-    }'
+    # Verificar si Gitea ya está instalado
+    local install_check
+    install_check=$(curl -s "${GITEA_URL_EXTERNAL}/user/login" | grep -c "install" || echo "0")
     
-    # Intentar configuración inicial (solo funciona si Gitea no está inicializado)
-    curl -X POST "${GITEA_URL_EXTERNAL}/user/sign_up" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        --data-urlencode "db_type=sqlite3" \
-        --data-urlencode "db_host=localhost:3306" \
-        --data-urlencode "db_name=gitea" \
-        --data-urlencode "app_name=Gitea: GitOps Platform" \
-        --data-urlencode "repo_root_path=/data/git/repositories" \
-        --data-urlencode "run_user=git" \
-        --data-urlencode "domain=localhost" \
-        --data-urlencode "ssh_port=30022" \
-        --data-urlencode "http_port=3000" \
-        --data-urlencode "app_url=http://localhost:30083/" \
-        --data-urlencode "log_root_path=/data/gitea/log" \
-        --data-urlencode "admin_name=${GITEA_USER}" \
-        --data-urlencode "admin_passwd=${GITEA_PASSWORD}" \
-        --data-urlencode "admin_confirm_passwd=${GITEA_PASSWORD}" \
-        --data-urlencode "admin_email=${GITEA_USER}@gitops.local" \
-        >/dev/null 2>&1 || log_info "Gitea ya inicializado"
+    if [ "$install_check" -gt 0 ]; then
+        log_info "Gitea requiere instalación inicial. Usando endpoint /install..."
+        
+        # Realizar instalación inicial con usuario admin
+        curl -s -L -X POST "${GITEA_URL_EXTERNAL}/install" \
+            -F "db_type=sqlite3" \
+            -F "db_path=/data/gitea/gitea.db" \
+            -F "app_name=Gitea: GitOps Platform" \
+            -F "repo_root_path=/data/git/repositories" \
+            -F "lfs_root_path=/data/git/lfs" \
+            -F "run_user=git" \
+            -F "domain=localhost" \
+            -F "ssh_port=30022" \
+            -F "http_port=3000" \
+            -F "app_url=http://localhost:30083/" \
+            -F "log_root_path=/data/gitea/log" \
+            -F "admin_name=${GITEA_USER}" \
+            -F "admin_passwd=${GITEA_PASSWORD}" \
+            -F "admin_confirm_passwd=${GITEA_PASSWORD}" \
+            -F "admin_email=${GITEA_USER}@gitops.local" \
+            >/dev/null 2>&1
+        
+        log_success "Gitea instalado con usuario ${GITEA_USER}"
+    else
+        log_info "Gitea ya está instalado"
+    fi
     
-    # Esperar un momento para que el usuario esté disponible
+    # Esperar a que el usuario esté disponible
     sleep 5
     
     # Crear token de API

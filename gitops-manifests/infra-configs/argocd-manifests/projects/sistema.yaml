@@ -1,0 +1,34 @@
+# AppProject: sistema
+# Aplicaciones del sistema core (root-app, argocd-self, sealed-secrets, gitea)
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sistema
+  namespace: argocd
+spec:
+  description: Sistema core de la plataforma GitOps
+  
+  # Repositorios permitidos
+  sourceRepos:
+    - 'http://gitea.gitea.svc.cluster.local:3000/gitops/*'
+    - 'https://github.com/*'
+  
+  # Destinos permitidos
+  destinations:
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    - namespace: sealed-secrets
+      server: https://kubernetes.default.svc
+    - namespace: gitea
+      server: https://kubernetes.default.svc
+    - namespace: kube-system
+      server: https://kubernetes.default.svc
+  
+  # Políticas de recursos
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
