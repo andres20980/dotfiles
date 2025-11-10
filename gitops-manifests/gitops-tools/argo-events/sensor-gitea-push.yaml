@@ -8,7 +8,7 @@ spec:
     serviceAccountName: argo-events-sensor-sa
   dependencies:
     - name: push
-      eventSourceName: gitea-generic
+      eventSourceName: gitea-webhook
       eventName: push
       filters:
         data:
