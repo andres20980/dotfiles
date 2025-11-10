@@ -10,7 +10,7 @@ resources:
   # 2. RBAC
   - rbac.yaml
   
-  # 3. Secret (admin credentials - usar sealed-secret en producción)
+  # 3. Secret plano (admin credentials - solo ejemplo para entorno local)
   - secret.yaml
   
   # 4. ConfigMap
@@ -23,4 +23,4 @@ resources:
   - service.yaml
   - networkpolicy.yaml
   - ingress.yaml
-  - pdb.yaml
+  # - pdb.yaml  # Desactivado: con 1 réplica causa falso Progressing en ArgoCD
