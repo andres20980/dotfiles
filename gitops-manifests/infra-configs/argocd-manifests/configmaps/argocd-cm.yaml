@@ -25,6 +25,30 @@ data:
         hs.status = "Healthy"
         hs.message = "SealedSecret gestionado por el controlador"
         return hs
+    apps/Deployment:
+      health.lua: |
+        hs = {}
+        if obj.metadata and obj.metadata.namespace == "kargo" and obj.metadata.name == "kargo-api" then
+          local rs = obj.status or {}
+          local avail = rs.availableReplicas or 0
+          if avail >= 1 then
+            hs.status = "Healthy"
+            hs.message = "kargo-api disponible con replicas=" .. avail
+          else
+            hs.status = "Progressing"
+            hs.message = "Esperando replicas disponibles (availableReplicas=" .. avail .. ")"
+          end
+          return hs
+        end
+        -- fallback genérico
+        if obj.status and obj.status.availableReplicas and obj.status.availableReplicas > 0 then
+          hs.status = "Healthy"
+          hs.message = "Deployment con replicas disponibles"
+        else
+          hs.status = "Progressing"
+          hs.message = "Deployment sin replicas disponibles aún"
+        end
+        return hs
 
   # Helm repositories para ApplicationSets
   repositories: |
