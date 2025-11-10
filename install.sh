@@ -428,7 +428,7 @@ create_cluster() {
     log_info "Creando cluster ${CLUSTER_NAME}..."
     kind create cluster \
         --name "${CLUSTER_NAME}" \
-        --config "${SCRIPT_DIR}/config/kind-config.yaml" \
+        --config "${SCRIPT_DIR}/gitops-manifests/instalacion/kind-config.yaml" \
         --wait 5m
     
     log_info "Verificando acceso al cluster..."
@@ -758,7 +758,7 @@ bootstrap_gitops() {
     log_phase "FASE 6/7: Activando GitOps (root application)"
     
     log_info "Aplicando root-app desde Gitea..."
-    kubectl apply -f "${SCRIPT_DIR}/bootstrap/root-app.yaml"
+    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/instalacion/root-app.yaml"
     
     log_info "Esperando a que root-app sincronice..."
     sleep 10

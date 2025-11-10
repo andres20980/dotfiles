@@ -48,35 +48,6 @@ rules:
     verbs:
       - create
       - patch
-  - apiGroups:
-      - argoproj.io
-    resources:
-      - workflows
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-
----
-# Permissions in argocd namespace to create/manage Application objects for bootstrap
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: argo-workflow-argocd-role
-  namespace: argocd
-rules:
-  - apiGroups: ["argoproj.io"]
-    resources:
-      - applications
-    verbs: ["create", "get", "list", "watch", "update", "patch"]
-  - apiGroups:
-      - argoproj.io
-    resources:
-      - workflowtaskresults
-    verbs:
-      - create
-      - patch
 
 ---
 # RoleBinding for workflow SA
@@ -92,48 +63,4 @@ subjects:
 roleRef:
   kind: Role
   name: argo-workflow-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-# Additional minimal permissions in argo-events namespace so bootstrap can create EventSource & Sensor
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: argo-workflow-events-role
-  namespace: argo-events
-rules:
-  - apiGroups: ["argoproj.io"]
-    resources:
-      - eventsources
-      - sensors
-    verbs: ["create", "get", "list", "watch", "update", "patch"]
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: argo-workflow-events-role-binding
-  namespace: argo-events
-subjects:
-  - kind: ServiceAccount
-    name: argo-workflow-sa
-    namespace: argo-workflows
-roleRef:
-  kind: Role
-  name: argo-workflow-events-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: argo-workflow-argocd-role-binding
-  namespace: argocd
-subjects:
-  - kind: ServiceAccount
-    name: argo-workflow-sa
-    namespace: argo-workflows
-roleRef:
-  kind: Role
-  name: argo-workflow-argocd-role
   apiGroup: rbac.authorization.k8s.io

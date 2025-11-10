@@ -1,0 +1,395 @@
+#!/bin/bash
+set -e
+
+# ============================================================================
+# GitOps Learning Platform - Instalación Completa
+# ============================================================================
+# Instala plataforma GitOps local de aprendizaje siguiendo best-practices:
+# - ArgoCD (GitOps controller)
+# - Gitea (Git server interno)
+# - Argo Events + Argo Workflows (CI/CD automático)
+# - Docker Registry (imágenes custom-apps)
+# - Flujo SRE: push gitops-tools → autodeploy
+# - Flujo Developer: push custom-app → bootstrap → autodeploy
+# ============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ARGO_VERSION="v2.13.2"
+CLUSTER_NAME="${CLUSTER_NAME:-gitops-local}"
+GITEA_USER="${GITEA_USER:-gitops}"
+GITEA_PASSWORD="${GITEA_PASSWORD:-gitops}"
+
+# Colores para output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo "🚀 GitOps Learning Platform - Instalación Completa"
+echo "════════════════════════════════════════════════════"
+echo ""
+
+# ============================================================================
+# PASO 1: Validar prerequisitos
+# ============================================================================
+echo -e "${BLUE}📋 PASO 1: Validando prerequisitos...${NC}"
+
+if ! command -v kubectl &> /dev/null; then
+    echo -e "${RED}❌ kubectl no encontrado${NC}"
+    echo "   Instálalo: https://kubernetes.io/docs/tasks/tools/"
+    exit 1
+fi
+
+if ! command -v kind &> /dev/null; then
+    echo -e "${RED}❌ kind no encontrado${NC}"
+    echo "   Instálalo: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+    exit 1
+fi
+
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}❌ docker no encontrado${NC}"
+    echo "   Instálalo: https://docs.docker.com/get-docker/"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Prerequisitos validados${NC}"
+echo ""
+
+# ============================================================================
+# PASO 2: Crear o verificar cluster Kubernetes
+# ============================================================================
+echo -e "${BLUE}📦 PASO 2: Configurando cluster Kubernetes...${NC}"
+
+if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
+    echo "  ⚠️  Cluster '$CLUSTER_NAME' ya existe"
+    read -p "  ¿Quieres recrearlo? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "  Eliminando cluster existente..."
+        kind delete cluster --name "$CLUSTER_NAME"
+        echo "  Creando nuevo cluster..."
+        kind create cluster --name "$CLUSTER_NAME" --config "$REPO_ROOT/config/kind-config.yaml"
+    else
+        echo "  Usando cluster existente"
+    fi
+else
+    echo "  Creando cluster '$CLUSTER_NAME'..."
+    kind create cluster --name "$CLUSTER_NAME" --config "$REPO_ROOT/config/kind-config.yaml"
+fi
+
+# Esperar a que el cluster esté ready
+kubectl wait --for=condition=ready node --all --timeout=60s
+
+echo -e "${GREEN}✅ Cluster Kubernetes listo${NC}"
+echo ""
+
+# ============================================================================
+# PASO 3: Instalar Argo CD
+# ============================================================================
+echo -e "${BLUE}🎯 PASO 3: Instalando Argo CD ${ARGO_VERSION}...${NC}"
+
+# Crear namespace
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+# Instalar Argo CD (best-practice: usar versión estable específica)
+kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGO_VERSION}/manifests/install.yaml"
+
+echo "  Esperando a que Argo CD esté listo..."
+kubectl wait --for=condition=available --timeout=300s \
+    deployment/argocd-server \
+    deployment/argocd-repo-server \
+    deployment/argocd-applicationset-controller \
+    -n argocd
+
+kubectl wait --for=condition=ready --timeout=300s \
+    pod -l app.kubernetes.io/name=argocd-application-controller \
+    -n argocd
+
+# Configurar Argo CD para entorno de aprendizaje local
+# Best-practice: NodePort para acceso local, insecure para dev
+echo "  Configurando acceso local (NodePort + sin auth para dev)..."
+kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":8080,"nodePort":30080}]}}'
+kubectl patch configmap argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}'
+kubectl patch configmap argocd-cm -n argocd --type merge -p '{"data":{"users.anonymous.enabled":"true"}}'
+kubectl patch configmap argocd-rbac-cm -n argocd --type merge -p '{"data":{"policy.default":"role:admin"}}'
+kubectl rollout restart deployment argocd-server -n argocd
+kubectl rollout status deployment argocd-server -n argocd --timeout=60s
+
+echo -e "${GREEN}✅ Argo CD instalado y configurado${NC}"
+echo ""
+
+# ============================================================================
+# PASO 4: Instalar Sealed Secrets
+# ============================================================================
+echo -e "${BLUE}🔐 PASO 4: Instalando Sealed Secrets...${NC}"
+
+kubectl create namespace sealed-secrets --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.2/controller.yaml"
+
+echo "  Esperando Sealed Secrets controller..."
+kubectl wait --for=condition=available --timeout=180s \
+    deployment/sealed-secrets-controller \
+    -n sealed-secrets
+
+echo -e "${GREEN}✅ Sealed Secrets instalado${NC}"
+echo ""
+
+# ============================================================================
+# PASO 5: Instalar Docker Registry
+# ============================================================================
+echo -e "${BLUE}📦 PASO 5: Instalando Docker Registry interno...${NC}"
+
+kubectl create namespace registry --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$REPO_ROOT/gitops-tools/registry/"
+
+echo "  Esperando Docker Registry..."
+kubectl wait --for=condition=available --timeout=180s \
+    deployment/docker-registry \
+    -n registry 2>/dev/null || echo "  (registry tardará en estar ready)"
+
+echo -e "${GREEN}✅ Docker Registry instalado${NC}"
+echo ""
+
+# ============================================================================
+# PASO 6: Instalar Gitea
+# ============================================================================
+echo -e "${BLUE}🦊 PASO 6: Instalando Gitea...${NC}"
+
+kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$REPO_ROOT/gitops-tools/gitea/"
+
+echo "  Esperando Gitea..."
+kubectl wait --for=condition=available --timeout=300s \
+    deployment/gitea \
+    -n gitea
+
+# Esperar a que Gitea esté completamente inicializado
+echo "  Esperando inicialización completa de Gitea (30s)..."
+sleep 30
+
+echo -e "${GREEN}✅ Gitea instalado${NC}"
+echo ""
+
+# ============================================================================
+# PASO 7: Configurar repositorios en Gitea
+# ============================================================================
+echo -e "${BLUE}📚 PASO 7: Configurando repositorios en Gitea...${NC}"
+
+GITEA_API="http://localhost:30083/api/v1"
+
+# Función para crear repositorio
+create_repo() {
+    local repo_name=$1
+    echo "  Creando repositorio: $repo_name"
+    
+    curl -s -X POST "$GITEA_API/user/repos" \
+        -H "Content-Type: application/json" \
+        -u "$GITEA_USER:$GITEA_PASSWORD" \
+        -d "{
+            \"name\": \"$repo_name\",
+            \"private\": false,
+            \"default_branch\": \"main\",
+            \"auto_init\": false
+        }" > /dev/null 2>&1 || echo "    (ya existe o error, continuando...)"
+}
+
+# Crear repositorios necesarios
+create_repo "gitops-manifests"
+create_repo "app-calendar"
+create_repo "app-reloj"
+create_repo "app-demo"
+
+echo -e "${GREEN}✅ Repositorios creados en Gitea${NC}"
+echo ""
+
+# ============================================================================
+# PASO 8: Pushear manifiestos a Gitea
+# ============================================================================
+echo -e "${BLUE}🚀 PASO 8: Pusheando manifiestos a Gitea...${NC}"
+
+cd "$REPO_ROOT"
+
+# Configurar git si no está configurado
+git config user.email "gitops@local.dev" 2>/dev/null || true
+git config user.name "GitOps Platform" 2>/dev/null || true
+
+# Añadir remote de Gitea si no existe
+if ! git remote | grep -q "gitea"; then
+    git remote add gitea "http://$GITEA_USER:$GITEA_PASSWORD@localhost:30083/$GITEA_USER/gitops-manifests.git"
+else
+    git remote set-url gitea "http://$GITEA_USER:$GITEA_PASSWORD@localhost:30083/$GITEA_USER/gitops-manifests.git"
+fi
+
+# Push a Gitea
+echo "  Pusheando a Gitea..."
+git push gitea main --force 2>/dev/null || git push gitea main 2>/dev/null || echo "  (ya pusheado)"
+
+echo -e "${GREEN}✅ Manifiestos pusheados a Gitea${NC}"
+echo ""
+
+# ============================================================================
+# PASO 9: Instalar Argo Events
+# ============================================================================
+echo -e "${BLUE}⚡ PASO 9: Instalando Argo Events...${NC}"
+
+kubectl create namespace argo-events --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/install.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/eventbus.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/rbac-sensor.yaml"
+
+echo "  Esperando Argo Events controller..."
+kubectl wait --for=condition=available --timeout=180s \
+    deployment/eventbus-controller \
+    deployment/eventsource-controller \
+    deployment/sensor-controller \
+    -n argo-events 2>/dev/null || echo "  (algunos controllers tardarán)"
+
+# Aplicar EventSource y Sensor genéricos
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/eventsource-gitea-generic.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/sensor-gitea-push.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-events/service-gitea-webhook.yaml"
+
+echo -e "${GREEN}✅ Argo Events instalado${NC}"
+echo ""
+
+# ============================================================================
+# PASO 10: Instalar Argo Workflows
+# ============================================================================
+echo -e "${BLUE}🔄 PASO 10: Instalando Argo Workflows...${NC}"
+
+kubectl create namespace argo-workflows --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-workflows/install.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-workflows/rbac-workflow-sa.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-workflows/configmap.yaml"
+
+echo "  Esperando Argo Workflows controller..."
+kubectl wait --for=condition=available --timeout=180s \
+    deployment/workflow-controller \
+    deployment/argo-server \
+    -n argo-workflows
+
+# Aplicar WorkflowTemplates (CI/CD)
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-workflows/workflowtemplate-ci-generic.yaml"
+kubectl apply -f "$REPO_ROOT/gitops-tools/argo-workflows/workflowtemplate-bootstrap.yaml"
+
+# Crear Secret para credenciales Git
+kubectl create secret generic gitops-gitea-creds \
+    -n argo-workflows \
+    --from-literal=username="$GITEA_USER" \
+    --from-literal=password="$GITEA_PASSWORD" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic gitops-gitea-creds \
+    -n argo-events \
+    --from-literal=username="$GITEA_USER" \
+    --from-literal=password="$GITEA_PASSWORD" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+echo -e "${GREEN}✅ Argo Workflows instalado con CI/CD templates${NC}"
+echo ""
+
+# ============================================================================
+# PASO 11: Configurar ArgoCD Projects
+# ============================================================================
+echo -e "${BLUE}� PASO 11: Configurando ArgoCD Projects...${NC}"
+
+kubectl apply -f "$REPO_ROOT/infra-configs/projects/"
+
+echo -e "${GREEN}✅ Projects configurados${NC}"
+echo ""
+
+# ============================================================================
+# PASO 12: Configurar ApplicationSets para autodeploy
+# ============================================================================
+echo -e "${BLUE}🎯 PASO 12: Configurando ApplicationSets (autodeploy)...${NC}"
+
+# ApplicationSet para gitops-tools (flujo SRE)
+cat <<EOF | kubectl apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gitops-tools
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/$GITEA_USER/gitops-manifests.git
+        revision: HEAD
+        directories:
+          - path: gitops-tools/*
+  template:
+    metadata:
+      name: "{{path.basename}}"
+      labels:
+        app.kubernetes.io/managed-by: applicationset
+        type: gitops-tool
+    spec:
+      project: gitops-tools
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/$GITEA_USER/gitops-manifests.git
+        targetRevision: HEAD
+        path: "{{path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{path.basename}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+EOF
+
+# ApplicationSet para custom-apps (flujo Developer)
+kubectl apply -f "$REPO_ROOT/infra-configs/applications/custom-apps.yaml"
+
+echo -e "${GREEN}✅ ApplicationSets configurados${NC}"
+echo ""
+
+# ============================================================================
+# PASO 13: Información final y próximos pasos
+# ============================================================================
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo -e "${GREEN}✨ GitOps Learning Platform instalada exitosamente${NC}"
+echo "════════════════════════════════════════════════════════════════"
+echo ""
+echo -e "${BLUE}🔑 ACCESOS:${NC}"
+echo ""
+echo "  Argo CD:"
+echo "    URL: http://localhost:30080"
+echo "    Usuario: admin (sin password en modo dev)"
+echo ""
+echo "  Gitea:"
+echo "    URL: http://localhost:30083"
+echo "    Usuario: $GITEA_USER"
+echo "    Password: $GITEA_PASSWORD"
+echo ""
+echo "  Docker Registry:"
+echo "    Internal: docker-registry.registry.svc.cluster.local:5000"
+echo "    External: localhost:30087"
+echo ""
+echo "  Argo Workflows:"
+echo "    URL: http://localhost:30090"
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo -e "${YELLOW}📝 CÓMO USAR LA PLATAFORMA:${NC}"
+echo ""
+echo -e "${BLUE}1. FLUJO SRE (GitOps Tools):${NC}"
+echo "   - Añade una carpeta en gitops-tools/ (ej: gitops-tools/nueva-tool/)"
+echo "   - Pushea a Gitea: git push gitea main"
+echo "   - ArgoCD la despliega automáticamente"
+echo ""
+echo -e "${BLUE}2. FLUJO DEVELOPER (Custom Apps):${NC}"
+echo "   - Crea tu app en: $REPO_ROOT/../gitops-source-code/mi-app/"
+echo "   - Añade Dockerfile y package.json"
+echo "   - Crea repo en Gitea para la app"
+echo "   - Push → Webhook dispara CI/CD automático"
+echo "   - Se generan manifiestos y ArgoCD despliega"
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo -e "${GREEN}🎉 ¡Listo para empezar!${NC}"
+echo ""
+

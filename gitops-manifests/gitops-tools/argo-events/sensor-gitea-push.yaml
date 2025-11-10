@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: gitea-push
+  namespace: argo-events
+spec:
+  template:
+    serviceAccountName: argo-events-sensor-sa
+  dependencies:
+    - name: push
+      eventSourceName: gitea-generic
+      eventName: push
+      filters:
+        data:
+          - path: body.ref
+            type: string
+            value: ["refs/heads/main"]
+  triggers:
+    - template:
+        name: ci-generic
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: ci-
+                namespace: argo-workflows
+              spec:
+                workflowTemplateRef:
+                  name: ci-generic
+                arguments:
+                  parameters:
+                    - name: app-name
+                      value: "{{body.repository.name}}"
+                    - name: repo-url
+                      value: "{{body.repository.clone_url}}"
+                    - name: commit-sha
+                      value: "{{body.after}}"
+                    - name: manifests-repo
+                      value: "http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git"

@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: app-calendar-ci
+  namespace: argo-events
+  annotations:
+    # Sin wave especial; se sincroniza pronto
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  eventBusName: default
+  template:
+    serviceAccountName: argo-events-sensor-sa
+  dependencies:
+    - name: push
+      eventSourceName: gitea-webhook
+      eventName: app-calendar
+      filters:
+        data:
+          - path: header.X-Gitea-Event
+            type: string
+            value: [push]
+          - path: body.ref
+            type: string
+            value: [refs/heads/main]
+  triggers:
+    - template:
+        name: ci-app-calendar
+        argoWorkflow:
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: ci-app-calendar-
+                namespace: argo-workflows
+                labels:
+                  app: app-calendar
+                  triggered-by: argo-events
+                  workflows.argoproj.io/controller-instanceid: default
+              spec:
+                arguments:
+                  parameters:
+                    - name: app-name
+                      value: app-calendar
+                    - name: repo-url
+                      value: http://gitea.gitea.svc:3000/gitops/app-calendar.git
+                    - name: commit-sha
+                      value: "unknown"
+                    - name: manifests-repo
+                      value: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+                workflowTemplateRef:
+                  name: ci-generic
+          parameters:
+            # Actualiza commit-sha con valor real del webhook
+            - src:
+                dependencyName: push
+                dataKey: body.after
+              dest: spec.arguments.parameters.2.value

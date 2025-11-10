@@ -1,0 +1,438 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: ci-generic
+  namespace: argo-workflows
+spec:
+  serviceAccountName: argo-workflow-sa
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: app-name
+      - name: repo-url
+      - name: commit-sha
+      - name: manifests-repo
+  templates:
+    - name: main
+      steps:
+        - - name: clone-and-detect
+            template: clone-source
+        - - name: build-and-push-image
+            template: build-image
+            arguments:
+              parameters:
+                - name: app-name
+                  value: "{{workflow.parameters.app-name}}"
+                - name: image-tag
+                  value: "{{steps.clone-and-detect.outputs.parameters.image-tag}}"
+        - - name: fetch-image-digest
+            template: fetch-digest
+            arguments:
+              parameters:
+                - name: app-name
+                  value: "{{workflow.parameters.app-name}}"
+                - name: image-tag
+                  value: "{{steps.clone-and-detect.outputs.parameters.image-tag}}"
+        - - name: ensure-manifests
+            template: ensure-manifests
+            arguments:
+              parameters:
+                - name: app-name
+                  value: "{{workflow.parameters.app-name}}"
+                - name: image-tag
+                  value: "{{steps.clone-and-detect.outputs.parameters.image-tag}}"
+                - name: version
+                  value: "{{steps.clone-and-detect.outputs.parameters.version}}"
+                - name: port
+                  value: "{{steps.clone-and-detect.outputs.parameters.port}}"
+                - name: image-digest
+                  value: "{{steps.fetch-image-digest.outputs.parameters.image-digest}}"
+        - - name: summary
+            template: summary
+    - name: clone-source
+      outputs:
+        parameters:
+          - name: version
+            valueFrom:
+              path: /tmp/meta/version
+          - name: port
+            valueFrom:
+              path: /tmp/meta/port
+          - name: image-tag
+            valueFrom:
+              path: /tmp/meta/image_tag
+      script:
+        image: alpine/git:latest
+        command: [sh]
+        source: |
+          #!/bin/sh
+          set -e
+          git clone {{workflow.parameters.repo-url}} /workspace/src
+          cd /workspace/src
+          VERSION=$(grep -oP '"version"\s*:\s*"\K[^" ]+' package.json 2>/dev/null || echo "1.0.0")
+          PORT=$(grep -oP 'EXPOSE\s+\K\d+' Dockerfile 2>/dev/null || echo "3000")
+          SHORT_SHA=$(echo {{workflow.parameters.commit-sha}} | cut -c1-7)
+          IMAGE_TAG="v${VERSION}-${SHORT_SHA}"
+          mkdir -p /tmp/meta
+          echo "$VERSION" > /tmp/meta/version
+          echo "$PORT" > /tmp/meta/port
+          echo "$IMAGE_TAG" > /tmp/meta/image_tag
+          echo "Detected version=$VERSION port=$PORT tag=$IMAGE_TAG"
+    - name: build-image
+      inputs:
+        parameters:
+          - name: app-name
+          - name: image-tag
+      script:
+        image: gcr.io/kaniko-project/executor:latest
+        command: [sh]
+        env:
+          - name: DOCKER_CONFIG
+            value: /kaniko/.docker/
+        source: |
+          #!/bin/sh
+          set -e
+          REGISTRY="docker-registry.registry.svc.cluster.local:5000"
+          APP="{{inputs.parameters.app-name}}"
+          TAG="{{inputs.parameters.image-tag}}"
+          IMAGE="$REGISTRY/$APP:$TAG"
+          echo "Building $IMAGE"
+          /kaniko/executor --dockerfile /workspace/src/Dockerfile --context /workspace/src --destination $IMAGE --snapshotMode=redo --use-new-run --cache=true
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace/src
+      volumes:
+        - name: workspace
+          emptyDir: {}
+    - name: fetch-digest
+      inputs:
+        parameters:
+          - name: app-name
+          - name: image-tag
+      outputs:
+        parameters:
+          - name: image-digest
+            valueFrom:
+              path: /workspace/image_digest
+      script:
+        image: gcr.io/go-containerregistry/crane:latest
+        command: [sh]
+        source: |
+          #!/bin/sh
+          set -e
+          REGISTRY="docker-registry.registry.svc.cluster.local:5000"
+          APP="{{inputs.parameters.app-name}}"
+          TAG="{{inputs.parameters.image-tag}}"
+          IMAGE="$REGISTRY/$APP:$TAG"
+          echo "Fetching digest for $IMAGE"
+          crane digest $IMAGE > /workspace/image_digest
+          echo "Digest: $(cat /workspace/image_digest)"
+    - name: ensure-manifests
+      inputs:
+        parameters:
+          - name: app-name
+          - name: image-tag
+          - name: version
+          - name: port
+          - name: image-digest
+      script:
+        image: alpine/git:latest
+        command: [sh]
+        env:
+          - name: GIT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: gitops-gitea-creds
+                key: username
+          - name: GIT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: gitops-gitea-creds
+                key: password
+        source: |
+          #!/bin/sh
+          set -e
+          APP="{{inputs.parameters.app-name}}"
+          TAG="{{inputs.parameters.image-tag}}"
+          VERSION="{{inputs.parameters.version}}"
+          PORT="{{inputs.parameters.port}}"
+          DIGEST="{{inputs.parameters.image-digest}}"
+          REGISTRY_HOST=docker-registry.registry.svc.cluster.local:5000
+          git clone {{workflow.parameters.manifests-repo}} /workspace/manifests
+          cd /workspace/manifests
+          git config user.email "ci@gitops.local"
+          git config user.name "GitOps CI"
+          APP_DIR=custom-apps/$APP
+          if [ ! -d "$APP_DIR" ]; then
+            echo "Bootstrapping manifests for $APP"
+            mkdir -p $APP_DIR
+            cat > $APP_DIR/namespace.yaml <<EOF
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: $APP
+            EOF
+            cat > $APP_DIR/deployment.yaml <<EOF
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: $APP
+              namespace: $APP
+              labels:
+                app: $APP
+                version: "$VERSION"
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  app: $APP
+              template:
+                metadata:
+                  labels:
+                    app: $APP
+                    version: "$VERSION"
+                spec:
+                  containers:
+                  - name: $APP
+                    image: $REGISTRY_HOST/$APP:$TAG
+                    ports:
+                    - containerPort: $PORT
+                      name: http
+                    env:
+                    - name: PORT
+                      value: "$PORT"
+            EOF
+            cat > $APP_DIR/service.yaml <<EOF
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: $APP
+              namespace: $APP
+              labels:
+                app: $APP
+            spec:
+              type: ClusterIP
+              selector:
+                app: $APP
+              ports:
+              - port: 80
+                targetPort: $PORT
+                protocol: TCP
+                name: http
+            EOF
+            cat > $APP_DIR/kustomization.yaml <<EOF
+            apiVersion: kustomize.config.k8s.io/v1beta1
+            kind: Kustomization
+            namespace: $APP
+            resources:
+              - namespace.yaml
+              - deployment.yaml
+              - service.yaml
+            images:
+              - name: $APP
+                newName: $REGISTRY_HOST/$APP
+                newTag: $TAG
+                digest: $DIGEST
+            EOF
+            git add $APP_DIR
+            git commit -m "feat(${APP}): bootstrap manifests version ${VERSION} tag ${TAG} digest ${DIGEST}" || echo "No changes to commit"
+          else
+            echo "Updating manifests for $APP"
+            cd $APP_DIR
+            if [ -f kustomization.yaml ]; then
+              yq -i "(.images[] | select(.name == \"$APP\")).newTag = \"$TAG\"" kustomization.yaml || true
+              yq -i "(.images[] | select(.name == \"$APP\")).digest = \"$DIGEST\"" kustomization.yaml || true
+            fi
+            git add .
+            git commit -m "chore(${APP}): update image tag ${TAG} digest ${DIGEST}" || echo "No changes to commit"
+          fi
+          echo "Pushing manifests con credenciales seguras"
+          git push "http://${GIT_USERNAME}:${GIT_PASSWORD}@gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git" HEAD:main
+    - name: summary
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "CI pipeline complete for {{workflow.parameters.app-name}}"---
+# WorkflowTemplate CI/CD Genérico - Reutilizable para cualquier aplicación
+# Parámetros: app-name, repo-url, commit-sha
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: ci-generic
+  namespace: argo-workflows
+spec:
+  serviceAccountName: argo-workflows-sa
+  entrypoint: ci-pipeline
+  
+  arguments:
+    parameters:
+      - name: app-name
+        description: "Nombre de la aplicación (ej: app-reloj, app-calendar)"
+      - name: repo-url
+        description: "URL del repositorio Git (sin credenciales)"
+      - name: commit-sha
+        description: "SHA del commit a construir"
+  
+  templates:
+    # =========================================================================
+    # Pipeline principal
+    # =========================================================================
+    - name: ci-pipeline
+      steps:
+        - - name: clone-repo
+            template: git-clone
+        
+        - - name: detect-version
+            template: get-version
+        
+        - - name: build-image
+            template: docker-build
+        
+        - - name: push-image
+            template: docker-push
+        
+        - - name: update-manifests
+            template: update-kustomization
+    
+    # =========================================================================
+    # Step 1: Clonar repositorio
+    # =========================================================================
+    - name: git-clone
+      container:
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            echo "📦 Clonando {{workflow.parameters.repo-url}}..."
+            git clone {{workflow.parameters.repo-url}} /workspace/source
+            cd /workspace/source
+            git checkout {{workflow.parameters.commit-sha}}
+            echo "✓ Repositorio clonado en commit {{workflow.parameters.commit-sha}}"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+    
+    # =========================================================================
+    # Step 2: Detectar versión desde package.json
+    # =========================================================================
+    - name: get-version
+      container:
+        image: alpine:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            cd /workspace/source
+            
+            # Detectar versión según tipo de proyecto
+            if [ -f "package.json" ]; then
+              VERSION=$(grep -oP '"version":\s*"\K[^"]+' package.json)
+            elif [ -f "version.txt" ]; then
+              VERSION=$(cat version.txt)
+            else
+              VERSION="1.0.0"
+            fi
+            
+            # Generar tag con versión + SHA corto
+            SHORT_SHA=$(echo "{{workflow.parameters.commit-sha}}" | cut -c1-7)
+            IMAGE_TAG="${VERSION}-${SHORT_SHA}"
+            
+            echo "📌 Versión detectada: ${VERSION}"
+            echo "🏷️  Tag de imagen: ${IMAGE_TAG}"
+            echo "${IMAGE_TAG}" > /workspace/image-tag
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+      outputs:
+        parameters:
+          - name: image-tag
+            valueFrom:
+              path: /workspace/image-tag
+    
+    # =========================================================================
+    # Step 3: Construir imagen Docker
+    # =========================================================================
+    - name: docker-build
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        command: [/kaniko/executor]
+        args:
+          - --context=/workspace/source
+          - --dockerfile=/workspace/source/Dockerfile
+          - --destination=registry.registry.svc.cluster.local:5000/{{workflow.parameters.app-name}}:{{steps.detect-version.outputs.parameters.image-tag}}
+          - --insecure
+          - --skip-tls-verify
+          - --cache=false
+          - --cleanup
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+    
+    # =========================================================================
+    # Step 4: Push imagen al registry (ya incluido en kaniko build)
+    # =========================================================================
+    - name: docker-push
+      container:
+        image: alpine:latest
+        command: [sh, -c]
+        args:
+          - |
+            echo "✓ Imagen pusheada: registry.registry.svc.cluster.local:5000/{{workflow.parameters.app-name}}:{{steps.detect-version.outputs.parameters.image-tag}}"
+    
+    # =========================================================================
+    # Step 5: Actualizar kustomization.yaml en gitops-manifests
+    # =========================================================================
+    - name: update-kustomization
+      container:
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            apk add --no-cache yq
+            
+            APP_NAME="{{workflow.parameters.app-name}}"
+            IMAGE_TAG="{{steps.detect-version.outputs.parameters.image-tag}}"
+            
+            echo "📝 Actualizando manifests para ${APP_NAME}:${IMAGE_TAG}..."
+            
+            # Clonar gitops-manifests
+            git clone http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git /workspace/manifests
+            cd /workspace/manifests
+            
+            # Actualizar kustomization.yaml
+            KUSTOMIZATION_PATH="custom-apps/${APP_NAME}/kustomization.yaml"
+            
+            if [ -f "${KUSTOMIZATION_PATH}" ]; then
+              yq eval ".images[0].newTag = \"${IMAGE_TAG}\"" -i "${KUSTOMIZATION_PATH}"
+              
+              git config user.email "ci@gitops.local"
+              git config user.name "GitOps CI"
+              git add "${KUSTOMIZATION_PATH}"
+              git commit -m "chore: update ${APP_NAME} to ${IMAGE_TAG}"
+              
+              # Push con credenciales
+              git push http://gitops:gitops@gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git main
+              
+              echo "✓ Manifests actualizados correctamente"
+            else
+              echo "❌ ERROR: ${KUSTOMIZATION_PATH} no existe"
+              exit 1
+            fi
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+  
+  # ===========================================================================
+  # Volumen compartido entre steps
+  # ===========================================================================
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,10 +1,13 @@
 # ApplicationSet para GitOps Tools
-# Despliega automáticamente todas las herramientas desde gitops-tools/
+# Descubrimiento automático de todas las herramientas en gitops-tools/
+# Wave 3: Despliega después de Gitea (registry, argo-workflows, argo-events, etc.)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: gitops-tools
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   generators:
     - git:
@@ -12,6 +15,11 @@ spec:
         revision: main
         directories:
           - path: gitops-manifests/gitops-tools/*
+          # Excluir herramientas ya desplegadas manualmente en waves anteriores
+          - path: gitops-manifests/gitops-tools/sealed-secrets
+            exclude: true
+          - path: gitops-manifests/gitops-tools/gitea
+            exclude: true
   template:
     metadata:
       name: '{{path.basename}}'

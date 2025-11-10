@@ -1,23 +1,24 @@
-# Argo CD Self-Management
-# Argo CD se gestiona a sí mismo para actualizaciones y configuración
+# Gitea - Git Server Interno
+# Fuente de verdad final para GitOps (self-hosting)
+# Wave 2: Despliega después de sealed-secrets
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argocd-config
+  name: gitea
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    # Durante bootstrap: usa GitHub con gitops-manifests/infra-configs/
-    # Después de migración: apuntará a Gitea
     repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: gitops-manifests/infra-configs/configmaps
+    path: gitops-manifests/gitops-tools/gitea
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: gitea
   syncPolicy:
     automated:
       prune: true

@@ -1,22 +1,26 @@
-# Gitea - Git Server Interno (Fuente de Verdad Final)
+# ArgoCD Self-Management
+# ArgoCD se gestiona a sí mismo para actualizaciones y configuración
+# Wave 0: Primera aplicación en desplegarse
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: gitea
+  name: argocd-self
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    # Durante bootstrap: usa GitHub
-    # Después de migración: apuntará a Gitea (self-hosting!)
+    # Durante instalación: usa GitHub
+    # Después de migración: apuntará a Gitea
     repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: gitops-manifests/gitops-tools/gitea
+    path: gitops-manifests/infra-configs/configmaps
   destination:
     server: https://kubernetes.default.svc
-    namespace: gitea
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true
@@ -28,10 +32,3 @@ spec:
       backoff:
         duration: 5s
         maxDuration: 3m
-  # Ignorar diferencias en el Secret generado automáticamente por Gitea
-  ignoreDifferences:
-    - group: ""
-      kind: Secret
-      name: gitea-admin-secret
-      jsonPointers:
-        - /data
