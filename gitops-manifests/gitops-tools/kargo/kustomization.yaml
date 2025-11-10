@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kargo
+
+resources:
+  # 1. CRDs de Kargo
+  - crds.yaml
+  
+  # 2. RBAC
+  - rbac.yaml
+  
+  # 3. Secret encriptado (admin credentials)
+  - sealed-secret.yaml
+  
+  # 4. ConfigMap
+  - configmap.yaml
+  
+  # 5. Deployment
+  - deployment.yaml
+  
+  # 6. Service
+  - service.yaml
