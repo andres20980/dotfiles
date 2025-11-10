@@ -8,22 +8,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    link.argocd.argoproj.io/external-link: http://localhost:30083
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: gitops-tools
-  source:
-    repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
-    targetRevision: main
-    path: gitops-manifests/gitops-tools/gitea
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: gitea
-  # Enlaces externos en UI de ArgoCD
-  info:
-    - name: 'Gitea UI'
-      value: 'http://localhost:30083'
-  syncPolicy:
     automated:
       prune: true
       selfHeal: true
