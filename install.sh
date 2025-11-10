@@ -521,7 +521,7 @@ deploy_gitea() {
     kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
     
     log_info "Aplicando manifests de Gitea..."
-    kubectl apply -f "${SCRIPT_DIR}/gitops-manifests/gitops-tools/gitea/"
+    kubectl apply -k "${SCRIPT_DIR}/gitops-manifests/gitops-tools/gitea/"
     
     log_info "Esperando a que Gitea esté listo..."
     kubectl wait --for=condition=available --timeout=300s deployment/gitea -n gitea
@@ -1346,7 +1346,7 @@ EOF
 main() {
     echo ""
     echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}     🚀 GitOps Learning Environment - Bootstrap v2.0${NC}"
+    echo -e "${CYAN}     🚀 Entorno GitOps - Instalación Bootstrap v2.0${NC}"
     echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
     echo ""
     
