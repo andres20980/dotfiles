@@ -1,0 +1,45 @@
+# ApplicationSet para Custom Apps (Desarrollador)
+# Descubrimiento automático de aplicaciones en custom-apps/
+# Wave 4: Despliega después de todas las gitops-tools
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: custom-apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  generators:
+    - git:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+        revision: main
+        directories:
+          - path: custom-apps/*
+  template:
+    metadata:
+      name: '{{path.basename}}'
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m

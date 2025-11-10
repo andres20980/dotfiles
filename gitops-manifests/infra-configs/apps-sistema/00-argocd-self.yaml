@@ -17,7 +17,7 @@ spec:
     # Después de migración: apuntará a Gitea
     repoURL: https://github.com/andres20980/dotfiles.git
     targetRevision: main
-    path: gitops-manifests/infra-configs/configmaps
+    path: gitops-manifests/infra-configs/argocd-manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
