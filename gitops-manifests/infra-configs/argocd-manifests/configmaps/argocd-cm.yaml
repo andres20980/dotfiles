@@ -53,10 +53,13 @@ data:
       health.lua: |
         hs = {}
         -- CRDs de Kargo: simplemente Healthy si existen
-        if obj.metadata and obj.metadata.name and string.match(obj.metadata.name, "%.kargo%.akuity%.io$") then
-          hs.status = "Healthy"
-          hs.message = "Kargo CRD instalado"
-          return hs
+        if obj.metadata and obj.metadata.name then
+          local name = tostring(obj.metadata.name)
+          if string.find(name, "%.kargo%.akuity%.io$") then
+            hs.status = "Healthy"
+            hs.message = "Kargo CRD instalado"
+            return hs
+          end
         end
         -- Fallback genérico para otros CRDs
         if obj.status and obj.status.conditions then
