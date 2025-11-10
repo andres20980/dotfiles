@@ -4,6 +4,9 @@ kind: Kustomization
 namespace: argo-events
 
 resources:
+  # 0. Controller de argo-events (CRDs + controller pods)
+  - install.yaml
+  
   # 1. EventBus (prerequisito para EventSources y Sensors)
   - eventbus.yaml
   
