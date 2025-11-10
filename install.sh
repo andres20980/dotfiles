@@ -616,12 +616,36 @@ initialize_gitea_repos() {
             >/dev/null 2>&1
         
         log_success "Gitea instalado con usuario ${GITEA_USER}"
+        sleep 5
     else
-        log_info "Gitea ya está instalado"
+        log_info "Gitea ya está instalado. Verificando usuario..."
+        
+        # Si Gitea instalado pero usuario no existe, usar CLI
+        local user_check
+        user_check=$(curl -s -u "${GITEA_USER}:${GITEA_PASSWORD}" "${GITEA_URL_EXTERNAL}/api/v1/user" 2>&1 | grep -c "user does not exist" || echo "0")
+        
+        if [ "$user_check" -gt 0 ]; then
+            log_info "Usuario no existe. Creando con CLI de Gitea..."
+            
+            # Obtener pod de Gitea
+            local gitea_pod
+            gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
+            
+            # Crear usuario admin con CLI (best-practice)
+            kubectl exec -n gitea "${gitea_pod}" -- \
+                /usr/local/bin/gitea admin user create \
+                --username "${GITEA_USER}" \
+                --password "${GITEA_PASSWORD}" \
+                --email "${GITEA_USER}@gitops.local" \
+                --admin \
+                --must-change-password=false
+            
+            log_success "Usuario ${GITEA_USER} creado via CLI"
+            sleep 3
+        else
+            log_info "Usuario ${GITEA_USER} ya existe"
+        fi
     fi
-    
-    # Esperar a que el usuario esté disponible
-    sleep 5
     
     # Crear token de API
     log_info "Creando token de API en Gitea..."
