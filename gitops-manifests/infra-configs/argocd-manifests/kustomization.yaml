@@ -16,4 +16,4 @@ resources:
   - configmaps/argocd-rbac-cm.yaml
   
   # 3. Service NodePort para acceso externo
-  - service/argocd-server-nodeport.yaml
+  - service/argocd-server-service.yaml
