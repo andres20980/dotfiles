@@ -1,4 +1,4 @@
-# ApplicationSet para herramientas de infraestructura GitOps
+# ApplicationSet para herramientas GitOps - List Generator explícito (best-practice para repos simples)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -8,36 +8,37 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   generators:
-    - git:
-        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
-        revision: main
-        directories:
-          - path: gitops-tools/*
-          - path: gitops-tools/sealed-secrets
-            exclude: true
-          - path: gitops-tools/gitea
-            exclude: true
-          - path: gitops-tools/argo-workflows
-            exclude: true
-          - path: gitops-tools/argo-events
-            exclude: true
-          - path: gitops-tools/argo-rollouts
-            exclude: true
+    - list:
+        elements:
+          - app: dashboard
+            project: gitops-tools
+          - app: grafana
+            project: gitops-tools
+          - app: kargo
+            project: gitops-tools
+          - app: kargo-crds
+            project: gitops-tools
+          - app: prometheus
+            project: gitops-tools
+          - app: redis
+            project: gitops-tools
+          - app: registry
+            project: gitops-tools
   template:
     metadata:
-      name: '{{path.basename}}'
+      name: '{{app}}'
       namespace: argocd
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: gitops-tools
+      project: '{{project}}'
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
-        path: '{{path}}'
+        path: 'gitops-tools/{{app}}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{path.basename}}'
+        namespace: '{{app}}'
       syncPolicy:
         automated:
           prune: true

@@ -1,4 +1,4 @@
-# ApplicationSet para herramientas Argo (workflows, events, rollouts)
+# ApplicationSet para herramientas Argo - List Generator
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -8,16 +8,14 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   generators:
-    - git:
-        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
-        revision: main
-        directories:
-          - path: gitops-tools/argo-workflows
-          - path: gitops-tools/argo-events
-          - path: gitops-tools/argo-rollouts
+    - list:
+        elements:
+          - app: argo-workflows
+          - app: argo-events
+          - app: argo-rollouts
   template:
     metadata:
-      name: '{{path.basename}}'
+      name: '{{app}}'
       namespace: argocd
       finalizers:
         - resources-finalizer.argocd.argoproj.io
@@ -26,10 +24,10 @@ spec:
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
-        path: '{{path}}'
+        path: 'gitops-tools/{{app}}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{path.basename}}'
+        namespace: '{{app}}'
       syncPolicy:
         automated:
           prune: true
