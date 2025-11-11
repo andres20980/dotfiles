@@ -50,7 +50,7 @@ spec:
         link.argocd.argoproj.io/external-link: http://localhost:30070
         {{- end }}
     spec:
-      project: '{{- if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}argo{{- else }}gitops-tools{{- end }}'
+      project: {{ if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}argo{{ else }}gitops-tools{{ end }}
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
