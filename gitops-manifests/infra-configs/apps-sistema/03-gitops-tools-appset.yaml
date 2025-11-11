@@ -1,6 +1,5 @@
 # ApplicationSet para GitOps Tools
-# Descubrimiento automático de todas las herramientas en gitops-tools/
-# Wave 3: Despliega después de Gitea (registry, argo-workflows, argo-events, etc.)
+# Usa matriz de generators para asignar proyectos correctamente
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -9,34 +8,56 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  goTemplate: true
-  goTemplateOptions: ["missingkey=error"]
   generators:
-    - git:
-        repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
-        revision: main
-        directories:
-          - path: gitops-tools/*
-          # Excluir herramientas ya desplegadas manualmente en waves anteriores
-          - path: gitops-tools/sealed-secrets
-            exclude: true
-          - path: gitops-tools/gitea
-            exclude: true
+    # Generator para herramientas del proyecto gitops-tools
+    - matrix:
+        generators:
+          - git:
+              repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+              revision: main
+              directories:
+                - path: gitops-tools/*
+                - path: gitops-tools/sealed-secrets
+                  exclude: true
+                - path: gitops-tools/gitea
+                  exclude: true
+                - path: gitops-tools/argo-workflows
+                  exclude: true
+                - path: gitops-tools/argo-events
+                  exclude: true
+                - path: gitops-tools/argo-rollouts
+                  exclude: true
+          - list:
+              elements:
+                - project: gitops-tools
+    # Generator para herramientas Argo (proyecto argo)
+    - matrix:
+        generators:
+          - git:
+              repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
+              revision: main
+              directories:
+                - path: gitops-tools/argo-workflows
+                - path: gitops-tools/argo-events
+                - path: gitops-tools/argo-rollouts
+          - list:
+              elements:
+                - project: argo
   template:
     metadata:
-      name: '{{.path.basename}}'
+      name: '{{path.basename}}'
       namespace: argocd
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: gitops-tools
+      project: '{{project}}'
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
-        path: '{{.path.path}}'
+        path: '{{path}}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{.path.basename}}'
+        namespace: '{{path.basename}}'
       syncPolicy:
         automated:
           prune: true
@@ -48,46 +69,3 @@ spec:
           backoff:
             duration: 5s
             maxDuration: 3m
-  templatePatch: |
-    {{ if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}
-    spec:
-      project: argo
-    {{ end }}
-    {{ if eq .path.basename "kargo-crds" }}
-    metadata:
-      annotations:
-        argocd.argoproj.io/sync-wave: "2.9"
-    {{ else if eq .path.basename "kargo" }}
-    metadata:
-      annotations:
-        argocd.argoproj.io/sync-wave: "3.1"
-        link.argocd.argoproj.io/external-link: http://localhost:30040
-    {{ else if eq .path.basename "dashboard" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30090
-    {{ else if eq .path.basename "grafana" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30030
-    {{ else if eq .path.basename "prometheus" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30010
-    {{ else if eq .path.basename "argo-workflows" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30050
-    {{ else if eq .path.basename "argo-rollouts" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30100
-    {{ else if eq .path.basename "registry" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30020
-    {{ else if eq .path.basename "redis" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30070
-    {{ end }}
