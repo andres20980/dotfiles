@@ -5,7 +5,7 @@ namespace: gitea
 
 resources:
   - configmap.yaml
-  - pvc.yaml
+  # - pvc.yaml  # Deshabilitado: para entorno de aprendizaje usamos almacenamiento efímero (emptyDir)
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml

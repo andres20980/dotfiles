@@ -94,5 +94,4 @@ spec:
               - ALL
       volumes:
       - name: gitea-storage
-        persistentVolumeClaim:
-          claimName: gitea-pvc
+        emptyDir: {}
