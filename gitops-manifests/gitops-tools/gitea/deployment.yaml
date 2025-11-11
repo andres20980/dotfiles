@@ -81,7 +81,13 @@ spec:
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
-        securityContext: {}
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
       volumes:
       - name: gitea-storage
         persistentVolumeClaim:

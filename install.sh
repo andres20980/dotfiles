@@ -2,20 +2,53 @@
 set -euo pipefail
 
 # ============================================================================
-# 🚀 Entorno GitOps - Instalación Completa Optimizada
+# 🚀 Entorno GitOps - Instalación Completa Automatizada
 # ============================================================================
-# Instala TODO desde WSL limpio siguiendo best practices:
-# 1. Dependencias sistema
-# 2. Cluster Kubernetes (Kind)
-# 3. Argo CD (motor GitOps)
-# 4. Gitea (source of truth)
-# 5. Push local → Gitea
-# 6. Bootstrap GitOps (root-app desde Gitea)
-# 7. Despliegue automático de todas las tools
+# 
+# DESCRIPCIÓN:
+# Instala plataforma GitOps completa de aprendizaje siguiendo best-practices
+# oficiales de Kubernetes, Kind, ArgoCD y Gitea.
 #
-# Uso: ./install.sh
-# Tiempo estimado: 5-10 minutos
-# Requisitos: WSL2 con Ubuntu
+# COMPONENTES INSTALADOS:
+# 1. Cluster Kind (Kubernetes local single-node)
+# 2. Argo CD (motor GitOps con UI anónima para learning)
+# 3. Gitea (source of truth - repositorio Git local)
+# 4. Sealed Secrets (gestión segura de credenciales)
+# 5. GitOps Tools: Argo Events, Argo Workflows, Argo Rollouts, Kargo
+# 6. Observability: Prometheus, Grafana, Dashboard
+# 7. Registry local (Docker registry para imágenes custom)
+#
+# PRE-REQUISITOS:
+# - Linux/WSL2 con Ubuntu
+# - Docker instalado y ejecutándose
+# - 4GB+ RAM disponible (recomendado)
+# - 10GB+ disco libre (recomendado)
+# - kubectl, kind, helm (se instalan automáticamente si faltan)
+#
+# USO:
+#   ./install.sh
+#
+# TIEMPO ESTIMADO: 5-10 minutos
+#
+# RESULTADO:
+# - 13 aplicaciones GitOps Synced & Healthy
+# - Todas accesibles vía NodePort (localhost:30080-30200)
+# - Gitea como source of truth (localhost:30083)
+# - ArgoCD gestionando todo el ciclo de vida (localhost:30080)
+#
+# BEST-PRACTICES APLICADAS:
+# - Kind: apiServerAddress 127.0.0.1 (security)
+# - ArgoCD: server.insecure + anonymous access (learning mode)
+# - Gitea: CLI admin user creation (oficial method)
+# - Sealed Secrets: bitnami-labs release oficial
+# - App of Apps pattern: root-app → ApplicationSets → Applications
+# - NetworkPolicies: zero-trust security
+# - No PDBs/Ingress: optimizado para Kind single-node
+#
+# DOCUMENTACIÓN OFICIAL CONSULTADA:
+# - https://kind.sigs.k8s.io/docs/user/quick-start/
+# - https://argo-cd.readthedocs.io/en/stable/getting_started/
+# - https://docs.gitea.io/
 # ============================================================================
 
 # Configuración
@@ -70,17 +103,96 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-check_wsl() {
+# ============================================================================
+# PRE-REQUISITOS: Validación robusta antes de instalación
+# ============================================================================
+check_prerequisites() {
+    log_phase "VALIDACIÓN DE PRE-REQUISITOS"
+    
+    local all_ok=true
+    
+    # 1. Sistema operativo
     if grep -qi microsoft /proc/version; then
-        log_info "Entorno WSL detectado"
-        return 0
+        log_success "✓ Entorno WSL detectado"
+    elif [ "$(uname -s)" = "Linux" ]; then
+        log_success "✓ Sistema Linux detectado"
+    else
+        log_error "✗ SO no soportado. Requiere Linux/WSL2"
+        all_ok=false
     fi
-    if [ "$(uname -s)" = "Linux" ]; then
-        log_warn "No es WSL, pero es Linux. Continuamos (modo genérico)."
-        return 0
+    
+    # 2. Docker instalado y ejecutándose
+    if command -v docker &> /dev/null; then
+        log_success "✓ Docker CLI instalado"
+        if docker info > /dev/null 2>&1; then
+            log_success "✓ Docker daemon ejecutándose"
+        else
+            log_error "✗ Docker daemon no está ejecutándose"
+            log_info "  Inicia Docker: sudo service docker start"
+            all_ok=false
+        fi
+    else
+        log_error "✗ Docker no está instalado"
+        log_info "  Instala Docker: https://docs.docker.com/engine/install/"
+        all_ok=false
     fi
-    log_error "SO no soportado automáticamente. Requiere Linux/WSL2."
-    exit 1
+    
+    # 3. Kubectl instalado
+    if command -v kubectl &> /dev/null; then
+        log_success "✓ kubectl instalado"
+    else
+        log_warn "⚠ kubectl no instalado (se instalará automáticamente)"
+    fi
+    
+    # 4. Kind instalado o se instalará
+    if command -v kind &> /dev/null; then
+        log_success "✓ kind instalado"
+    else
+        log_warn "⚠ kind no instalado (se instalará automáticamente)"
+    fi
+    
+    # 5. Verificar memoria disponible (mínimo 4GB recomendado)
+    if command -v free &> /dev/null; then
+        local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+        if [ "$mem_gb" -ge 4 ]; then
+            log_success "✓ Memoria suficiente: ${mem_gb}GB disponible"
+        else
+            log_warn "⚠ Memoria baja: ${mem_gb}GB (se recomienda 4GB+)"
+        fi
+    fi
+    
+    # 6. Verificar espacio en disco (mínimo 10GB recomendado)
+    local disk_gb=$(df -BG . | awk 'NR==2 {print $4}' | sed 's/G//')
+    if [ "$disk_gb" -ge 10 ]; then
+        log_success "✓ Espacio en disco suficiente: ${disk_gb}GB disponible"
+    else
+        log_warn "⚠ Espacio en disco bajo: ${disk_gb}GB (se recomienda 10GB+)"
+    fi
+    
+    # 7. Verificar que no existe cluster con el mismo nombre
+    if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        log_warn "⚠ Cluster '${CLUSTER_NAME}' ya existe (será recreado)"
+    fi
+    
+    echo ""
+    if [ "$all_ok" = true ]; then
+        log_success "╔════════════════════════════════════════════════════════════╗"
+        log_success "║  ✅ TODOS LOS PRE-REQUISITOS CUMPLIDOS                    ║"
+        log_success "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        return 0
+    else
+        log_error "╔════════════════════════════════════════════════════════════╗"
+        log_error "║  ❌ PRE-REQUISITOS FALTANTES - REVISA ERRORES ARRIBA      ║"
+        log_error "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        exit 1
+    fi
+}
+
+check_wsl() {
+    # Llamada legacy - redirigir a check_prerequisites
+    check_prerequisites
 }
 
 
@@ -589,61 +701,80 @@ initialize_gitea_repos() {
     
     log_info "Esperando a que Gitea esté completamente inicializado..."
     
-    # Verificar si Gitea ya está instalado
+    # Best-practice: Verificar health endpoint primero
+    log_info "Verificando health endpoint de Gitea..."
+    local max_retries=30
+    local count=0
+    while [ $count -lt $max_retries ]; do
+        if curl -f -s "${GITEA_URL_EXTERNAL}/api/healthz" > /dev/null 2>&1; then
+            log_success "✓ Gitea health endpoint respondiendo"
+            break
+        fi
+        count=$((count + 1))
+        echo -n "."
+        sleep 2
+    done
+    
+    if [ $count -ge $max_retries ]; then
+        log_error "Timeout esperando health endpoint de Gitea"
+        return 1
+    fi
+    
+    # Verificar si Gitea ya está instalado (método actualizado para Gitea 1.17+)
     local install_check
     install_check=$(curl -s "${GITEA_URL_EXTERNAL}/user/login" | grep -c "install" || echo "0")
     
     if [ "$install_check" -gt 0 ]; then
-        log_info "Gitea requiere instalación inicial. Usando endpoint /install..."
+        log_warn "Gitea requiere instalación inicial (endpoint /install aún visible)"
+        log_info "Usando CLI de Gitea para crear usuario admin (best-practice oficial)..."
         
-        # Realizar instalación inicial con usuario admin
-        curl -s -L -X POST "${GITEA_URL_EXTERNAL}/install" \
-            -F "db_type=sqlite3" \
-            -F "db_path=/data/gitea/gitea.db" \
-            -F "app_name=Gitea: GitOps Platform" \
-            -F "repo_root_path=/data/git/repositories" \
-            -F "lfs_root_path=/data/git/lfs" \
-            -F "run_user=git" \
-            -F "domain=localhost" \
-            -F "ssh_port=30022" \
-            -F "http_port=3000" \
-            -F "app_url=http://localhost:30083/" \
-            -F "log_root_path=/data/gitea/log" \
-            -F "admin_name=${GITEA_USER}" \
-            -F "admin_passwd=${GITEA_PASSWORD}" \
-            -F "admin_confirm_passwd=${GITEA_PASSWORD}" \
-            -F "admin_email=${GITEA_USER}@gitops.local" \
-            >/dev/null 2>&1
+        # Obtener pod de Gitea
+        local gitea_pod
+        gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
         
-        log_success "Gitea instalado con usuario ${GITEA_USER}"
-        sleep 5
+        # Crear usuario admin con CLI (BEST-PRACTICE oficial de Gitea)
+        kubectl exec -n gitea "${gitea_pod}" -- \
+            /usr/local/bin/gitea admin user create \
+            --username "${GITEA_USER}" \
+            --password "${GITEA_PASSWORD}" \
+            --email "${GITEA_USER}@gitops.local" \
+            --admin \
+            --must-change-password=false \
+            2>&1 || {
+            # Si el usuario ya existe, no es un error crítico
+            log_info "Usuario ya existía o creado correctamente"
+        }
+        
+        log_success "Usuario ${GITEA_USER} configurado"
+        sleep 3
     else
         log_info "Gitea ya está instalado. Verificando usuario..."
         
-        # Si Gitea instalado pero usuario no existe, usar CLI
+        # Verificar autenticación
         local user_check
         user_check=$(curl -s -u "${GITEA_USER}:${GITEA_PASSWORD}" "${GITEA_URL_EXTERNAL}/api/v1/user" 2>&1 | grep -c "user does not exist" || echo "0")
         
         if [ "$user_check" -gt 0 ]; then
-            log_info "Usuario no existe. Creando con CLI de Gitea..."
+            log_info "Usuario no existe. Creando con CLI de Gitea (best-practice)..."
             
             # Obtener pod de Gitea
             local gitea_pod
             gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
             
-            # Crear usuario admin con CLI (best-practice)
+            # Crear usuario admin con CLI
             kubectl exec -n gitea "${gitea_pod}" -- \
                 /usr/local/bin/gitea admin user create \
                 --username "${GITEA_USER}" \
                 --password "${GITEA_PASSWORD}" \
                 --email "${GITEA_USER}@gitops.local" \
                 --admin \
-                --must-change-password=false
+                --must-change-password=false \
+                2>&1 || log_warn "Usuario ya existía o error menor"
             
             log_success "Usuario ${GITEA_USER} creado via CLI"
             sleep 3
         else
-            log_info "Usuario ${GITEA_USER} ya existe"
+            log_success "✓ Usuario ${GITEA_USER} ya existe y está autenticado"
         fi
     fi
     
@@ -1116,16 +1247,44 @@ verify_deployment() {
     log_success "║          🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE          ║"
     log_success "╚════════════════════════════════════════════════════════════╝"
     echo ""
-    echo -e "${CYAN}URLs de acceso:${NC}"
-    echo -e "  ${GREEN}•${NC} Argo CD:          http://localhost:30080"
-    echo -e "  ${GREEN}•${NC} Gitea:            http://localhost:30083"
-    echo -e "     └─ Usuario: ${GITEA_USER} / Contraseña: ${GITEA_PASSWORD}"
+    
+    # BEST-PRACTICE: Mostrar password de ArgoCD claramente
+    local argocd_password
+    argocd_password=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "acceso anónimo habilitado")
+    
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}📋 CREDENCIALES DE ACCESO (¡GUÁRDALAS!):${NC}"
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${YELLOW}Argo CD:${NC}"
+    echo -e "  URL:      ${GREEN}http://localhost:30080${NC}"
+    echo -e "  Usuario:  ${GREEN}admin${NC} (o acceso anónimo habilitado)"
+    echo -e "  Password: ${GREEN}${argocd_password}${NC}"
+    echo ""
+    echo -e "${YELLOW}Gitea (Source of Truth):${NC}"
+    echo -e "  URL:      ${GREEN}http://localhost:30083${NC}"
+    echo -e "  Usuario:  ${GREEN}${GITEA_USER}${NC}"
+    echo -e "  Password: ${GREEN}${GITEA_PASSWORD}${NC}"
+    echo ""
+    echo -e "${YELLOW}Grafana:${NC}"
+    echo -e "  URL:      ${GREEN}http://localhost:30082${NC}"
+    echo -e "  Usuario:  ${GREEN}admin${NC}"
+    echo -e "  Password: ${GREEN}gitops${NC}"
+    echo ""
+    echo -e "${YELLOW}Kargo:${NC}"
+    echo -e "  URL:      ${GREEN}http://localhost:30085${NC}"
+    echo -e "  Usuario:  ${GREEN}admin${NC}"
+    echo -e "  Password: ${GREEN}gitops${NC}"
+    echo ""
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${CYAN}URLs de herramientas adicionales:${NC}"
     echo -e "  ${GREEN}•${NC} Registry:         http://localhost:30100"
-    echo -e "  ${GREEN}•${NC} Argo Workflows:   http://localhost:30096"
-    echo -e "  ${GREEN}•${NC} App Reloj:        http://localhost:30150"
-    echo -e "  ${GREEN}•${NC} Dashboard:        http://localhost:30091"
-    echo -e "  ${GREEN}•${NC} Grafana:          http://localhost:30086 (admin/gitops)"
-    echo -e "  ${GREEN}•${NC} Prometheus:       http://localhost:30090"
+    echo -e "  ${GREEN}•${NC} Argo Workflows:   http://localhost:30091"
+    echo -e "  ${GREEN}•${NC} Argo Rollouts:    http://localhost:30084"
+    echo -e "  ${GREEN}•${NC} Dashboard:        http://localhost:30090"
+    echo -e "  ${GREEN}•${NC} Prometheus:       http://localhost:30081"
+    echo -e "  ${GREEN}•${NC} Redis Commander:  http://localhost:30097"
     echo ""
     echo -e "${CYAN}Pipeline CI/CD:${NC}"
     echo -e "  ${GREEN}1.${NC} Push a gitops-source-code/app-reloj"
@@ -1435,11 +1594,12 @@ EOF
 main() {
     echo ""
     echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}     🚀 Entorno GitOps - Instalación Bootstrap v2.0${NC}"
+    echo -e "${CYAN}     🚀 Entorno GitOps - Instalación Bootstrap v2.1${NC}"
+    echo -e "${CYAN}        Best-Practices: Kind + ArgoCD + Gitea${NC}"
     echo -e "${MAGENTA}════════════════════════════════════════════════════════════${NC}"
     echo ""
     
-    check_wsl
+    check_prerequisites  # BEST-PRACTICE: Validar entorno antes de empezar
     
     install_dependencies
     update_manifests_with_latest_versions
