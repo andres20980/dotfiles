@@ -4,10 +4,7 @@ kind: Kustomization
 namespace: kargo
 
 resources:
-  # 1. CRDs de Kargo
-  - crds.yaml
-  
-  # 2. RBAC
+  # 1. RBAC (CRDs gestionados ahora por kargo-crds)
   - rbac.yaml
   
   # 3. Secret plano (admin credentials - solo ejemplo para entorno local)
@@ -19,7 +16,7 @@ resources:
   # 5. Deployment
   - deployment.yaml
   
-  # 6. Service
+  # 5. Service
   - service.yaml
   - networkpolicy.yaml
   - ingress.yaml
