@@ -31,9 +31,11 @@ spec:
         command: ['sh', '-c']
         args:
         - |
-          mkdir -p /data/git/.ssh /data/gitea
+          set -e
+          mkdir -p /data/git/.ssh /data/gitea /data/gitea/conf
           chown -R 1000:1000 /data
-          chmod -R 755 /data
+          chmod -R 750 /data
+          chmod 700 /data/git/.ssh
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
@@ -81,13 +83,15 @@ spec:
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
+        # NOTA: El contenedor oficial de Gitea (s6-overlay) arranca como root y luego
+        # hace drop de privilegios internamente al usuario 'git' (UID 1000). Ejecutarlo
+        # directamente con runAsUser=1000 rompe s6-svscan (permiso lock). Para crear
+        # usuarios vía CLI usaremos 'su git -c'. Mantenemos endurecimiento sin forzar UID.
         securityContext:
-          runAsUser: 1000
-          runAsNonRoot: true
           allowPrivilegeEscalation: false
           capabilities:
             drop:
-            - ALL
+              - ALL
       volumes:
       - name: gitea-storage
         persistentVolumeClaim:
