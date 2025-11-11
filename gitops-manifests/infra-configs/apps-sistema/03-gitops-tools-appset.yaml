@@ -53,6 +53,11 @@ spec:
     spec:
       project: argo
     {{- end }}
+    {{- if eq .path.basename "kargo-crds" }}
+    metadata:
+      annotations:
+        argocd.argoproj.io/sync-wave: "2.9"
+    {{- end }}
     {{- if eq .path.basename "dashboard" }}
     metadata:
       annotations:
