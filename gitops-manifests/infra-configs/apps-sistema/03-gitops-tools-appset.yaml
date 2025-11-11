@@ -28,8 +28,29 @@ spec:
       namespace: argocd
       finalizers:
         - resources-finalizer.argocd.argoproj.io
+      annotations:
+        {{- if eq .path.basename "kargo-crds" }}
+        argocd.argoproj.io/sync-wave: "2.9"
+        {{- else if eq .path.basename "kargo" }}
+        argocd.argoproj.io/sync-wave: "3.1"
+        link.argocd.argoproj.io/external-link: http://localhost:30040
+        {{- else if eq .path.basename "dashboard" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30090
+        {{- else if eq .path.basename "grafana" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30030
+        {{- else if eq .path.basename "prometheus" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30010
+        {{- else if eq .path.basename "argo-workflows" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30050
+        {{- else if eq .path.basename "argo-rollouts" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30100
+        {{- else if eq .path.basename "registry" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30020
+        {{- else if eq .path.basename "redis" }}
+        link.argocd.argoproj.io/external-link: http://localhost:30070
+        {{- end }}
     spec:
-      project: gitops-tools
+      project: '{{- if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}argo{{- else }}gitops-tools{{- end }}'
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
@@ -48,46 +69,3 @@ spec:
           backoff:
             duration: 5s
             maxDuration: 3m
-  templatePatch: |
-    {{- if or (eq .path.basename "argo-workflows") (eq .path.basename "argo-events") (eq .path.basename "argo-rollouts") }}
-    spec:
-      project: argo
-    {{- end }}
-    {{- if eq .path.basename "dashboard" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30090
-    {{- else if eq .path.basename "grafana" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30030
-    {{- else if eq .path.basename "kargo" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30040
-        argocd.argoproj.io/sync-wave: "3.1"
-    {{- else if eq .path.basename "kargo-crds" }}
-    metadata:
-      annotations:
-        argocd.argoproj.io/sync-wave: "2.9"
-    {{- else if eq .path.basename "prometheus" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30010
-    {{- else if eq .path.basename "argo-workflows" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30050
-    {{- else if eq .path.basename "argo-rollouts" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30100
-    {{- else if eq .path.basename "registry" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30020
-    {{- else if eq .path.basename "redis" }}
-    metadata:
-      annotations:
-        link.argocd.argoproj.io/external-link: http://localhost:30070
-    {{- end }}
