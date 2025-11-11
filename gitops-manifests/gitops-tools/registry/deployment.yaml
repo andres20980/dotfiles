@@ -5,6 +5,9 @@ metadata:
   namespace: registry
   labels:
     app: docker-registry
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/component: image-store
+    app.kubernetes.io/part-of: gitops-tools
 spec:
   replicas: 1
   selector:
@@ -14,6 +17,9 @@ spec:
     metadata:
       labels:
         app: docker-registry
+        app.kubernetes.io/name: registry
+        app.kubernetes.io/component: image-store
+        app.kubernetes.io/part-of: gitops-tools
     spec:
       containers:
       - name: registry
@@ -50,6 +56,15 @@ spec:
             path: /v2/
             port: 5000
           initialDelaySeconds: 10
+        securityContext:
+          # Registry imagen oficial no soporta non-root (ejecuta como root por diseño)
+          # Para plataforma de aprendizaje local es aceptable
+          runAsNonRoot: false
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
       volumes:
       - name: registry-data
         emptyDir: {}

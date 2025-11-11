@@ -4,7 +4,6 @@ metadata:
   name: gitea-webhook
   namespace: argo-events
 spec:
-  # Un único EventSource con múltiples endpoints (best-practice: reducir objetos)
   service:
     ports:
       - port: 12000
@@ -12,14 +11,6 @@ spec:
         nodePort: 30200
   serviceType: NodePort
   webhook:
-    app-reloj:
-      port: "12000"
-      endpoint: /app-reloj
-      method: POST
-    app-calendar:
-      port: "12000"
-      endpoint: /app-calendar
-      method: POST
     push:
       port: "12000"
       endpoint: /push

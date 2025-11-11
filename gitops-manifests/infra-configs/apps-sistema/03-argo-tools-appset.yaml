@@ -19,6 +19,9 @@ spec:
       namespace: argocd
       finalizers:
         - resources-finalizer.argocd.argoproj.io
+      annotations:
+        # Forzar refresh inmediato tras creación
+        argocd.argoproj.io/refresh: hard
     spec:
       project: argo
       source:

@@ -7,3 +7,4 @@ resources:
   # Install oficial de Sealed Secrets Controller
   # Incluye: CRDs, controller deployment, RBAC, service
   - install.yaml
+  - networkpolicy.yaml

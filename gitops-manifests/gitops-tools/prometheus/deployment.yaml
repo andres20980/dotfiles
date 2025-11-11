@@ -4,8 +4,12 @@ metadata:
   annotations:
     test-gitops-flow: "verification-1759313848"
   name: prometheus
+  namespace: prometheus
   labels:
     app: prometheus
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: metrics-store
+    app.kubernetes.io/part-of: gitops-tools
 spec:
   replicas: 1
   selector:
@@ -17,6 +21,9 @@ spec:
         test-gitops-flow: "verification-1759313848"
       labels:
         app: prometheus
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/component: metrics-store
+        app.kubernetes.io/part-of: gitops-tools
     spec:
       serviceAccountName: prometheus
       containers:
@@ -55,6 +62,13 @@ spec:
             port: 9090
           initialDelaySeconds: 30
           timeoutSeconds: 30
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
       volumes:
       - name: prometheus-config-volume
         configMap:

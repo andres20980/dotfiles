@@ -23,6 +23,22 @@ spec:
         app: gitea
         app.kubernetes.io/name: gitea
     spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+      - name: init-permissions
+        image: gitea/gitea:1.25.1
+        command: ['sh', '-c']
+        args:
+        - |
+          mkdir -p /data/git/.ssh /data/gitea
+          chown -R 1000:1000 /data
+          chmod -R 755 /data
+        volumeMounts:
+        - name: gitea-storage
+          mountPath: /data
+        securityContext:
+          runAsUser: 0
       containers:
       - name: gitea
         image: gitea/gitea:1.25.1
@@ -42,18 +58,18 @@ spec:
             path: /api/healthz
             port: http
             scheme: HTTP
-          initialDelaySeconds: 30
+          initialDelaySeconds: 200
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 10
         readinessProbe:
           httpGet:
             path: /api/healthz
             port: http
             scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
           failureThreshold: 3
         resources:
           requests:
@@ -65,6 +81,7 @@ spec:
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
+        securityContext: {}
       volumes:
       - name: gitea-storage
         persistentVolumeClaim:

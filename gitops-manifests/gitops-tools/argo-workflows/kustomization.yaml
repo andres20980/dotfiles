@@ -9,3 +9,8 @@ resources:
   
   # 2. Service NodePort (acceso externo UI)
   - service-nodeport.yaml
+  - networkpolicy.yaml
+  # Ingress deshabilitado: Kind usa NodePort (no ingress controller)
+  # - ingress.yaml
+  # PDB deshabilitado: innecesario en Kind single-node (best-practice para dev)
+  # - pdb.yaml

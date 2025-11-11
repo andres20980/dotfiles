@@ -2,8 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
+  namespace: grafana
   labels:
     app: grafana
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: gitops-tools
 spec:
   replicas: 1
   selector:
@@ -13,6 +17,9 @@ spec:
     metadata:
       labels:
         app: grafana
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/component: dashboard
+        app.kubernetes.io/part-of: gitops-tools
     spec:
       containers:
       - name: grafana
@@ -58,14 +65,18 @@ spec:
           httpGet:
             path: /api/health
             port: 3001
-          initialDelaySeconds: 30
-          timeoutSeconds: 30
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /api/health
             port: 3001
           initialDelaySeconds: 30
-          timeoutSeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
       volumes:
       - name: grafana-storage
         emptyDir: {}

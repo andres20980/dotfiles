@@ -6,3 +6,4 @@ namespace: redis
 resources:
   - deployment.yaml
   - redis-commander.yaml
+  - networkpolicy.yaml

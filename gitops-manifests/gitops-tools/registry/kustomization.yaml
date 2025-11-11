@@ -8,3 +8,4 @@ resources:
   - deployment.yaml
   - registry-ui.yaml
   - service.yaml
+  - networkpolicy.yaml

@@ -8,7 +8,7 @@ resources:
   - 00-argocd-self.yaml
   
   # Wave 1: Sealed Secrets (prerequisito para secretos)
-  - 01-sealed-secrets.yaml
+  # - 01-sealed-secrets.yaml
   
   # Wave 2: Gitea (source of truth)
   - 02-gitea.yaml

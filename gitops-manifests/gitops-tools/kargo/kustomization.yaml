@@ -19,5 +19,7 @@ resources:
   # 5. Service
   - service.yaml
   - networkpolicy.yaml
-  - ingress.yaml
-  # - pdb.yaml  # Desactivado: con 1 réplica causa falso Progressing en ArgoCD
+  # Ingress deshabilitado: Kind usa NodePort (no ingress controller)
+  # - ingress.yaml
+  # PDB deshabilitado: innecesario en Kind single-node (best-practice para dev)
+  # - pdb.yaml

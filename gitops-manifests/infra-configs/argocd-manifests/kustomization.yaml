@@ -17,3 +17,5 @@ resources:
   
   # 3. Service NodePort para acceso externo
   - service/argocd-server-service.yaml
+  # Ingress deshabilitado: Kind usa NodePort (no ingress controller)
+  # - ingress-argocd.yaml

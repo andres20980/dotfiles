@@ -312,8 +312,12 @@ spec:
               path: /healthz
               port: http
           resources:
-            limits: {}
-            requests: {}
+            requests:
+              cpu: 30m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           securityContext:
             capabilities:
               drop:

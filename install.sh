@@ -1278,6 +1278,28 @@ verify_deployment() {
     } > /tmp/install-verification.log 2>&1
     
     log_info "Log de verificación guardado en: /tmp/install-verification.log"
+
+    # Verificación ligera de credenciales Kargo (best-practice mínima: comprobar secret y endpoint)
+    log_info "Verificando credenciales Kargo (admin/gitops)..."
+    if kubectl get secret kargo-api -n kargo >/dev/null 2>&1; then
+        local KARGO_USER
+        local KARGO_PASS
+        KARGO_USER=$(kubectl get secret kargo-api -n kargo -o jsonpath='{.data.ADMIN_ACCOUNT_USERNAME}' 2>/dev/null | base64 -d || echo "")
+        KARGO_PASS=$(kubectl get secret kargo-api -n kargo -o jsonpath='{.data.ADMIN_ACCOUNT_PASSWORD}' 2>/dev/null | base64 -d || echo "")
+        if [ "$KARGO_USER" = "admin" ] && [ "$KARGO_PASS" = "gitops" ]; then
+            log_success "Secret Kargo coincide con credenciales esperadas (admin/gitops)"
+        else
+            log_warn "Credenciales Kargo distintas a las esperadas: $KARGO_USER/$KARGO_PASS"
+        fi
+        # Intentar acceder al endpoint (NodePort) healthz si existe service
+        if curl -s http://localhost:30085/healthz | grep -qi 'ok'; then
+            log_success "Endpoint Kargo /healthz accesible (NodePort 30085)"
+        else
+            log_warn "No se pudo validar /healthz de Kargo en NodePort 30085"
+        fi
+    else
+        log_warn "Secret kargo-api no encontrado; saltando verificación de credenciales"
+    fi
 }
 
 # ============================================================================
@@ -1310,6 +1332,11 @@ generate_initial_sealed_secrets() {
         return 1
     fi
     kubectl wait --for=condition=available --timeout=180s deployment/sealed-secrets-controller -n kube-system || true
+    # =========================================================================
+    # RESUMEN DE ENDPOINTS (NodePorts e Ingress Hosts)
+    # =========================================================================
+    # (Definición de output_endpoints_summary movida a nivel global)
+
 
     ensure_kubeseal_installed
 
@@ -1365,6 +1392,44 @@ EOF
 }
 
 # ============================================================================
+# FUNCION: RESUMEN DE ENDPOINTS (NodePorts e Ingress Hosts)
+# ============================================================================
+output_endpoints_summary() {
+    log_phase "RESUMEN FINAL DE ENDPOINTS"
+    local OUT_JSON="/tmp/gitops-endpoints.json"
+    local DATA
+    DATA=$(cat <<'EOF'
+argocd|argocd.local|30080|argocd
+gitea|gitea.local|30083|gitea
+grafana|grafana.local|30082|grafana
+prometheus|prometheus.local|30081|prometheus
+kargo|kargo.local|30085|kargo
+workflows|workflows.local|30091|argo-workflows
+rollouts|rollouts.local|30084|argo-rollouts
+dashboard|dashboard.local|30090|dashboard
+EOF
+)
+    printf "\n%-12s %-22s %-10s %-15s\n" "HERRAMIENTA" "INGRESS HOST" "NODEPORT" "NAMESPACE"
+    printf "%-12s %-22s %-10s %-15s\n" "-----------" "----------------------" "--------" "-----------"
+    while IFS='|' read -r tool host port ns; do
+        printf "%-12s %-22s %-10s %-15s\n" "$tool" "$host" "$port" "$ns"
+    done <<< "$DATA"
+    echo "$DATA" | awk -F '|' 'BEGIN {print "["} {printf "{\"tool\":\"%s\",\"host\":\"%s\",\"nodePort\":%s,\"namespace\":\"%s\"}", $1,$2,$3,$4; if (NR!=NF) print ","} END {print "]"}' > "$OUT_JSON" 2>/dev/null || true
+    log_success "Resumen JSON guardado en $OUT_JSON"
+    echo "\nAñade estas entradas a /etc/hosts si usas Ingress (copiar y pegar):"
+    echo "127.0.0.1 argocd.local gitea.local grafana.local prometheus.local kargo.local workflows.local rollouts.local dashboard.local"
+    echo "\nAccesos rápidos (NodePort o Ingress):"
+    echo "http://argocd.local    | http://localhost:30080"
+    echo "http://gitea.local     | http://localhost:30083"
+    echo "http://grafana.local   | http://localhost:30082"
+    echo "http://prometheus.local| http://localhost:30081"
+    echo "http://kargo.local     | http://localhost:30085"
+    echo "http://workflows.local | http://localhost:30091"
+    echo "http://rollouts.local  | http://localhost:30084"
+    echo "http://dashboard.local | http://localhost:30090"
+}
+
+# ============================================================================
 # MAIN
 # ============================================================================
 main() {
@@ -1387,6 +1452,7 @@ main() {
     # complete_custom_apps_cicd  # Deshabilitado - custom-apps vacías
     apply_post_bootstrap_patches
     verify_deployment
+    output_endpoints_summary
 }
 
 # Ejecutar
