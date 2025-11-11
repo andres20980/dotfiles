@@ -1,8 +1,8 @@
-# ApplicationSet para herramientas de infraestructura GitOps
+# ApplicationSet para herramientas Argo (workflows, events, rollouts)
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: gitops-tools
+  name: argo-tools
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -12,17 +12,9 @@ spec:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         revision: main
         directories:
-          - path: gitops-tools/*
-          - path: gitops-tools/sealed-secrets
-            exclude: true
-          - path: gitops-tools/gitea
-            exclude: true
           - path: gitops-tools/argo-workflows
-            exclude: true
           - path: gitops-tools/argo-events
-            exclude: true
           - path: gitops-tools/argo-rollouts
-            exclude: true
   template:
     metadata:
       name: '{{path.basename}}'
@@ -30,7 +22,7 @@ spec:
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: gitops-tools
+      project: argo
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main
