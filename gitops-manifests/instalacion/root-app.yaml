@@ -13,7 +13,9 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: sistema
+  # NOTA: Usar 'default' porque 'sistema' aún no existe en bootstrap inicial
+  # El proyecto 'sistema' se creará cuando ArgoCD sincronice argocd-self-config
+  project: default
   
   # Source of Truth: Gitea interno (no GitHub)
   source:
