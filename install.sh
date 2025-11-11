@@ -733,13 +733,14 @@ initialize_gitea_repos() {
         gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
         
         # Crear usuario admin con CLI (BEST-PRACTICE oficial de Gitea)
+        # NOTA: Gitea CLI no permite ejecutarse como root, usar 'su git -c'
         kubectl exec -n gitea "${gitea_pod}" -- \
-            /usr/local/bin/gitea admin user create \
-            --username "${GITEA_USER}" \
-            --password "${GITEA_PASSWORD}" \
-            --email "${GITEA_USER}@gitops.local" \
+            su git -c "gitea admin user create \
+            --username ${GITEA_USER} \
+            --password ${GITEA_PASSWORD} \
+            --email ${GITEA_USER}@gitops.local \
             --admin \
-            --must-change-password=false \
+            --must-change-password=false" \
             2>&1 || {
             # Si el usuario ya existe, no es un error crítico
             log_info "Usuario ya existía o creado correctamente"
@@ -763,12 +764,12 @@ initialize_gitea_repos() {
             
             # Crear usuario admin con CLI
             kubectl exec -n gitea "${gitea_pod}" -- \
-                /usr/local/bin/gitea admin user create \
-                --username "${GITEA_USER}" \
-                --password "${GITEA_PASSWORD}" \
-                --email "${GITEA_USER}@gitops.local" \
+                su git -c "gitea admin user create \
+                --username ${GITEA_USER} \
+                --password ${GITEA_PASSWORD} \
+                --email ${GITEA_USER}@gitops.local \
                 --admin \
-                --must-change-password=false \
+                --must-change-password=false" \
                 2>&1 || log_warn "Usuario ya existía o error menor"
             
             log_success "Usuario ${GITEA_USER} creado via CLI"
