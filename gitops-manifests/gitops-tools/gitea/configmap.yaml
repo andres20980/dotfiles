@@ -6,30 +6,39 @@ metadata:
   labels:
     app: gitea
 data:
-  # Gitea configuration using environment variables
-  # https://docs.gitea.com/administration/config-cheat-sheet
+  # Configuración Gitea vía variables de entorno (modo aprendizaje)
+  # Ref oficial: https://docs.gitea.com/administration/config-cheat-sheet
   
-  # Database
+  # Base de datos (sqlite: simple, un fichero, cero dependencias)
   GITEA__database__DB_TYPE: "sqlite3"
   
-  # Security
+  # Seguridad básica (bloquea instalador web)
   GITEA__security__INSTALL_LOCK: "true"
   
-  # Service
+  # Servicio / UX (registro deshabilitado, vista pública anónima)
   GITEA__service__DISABLE_REGISTRATION: "true"
   GITEA__service__REQUIRE_SIGNIN_VIEW: "false"
   
-  # OpenID
+  # OpenID deshabilitado: no necesitamos auth externa en entorno local
   GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
   GITEA__openid__ENABLE_OPENID_SIGNUP: "false"
   
-  # Actions (CI/CD)
+  # Actions (CI/CD) habilitado para futuras pruebas
   GITEA__actions__ENABLED: "true"
   GITEA__actions__DEFAULT_ACTIONS_URL: "github"
   
-  # Webhook Configuration
-  # Allow webhooks to internal/private network addresses
-  # This is required for GitOps workflows where webhooks need to reach
-  # internal Kubernetes services like Argo Events EventSource
+  # Webhooks internos (alcanzar Argo Events dentro del cluster)
   GITEA__webhook__ALLOWED_HOST_LIST: "private"
   GITEA__webhook__SKIP_TLS_VERIFY: "true"
+  
+  # DESACTIVAR SSH (no se usa en entorno de aprendizaje, evita generación de llaves y permisos extra)
+  GITEA__server__START_SSH_SERVER: "false"
+  GITEA__server__DISABLE_SSH: "true"
+  GITEA__server__ROOT_URL: "http://gitea.gitea.svc.cluster.local:3000/"
+  
+  # Puertos HTTP (3000 por defecto)
+  GITEA__server__PROTOCOL: "http"
+  
+  # Ajustes mínimos de repos (optimiza rendimiento local)
+  GITEA__repository__DEFAULT_BRANCH: "main"
+  GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"

@@ -31,11 +31,11 @@ spec:
         command: ['sh', '-c']
         args:
         - |
-          set -e
-          mkdir -p /data/git/.ssh /data/gitea /data/gitea/conf
-          chown -R 1000:1000 /data
-          chmod -R 750 /data
-          chmod 700 /data/git/.ssh
+          echo "[INIT] Preparando estructura /data";
+          mkdir -p /data/git/.ssh /data/gitea/conf /data/ssh;
+          chown -R 1000:1000 /data;
+          chmod -R 0755 /data;
+          ls -al /data/gitea || true;
         volumeMounts:
         - name: gitea-storage
           mountPath: /data
@@ -52,27 +52,25 @@ spec:
         - name: http
           containerPort: 3000
           protocol: TCP
-        - name: ssh
-          containerPort: 22
-          protocol: TCP
+        # Puerto SSH deshabilitado (no se usa en entorno de aprendizaje)
         livenessProbe:
           httpGet:
             path: /api/healthz
             port: http
             scheme: HTTP
-          initialDelaySeconds: 200
-          periodSeconds: 10
+          initialDelaySeconds: 40
+          periodSeconds: 15
           timeoutSeconds: 5
-          failureThreshold: 10
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /api/healthz
             port: http
             scheme: HTTP
-          initialDelaySeconds: 5
+          initialDelaySeconds: 15
           periodSeconds: 10
-          timeoutSeconds: 1
-          failureThreshold: 3
+          timeoutSeconds: 3
+          failureThreshold: 5
         resources:
           requests:
             cpu: 100m
@@ -88,6 +86,10 @@ spec:
         # directamente con runAsUser=1000 rompe s6-svscan (permiso lock). Para crear
         # usuarios vía CLI usaremos 'su git -c'. Mantenemos endurecimiento sin forzar UID.
         securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          runAsNonRoot: true
           allowPrivilegeEscalation: false
           capabilities:
             drop:
