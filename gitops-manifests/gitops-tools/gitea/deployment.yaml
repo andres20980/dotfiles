@@ -85,11 +85,11 @@ spec:
         # hace drop de privilegios internamente al usuario 'git' (UID 1000). Ejecutarlo
         # directamente con runAsUser=1000 rompe s6-svscan (permiso lock). Para crear
         # usuarios vía CLI usaremos 'su git -c'. Mantenemos endurecimiento sin forzar UID.
+        # NOTA: Contenedor oficial Gitea (s6-overlay) necesita arrancar como root
+        # y hace drop interno a usuario 'git' (UID 1000). Forzar runAsUser=1000 
+        # rompe el sistema de inicio s6-svscan. Para entorno de aprendizaje local
+        # aceptamos root startup con capabilities mínimas y sin privilege escalation.
         securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          fsGroup: 1000
-          runAsNonRoot: true
           allowPrivilegeEscalation: false
           capabilities:
             drop:
