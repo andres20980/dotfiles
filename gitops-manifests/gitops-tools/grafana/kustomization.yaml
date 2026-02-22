@@ -6,7 +6,7 @@ namespace: grafana
 resources:
   - configmap.yaml
   - deployment.yaml
-  # (eliminado sealed-secret.yaml para entorno local)
+  - sealed-secret.yaml
   - service.yaml
   - networkpolicy.yaml
   # Ingress deshabilitado: Kind usa NodePort (no ingress controller)

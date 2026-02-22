@@ -13,7 +13,10 @@ resources:
   # Wave 2: Gitea (source of truth)
   - 02-gitea.yaml
   
-  # Wave 3: GitOps Tools ApplicationSet
+  # Wave 3: Argo Tools ApplicationSet (argo-workflows, argo-events, argo-rollouts)
+  - 03-argo-tools-appset.yaml
+  
+  # Wave 3: GitOps Tools ApplicationSet (dashboard, grafana, kargo, etc.)
   - 03-gitops-tools-appset.yaml
   
   # Wave 4: Custom Apps ApplicationSet

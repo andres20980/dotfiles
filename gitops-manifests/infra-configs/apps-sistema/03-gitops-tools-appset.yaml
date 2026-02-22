@@ -11,19 +11,12 @@ spec:
     - list:
         elements:
           - app: dashboard
-            project: gitops-tools
           - app: grafana
-            project: gitops-tools
           - app: kargo
-            project: gitops-tools
           - app: kargo-crds
-            project: gitops-tools
           - app: prometheus
-            project: gitops-tools
           - app: redis
-            project: gitops-tools
           - app: registry
-            project: gitops-tools
   template:
     metadata:
       name: '{{app}}'
@@ -34,7 +27,8 @@ spec:
         # Forzar refresh inmediato tras creación
         argocd.argoproj.io/refresh: hard
     spec:
-      project: '{{project}}'
+      # NOTA: Usar 'default' porque los proyectos custom aún no existen en bootstrap
+      project: default
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main

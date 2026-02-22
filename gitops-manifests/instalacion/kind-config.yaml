@@ -14,18 +14,11 @@ networking:
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443
 containerdConfigPatches:
+# Containerd 2.x format: usa config_path para registries insecure
+# Los hosts.toml se crean post-creación del cluster en install.sh
 - |-
-  [plugins."io.containerd.grpc.v1.cri".registry]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker-registry.registry.svc.cluster.local:5000"]
-        endpoint = ["http://docker-registry.registry.svc.cluster.local:5000"]
-      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:30100"]
-        endpoint = ["http://localhost:30100"]
-    [plugins."io.containerd.grpc.v1.cri".registry.configs]
-      [plugins."io.containerd.grpc.v1.cri".registry.configs."docker-registry.registry.svc.cluster.local:5000".tls]
-        insecure_skip_verify = true
-      [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:30100".tls]
-        insecure_skip_verify = true
+  [plugins."io.containerd.cri.v1.images".registry]
+    config_path = "/etc/containerd/certs.d"
 nodes:
 - role: control-plane
   # Configuración para exponer puertos

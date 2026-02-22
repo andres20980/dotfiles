@@ -76,8 +76,8 @@ echo -e "${BLUE}📦 PASO 3: Creando repositorios en Gitea...${NC}"
 
 REPOS=(
     "gitops-manifests"
-    "app-reloj"
-    "visor-gitops"
+    "app-demo"
+    "app-calendar"
 )
 
 for repo in "${REPOS[@]}"; do
@@ -148,9 +148,10 @@ push_repo() {
 }
 
 # Push todos los repos
-push_repo "gitops-manifests" "$HOME/dotfiles/gitops-manifests"
-push_repo "app-reloj" "$HOME/dotfiles/gitops-source-code/app-reloj"
-push_repo "visor-gitops" "$HOME/dotfiles/gitops-source-code/visor-gitops"
+SCRIPT_BASE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+push_repo "gitops-manifests" "${SCRIPT_BASE}/gitops-manifests"
+push_repo "app-demo" "${SCRIPT_BASE}/gitops-source-code/app-demo"
+push_repo "app-calendar" "${SCRIPT_BASE}/gitops-source-code/app-calendar"
 
 echo -e "${GREEN}✅ Push completado${NC}"
 echo ""

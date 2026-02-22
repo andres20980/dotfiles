@@ -22,7 +22,8 @@ spec:
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: custom-apps
+      # NOTA: Usar 'default' porque el proyecto 'custom-apps' aún no existe en bootstrap
+      project: default
       source:
         repoURL: http://gitea.gitea.svc.cluster.local:3000/gitops/gitops-manifests.git
         targetRevision: main

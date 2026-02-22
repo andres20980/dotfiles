@@ -9,6 +9,8 @@ resources:
   
   # 2. Service NodePort (acceso externo UI)
   - service-nodeport.yaml
+  # 3. SealedSecret para token Gitea CI
+  - sealed-secret-gitea.yaml
   - networkpolicy.yaml
   # Ingress deshabilitado: Kind usa NodePort (no ingress controller)
   # - ingress.yaml

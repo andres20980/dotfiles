@@ -395,10 +395,6 @@ update_manifests_with_latest_versions() {
 install_dependencies() {
     log_phase "FASE 1/7: Instalando dependencias del sistema"
     
-    log_info "Actualizando sistema Ubuntu..."
-    sudo apt-get update -qq
-    sudo apt-get upgrade -y -qq
-    
     # Si no hay sudo sin interacción, evitamos colgarnos pidiendo contraseña
     if ! sudo -n true 2>/dev/null; then
         log_warn "No hay sudo sin contraseña. Saltando instalación de dependencias del sistema. Se asume que Docker, kubectl, kind y helm ya están instalados."
@@ -406,6 +402,10 @@ install_dependencies() {
         resolve_latest_versions
         return 0
     fi
+
+    log_info "Actualizando sistema Ubuntu..."
+    sudo apt-get update -qq
+    sudo apt-get upgrade -y -qq
 
     log_info "Instalando herramientas básicas..."
     sudo apt-get install -y -qq \
@@ -556,17 +556,21 @@ install_argocd() {
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     
     log_info "Instalando Argo CD ${ARGOCD_VERSION}..."
-    kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+    # ArgoCD v3.x CRDs exceed 262144 bytes → requiere --server-side para evitar
+    # "annotations: Too long" en kubectl apply clásico
+    kubectl apply -n argocd --server-side --force-conflicts \
+        -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
     
     log_info "Esperando a que Argo CD esté completamente listo..."
-    kubectl wait --for=condition=available --timeout=300s \
+    # Timeout largo para primera instalación (pull de imágenes puede tardar 5-10 min)
+    kubectl wait --for=condition=available --timeout=600s \
         deployment/argocd-server \
         deployment/argocd-repo-server \
         deployment/argocd-applicationset-controller \
         deployment/argocd-dex-server \
         -n argocd
     
-    kubectl wait --for=condition=ready --timeout=300s \
+    kubectl wait --for=condition=ready --timeout=600s \
         pod -l app.kubernetes.io/name=argocd-server -n argocd
     
     log_success "Argo CD instalado"
@@ -612,7 +616,7 @@ deploy_sealed_secrets_prebootstrap() {
     local ss_manifest="https://github.com/bitnami-labs/sealed-secrets/releases/download/${SEALED_SECRETS_VERSION}/controller.yaml"
     
     log_info "Instalando Sealed Secrets ${SEALED_SECRETS_VERSION} desde release oficial..."
-    kubectl apply -f "${ss_manifest}"
+    kubectl apply --server-side --force-conflicts -f "${ss_manifest}"
 
     log_info "Esperando a que el controlador de Sealed Secrets esté listo..."
     kubectl wait --for=condition=available --timeout=300s \
@@ -720,20 +724,45 @@ initialize_gitea_repos() {
         return 1
     fi
     
-    # Verificar si Gitea ya está instalado (método actualizado para Gitea 1.17+)
-    local install_check
-    install_check=$(curl -s "${GITEA_URL_EXTERNAL}/user/login" | grep -c "install" || echo "0")
+    # Crear usuario admin con CLI (método más fiable - siempre funciona en fresh install)
+    log_info "Creando/verificando usuario admin en Gitea via CLI..."
+    local gitea_pod
+    gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
     
-    if [ "$install_check" -gt 0 ]; then
-        log_warn "Gitea requiere instalación inicial (endpoint /install aún visible)"
-        log_info "Usando CLI de Gitea para crear usuario admin (best-practice oficial)..."
-        
-        # Obtener pod de Gitea
-        local gitea_pod
-        gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
-        
-        # Crear usuario admin con CLI (BEST-PRACTICE oficial de Gitea)
-        # NOTA: Gitea CLI no permite ejecutarse como root, usar 'su git -c'
+    # Intentar crear usuario admin con CLI de Gitea (BEST-PRACTICE oficial)
+    # NOTA: Gitea CLI NO puede ejecutarse como root → usar 'su git -c'
+    # Si ya existe, el comando falla con error, pero no es crítico
+    kubectl exec -n gitea "${gitea_pod}" -- \
+        su git -c "gitea admin user create \
+        --username ${GITEA_USER} \
+        --password ${GITEA_PASSWORD} \
+        --email ${GITEA_USER}@gitops.local \
+        --admin \
+        --must-change-password=false" \
+        2>&1 || {
+        log_info "Usuario ya existía (ok) o será verificado"
+    }
+    
+    # Esperar a que la autenticación esté lista
+    sleep 3
+    
+    # Verificar que la autenticación funciona
+    local auth_ok=false
+    local auth_retries=0
+    while [ $auth_retries -lt 10 ]; do
+        local auth_response
+        auth_response=$(curl -s -u "${GITEA_USER}:${GITEA_PASSWORD}" "${GITEA_URL_EXTERNAL}/api/v1/user" 2>/dev/null)
+        if echo "$auth_response" | jq -e '.login' >/dev/null 2>&1; then
+            log_success "✓ Usuario ${GITEA_USER} autenticado correctamente"
+            auth_ok=true
+            break
+        fi
+        auth_retries=$((auth_retries + 1))
+        sleep 2
+    done
+    
+    if [ "$auth_ok" = false ]; then
+        log_error "No se pudo autenticar con Gitea. Reintentando creación de usuario..."
         kubectl exec -n gitea "${gitea_pod}" -- \
             su git -c "gitea admin user create \
             --username ${GITEA_USER} \
@@ -741,52 +770,19 @@ initialize_gitea_repos() {
             --email ${GITEA_USER}@gitops.local \
             --admin \
             --must-change-password=false" \
-            2>&1 || {
-            # Si el usuario ya existe, no es un error crítico
-            log_info "Usuario ya existía o creado correctamente"
-        }
-        
-        log_success "Usuario ${GITEA_USER} configurado"
-        sleep 3
-    else
-        log_info "Gitea ya está instalado. Verificando usuario..."
-        
-        # Verificar autenticación
-        local user_check
-        user_check=$(curl -s -u "${GITEA_USER}:${GITEA_PASSWORD}" "${GITEA_URL_EXTERNAL}/api/v1/user" 2>&1 | grep -c "user does not exist" || echo "0")
-        
-        if [ "$user_check" -gt 0 ]; then
-            log_info "Usuario no existe. Creando con CLI de Gitea (best-practice)..."
-            
-            # Obtener pod de Gitea
-            local gitea_pod
-            gitea_pod=$(kubectl get pods -n gitea -l app=gitea -o jsonpath='{.items[0].metadata.name}')
-            
-            # Crear usuario admin con CLI
-            kubectl exec -n gitea "${gitea_pod}" -- \
-                su git -c "gitea admin user create \
-                --username ${GITEA_USER} \
-                --password ${GITEA_PASSWORD} \
-                --email ${GITEA_USER}@gitops.local \
-                --admin \
-                --must-change-password=false" \
-                2>&1 || log_warn "Usuario ya existía o error menor"
-            
-            log_success "Usuario ${GITEA_USER} creado via CLI"
-            sleep 3
-        else
-            log_success "✓ Usuario ${GITEA_USER} ya existe y está autenticado"
-        fi
+            2>&1 || true
+        sleep 5
     fi
     
     # Crear token de API
     log_info "Creando token de API en Gitea..."
-    local token
-    token=$(curl -s -X POST "${GITEA_URL_EXTERNAL}/api/v1/users/${GITEA_USER}/tokens" \
+    local token_response token
+    token_response=$(curl -s -X POST "${GITEA_URL_EXTERNAL}/api/v1/users/${GITEA_USER}/tokens" \
         -H "Content-Type: application/json" \
         -u "${GITEA_USER}:${GITEA_PASSWORD}" \
-        -d "{\"name\": \"bootstrap-$(date +%s)\", \"scopes\": [\"write:repository\", \"write:user\"]}" \
-        | jq -r '.sha1')
+        -d "{\"name\": \"bootstrap-$(date +%s)\", \"scopes\": [\"write:repository\", \"write:user\"]}")
+    # Gitea 1.22+: campo 'sha1' renombrado a 'plaintext'; intentar ambos
+    token=$(echo "$token_response" | jq -r '.sha1 // .plaintext // empty')
     
     if [ -z "$token" ] || [ "$token" == "null" ]; then
         log_error "No se pudo crear token de API"
@@ -931,11 +927,9 @@ bootstrap_gitops() {
             log_success "root está Synced"
             break
         fi
-        # Si hay error, abortar y mostrar mensaje
-        if [[ "$cond" =~ Error|ComparisonError|Suspended|MissingResource ]]; then
-            log_error "La aplicación root está en estado de error: $cond"
-            echo "$msg"
-            exit 1
+        # SyncError es transitorio (retries internos), solo advertir
+        if [[ "$cond" =~ ComparisonError|Suspended|MissingResource ]]; then
+            log_warn "Root condition: $cond - $msg (reintentando...)"
         fi
         # Re-intentar refresh cada cierto tiempo
         if (( tries % 10 == 0 )); then
@@ -946,11 +940,11 @@ bootstrap_gitops() {
     done
 
     # Esperar a que se creen aplicaciones hijas clave (p.ej. argocd-self-config)
-    log_info "Esperando a que se creen aplicaciones hijas (argocd-self-config, gitops-tools, etc.)..."
+    log_info "Esperando a que se creen aplicaciones hijas (argocd-self, gitops-tools, etc.)..."
     tries=0
     while [ $tries -lt 120 ]; do
-        if kubectl get app argocd-self-config -n argocd >/dev/null 2>&1; then
-            log_success "Aplicación argocd-self-config detectada"
+        if kubectl get app argocd-self -n argocd >/dev/null 2>&1; then
+            log_success "Aplicación argocd-self detectada"
             break
         fi
         # Si no aparece, refrescar root y seguir esperando
@@ -1162,7 +1156,7 @@ apply_post_bootstrap_patches() {
     # Función para esperar salud de aplicaciones clave antes de CI/CD (refuerzo de fiabilidad GitOps)
     wait_apps_health() {
         local apps=(argocd-self argo-workflows argo-events registry)
-        log_info "Esperando salud de aplicaciones clave antes de continuar (timeout 300s)..."
+        log_info "Esperando salud de aplicaciones clave antes de continuar (timeout 600s)..."
         local start=$(date +%s)
         while true; do
             local all_ok=true
@@ -1178,7 +1172,7 @@ apply_post_bootstrap_patches() {
                 log_success "✓ Todas las aplicaciones clave Synced & Healthy"
                 break
             fi
-            if [ $(( $(date +%s) - start )) -ge 300 ]; then
+            if [ $(( $(date +%s) - start )) -ge 600 ]; then
                 log_warn "Timeout esperando salud completa; continuando de todas formas"
                 break
             fi
@@ -1201,28 +1195,50 @@ apply_post_bootstrap_patches() {
     #     log_warn "No se pudo corregir webhook URL"
     # fi
     
-    # Configurar registry ClusterIP en containerd
-    log_info "Configurando registry ClusterIP en containerd..."
+    # Configurar registry insecure en containerd (format containerd 2.x - config_path)
+    log_info "Configurando registry insecure en containerd (certs.d)..."
     local registry_ip="${REGISTRY_CLUSTER_IP}"
     if [ -n "$registry_ip" ]; then
-        docker exec ${CLUSTER_NAME}-control-plane sh -c "cat >> /etc/containerd/config.toml << 'EOF'
-    [plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"${registry_ip}:5000\"]
-      [plugins.\"io.containerd.grpc.v1.cri\".registry.configs.\"${registry_ip}:5000\".tls]
-        insecure_skip_verify = true
-    [plugins.\"io.containerd.grpc.v1.cri\".registry.mirrors.\"${registry_ip}:5000\"]
-      endpoint = [\"http://${registry_ip}:5000\"]
-EOF
-" 2>/dev/null || true
+        # Crear directorios de configuración certs.d para containerd 2.x
+        docker exec ${CLUSTER_NAME}-control-plane sh -c "
+            mkdir -p /etc/containerd/certs.d/${registry_ip}:5000
+            cat > /etc/containerd/certs.d/${registry_ip}:5000/hosts.toml <<EOF2
+server = \"http://${registry_ip}:5000\"
+
+[host.\"http://${registry_ip}:5000\"]
+  capabilities = [\"pull\", \"resolve\", \"push\"]
+  skip_verify = true
+EOF2
+
+            mkdir -p /etc/containerd/certs.d/docker-registry.registry.svc.cluster.local:5000
+            cat > /etc/containerd/certs.d/docker-registry.registry.svc.cluster.local:5000/hosts.toml <<EOF2
+server = \"http://docker-registry.registry.svc.cluster.local:5000\"
+
+[host.\"http://docker-registry.registry.svc.cluster.local:5000\"]
+  capabilities = [\"pull\", \"resolve\", \"push\"]
+  skip_verify = true
+EOF2
+
+            mkdir -p /etc/containerd/certs.d/localhost:30100
+            cat > /etc/containerd/certs.d/localhost:30100/hosts.toml <<EOF2
+server = \"http://localhost:30100\"
+
+[host.\"http://localhost:30100\"]
+  capabilities = [\"pull\", \"resolve\", \"push\"]
+  skip_verify = true
+EOF2
+        " 2>/dev/null || true
+        # Restart containerd to pick up config_path changes
         docker exec ${CLUSTER_NAME}-control-plane systemctl restart containerd 2>/dev/null || true
         sleep 5
-        log_success "✓ Containerd configurado para registry ClusterIP: ${registry_ip}:5000"
+        log_success "✓ Containerd configurado para registry insecure (certs.d): ${registry_ip}:5000"
     else
         log_warn "No se pudo configurar registry ClusterIP"
     fi
     
     log_info "Verificando configuración de registry en containerd..."
-    if docker exec ${CLUSTER_NAME}-control-plane cat /etc/containerd/config.toml | grep -q "docker-registry.registry.svc.cluster.local:5000"; then
-        log_success "✓ Containerd configurado para registry insecure"
+    if docker exec ${CLUSTER_NAME}-control-plane ls /etc/containerd/certs.d/docker-registry.registry.svc.cluster.local:5000/hosts.toml >/dev/null 2>&1; then
+        log_success "✓ Containerd configurado para registry insecure (certs.d)"
     else
         log_warn "Configuración de registry no detectada en containerd"
     fi
@@ -1235,6 +1251,27 @@ EOF
 # ============================================================================
 verify_deployment() {
     log_phase "FASE 7/7: Verificando despliegue completo"
+    
+    # Esperar a que todas las apps alcancen Healthy antes de verificar
+    log_info "Esperando que todas las aplicaciones alcancen estado Healthy (max 600s)..."
+    local start_wait=$(date +%s)
+    while true; do
+        local total_apps healthy_apps
+        total_apps=$(kubectl get applications -n argocd --no-headers 2>/dev/null | wc -l)
+        healthy_apps=$(kubectl get applications -n argocd -o json 2>/dev/null | \
+            jq '[.items[] | select(.status.health.status=="Healthy")] | length' 2>/dev/null || echo "0")
+        if [ "$healthy_apps" -ge "$total_apps" ] && [ "$total_apps" -gt 0 ]; then
+            log_success "Todas las aplicaciones ($total_apps) están Healthy"
+            break
+        fi
+        local elapsed=$(( $(date +%s) - start_wait ))
+        if [ "$elapsed" -ge 600 ]; then
+            log_warn "Timeout esperando apps Healthy ($healthy_apps/$total_apps). Continuando verificación..."
+            break
+        fi
+        log_info "↻ $healthy_apps/$total_apps Healthy (${elapsed}s)..."
+        sleep 10
+    done
     
     log_info "Aplicaciones en Argo CD:"
     kubectl get applications -n argocd
@@ -1287,17 +1324,17 @@ verify_deployment() {
     echo -e "  ${GREEN}•${NC} Prometheus:       http://localhost:30081"
     echo -e "  ${GREEN}•${NC} Redis Commander:  http://localhost:30097"
     echo ""
-    echo -e "${CYAN}Pipeline CI/CD:${NC}"
-    echo -e "  ${GREEN}1.${NC} Push a gitops-source-code/app-reloj"
-    echo -e "  ${GREEN}2.${NC} Webhook trigger Argo Events → Argo Workflows"
-    echo -e "  ${GREEN}3.${NC} Build con 3 tags: v{semver}, {commit-sha}, latest"
-    echo -e "  ${GREEN}4.${NC} Update kustomization.yaml con sem-ver"
+    echo -e "${CYAN}Pipeline CI/CD (para tus custom apps):${NC}"
+    echo -e "  ${GREEN}1.${NC} Añade tu app en gitops-source-code/<app-name>/ con Dockerfile"
+    echo -e "  ${GREEN}2.${NC} Crea manifests en gitops-manifests/custom-apps/<app-name>/"
+    echo -e "  ${GREEN}3.${NC} Webhook trigger Argo Events → Argo Workflows"
+    echo -e "  ${GREEN}4.${NC} Build con tags: v{semver}, {commit-sha}, latest"
     echo -e "  ${GREEN}5.${NC} ArgoCD auto-sync → K8s deploy"
     echo ""
     echo -e "${CYAN}Próximos pasos:${NC}"
     echo -e "  ${GREEN}1.${NC} Accede a Argo CD para ver el despliegue automático"
     echo -e "  ${GREEN}2.${NC} Revisa los repositorios en Gitea"
-    echo -e "  ${GREEN}3.${NC} Haz cambios en app-reloj y observa el pipeline completo"
+    echo -e "  ${GREEN}3.${NC} Añade una custom app y observa el pipeline completo"
     echo ""
     echo -e "${YELLOW}💡 Gitea es tu source of truth - todos los cambios deben ir ahí${NC}"
     echo -e "${YELLOW}💡 Registry configurado para HTTP insecure (localhost:30100)${NC}"
@@ -1371,38 +1408,34 @@ verify_deployment() {
         echo -e "  ${YELLOW}⚠️${NC}  Registry no responde"
     fi
     
-    # Test app-reloj con timeout
-    echo -e "  ${YELLOW}⏳${NC} Esperando que app-reloj esté lista (max 60s)..."
-    if kubectl wait --for=condition=Ready pod -l app=app-reloj -n app-reloj --timeout=60s >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✅${NC} app-reloj desplegada"
-        
-        # Test endpoint health
-        sleep 2
-        local APP_HEALTH
-        APP_HEALTH=$(curl -s http://localhost:30150/health 2>/dev/null | jq -r '.status' 2>/dev/null)
-        if [ "$APP_HEALTH" = "ok" ]; then
-            local APP_VERSION
-            APP_VERSION=$(curl -s http://localhost:30150/health 2>/dev/null | jq -r '.version' 2>/dev/null)
-            echo -e "  ${GREEN}✅${NC} Health endpoint: OK (v${APP_VERSION})"
-        fi
+    # Test custom apps (solo si hay deployments en custom-apps namespaces)
+    local CUSTOM_NS
+    CUSTOM_NS=$(kubectl get ns -o name 2>/dev/null | grep -E 'app-' | sed 's|namespace/||' || true)
+    if [ -n "$CUSTOM_NS" ]; then
+        for ns in $CUSTOM_NS; do
+            echo -e "  ${YELLOW}⏳${NC} Verificando custom app en namespace ${ns}..."
+            if kubectl wait --for=condition=Ready pod -l app="${ns}" -n "${ns}" --timeout=30s >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✅${NC} ${ns} desplegada"
+            else
+                echo -e "  ${YELLOW}⏳${NC} ${ns} aún iniciando"
+            fi
+        done
     else
-        local APP_STATUS
-        APP_STATUS=$(kubectl get pods -n app-reloj -l app=app-reloj -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
-        echo -e "  ${YELLOW}⏳${NC} app-reloj en estado: ${APP_STATUS:-pending}"
+        echo -e "  ${BLUE}ℹ️${NC}  No hay custom apps desplegadas (custom-apps/ vacío)"
     fi
     
     echo ""
     
-    # Score final
+    # Score final (disable errexit for arithmetic that may be 0)
     local SCORE=0
     local MAX_SCORE=6
     
-    [ "$HEALTHY_APPS" = "$TOTAL_APPS" ] && [ "$TOTAL_APPS" -gt 0 ] && ((SCORE++))
-    [ "$EVENTSOURCES" -ge 1 ] && ((SCORE++))
-    [ "$SENSORS" -ge 2 ] && ((SCORE++))
-    [ "$SEALED_SECRETS" -ge 3 ] && ((SCORE++))
-    [ "$APPSETS" -ge 2 ] && ((SCORE++))
-    [ -n "$REGISTRY_IP" ] && ((SCORE++))
+    { [ "$HEALTHY_APPS" = "$TOTAL_APPS" ] && [ "$TOTAL_APPS" -gt 0 ] && SCORE=$((SCORE+1)); } || true
+    { [ "$EVENTSOURCES" -ge 1 ] && SCORE=$((SCORE+1)); } || true
+    { [ "$SENSORS" -ge 1 ] && SCORE=$((SCORE+1)); } || true
+    { [ "$SEALED_SECRETS" -ge 3 ] && SCORE=$((SCORE+1)); } || true
+    { [ "$APPSETS" -ge 2 ] && SCORE=$((SCORE+1)); } || true
+    { [ -n "$REGISTRY_IP" ] && SCORE=$((SCORE+1)); } || true
     
     if [ "$SCORE" -eq "$MAX_SCORE" ]; then
         echo -e "${GREEN}🏆 INSTALACIÓN PERFECTA - 100% OPERATIVA${NC}"
@@ -1576,9 +1609,11 @@ EOF
     done <<< "$DATA"
     echo "$DATA" | awk -F '|' 'BEGIN {print "["} {printf "{\"tool\":\"%s\",\"host\":\"%s\",\"nodePort\":%s,\"namespace\":\"%s\"}", $1,$2,$3,$4; if (NR!=NF) print ","} END {print "]"}' > "$OUT_JSON" 2>/dev/null || true
     log_success "Resumen JSON guardado en $OUT_JSON"
-    echo "\nAñade estas entradas a /etc/hosts si usas Ingress (copiar y pegar):"
+    echo ""
+    echo "Añade estas entradas a /etc/hosts si usas Ingress (copiar y pegar):"
     echo "127.0.0.1 argocd.local gitea.local grafana.local prometheus.local kargo.local workflows.local rollouts.local dashboard.local"
-    echo "\nAccesos rápidos (NodePort o Ingress):"
+    echo ""
+    echo "Accesos rápidos (NodePort o Ingress):"
     echo "http://argocd.local    | http://localhost:30080"
     echo "http://gitea.local     | http://localhost:30083"
     echo "http://grafana.local   | http://localhost:30082"

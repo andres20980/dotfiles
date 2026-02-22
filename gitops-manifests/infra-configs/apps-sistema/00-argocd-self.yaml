@@ -16,7 +16,9 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: argo
+  # NOTA: Usar 'default' porque el proyecto 'argo' aún no existe en bootstrap
+  # El proyecto 'argo' se crea cuando argocd-self sincroniza argocd-manifests/projects/
+  project: default
   source:
     # Durante instalación: usa GitHub
     # Después de migración: apuntará a Gitea

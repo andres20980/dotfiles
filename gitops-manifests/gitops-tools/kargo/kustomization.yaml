@@ -7,8 +7,10 @@ resources:
   # 1. RBAC (CRDs gestionados ahora por kargo-crds)
   - rbac.yaml
   
-  # 3. Secret plano (admin credentials - solo ejemplo para entorno local)
-  - secret.yaml
+  # 3. Sealed Secret (admin credentials - gestionado por kubeseal)
+  - sealed-secret.yaml
+  # Secret plano deshabilitado (reemplazado por SealedSecret con password "gitops")
+  # - secret.yaml
   
   # 4. ConfigMap
   - configmap.yaml

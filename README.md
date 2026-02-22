@@ -264,26 +264,33 @@ argocd app get <app-name>
 dotfiles/
 ├── install.sh                          # Script instalación automatizada
 ├── README.md                           # Esta documentación
+├── LICENSE                             # Licencia MIT
 ├── gitops-manifests/                   # Manifests Kubernetes (source of truth)
 │   ├── infra-configs/
-│   │   ├── apps-sistema/              # Apps bootstrap (argocd-self, sealed-secrets, gitea)
-│   │   └── argocd-manifests/          # Configuración ArgoCD (projects, RBAC, etc)
+│   │   ├── apps-sistema/              # Apps bootstrap (argocd-self, gitea, appsets)
+│   │   ├── argocd-manifests/          # Configuración ArgoCD (projects, RBAC, etc)
+│   │   └── repositories/             # ArgoCD repository secrets (Helm, Gitea)
 │   ├── gitops-tools/                  # GitOps infrastructure tools
 │   │   ├── argo-events/               # Event-driven automation
 │   │   ├── argo-workflows/            # CI/CD pipelines
 │   │   ├── argo-rollouts/             # Progressive delivery
-│   │   ├── kargo/                     # Multi-stage promotion
 │   │   ├── dashboard/                 # Kubernetes Dashboard
+│   │   ├── gitea/                     # Gitea Git server
 │   │   ├── grafana/                   # Observability - visualization
+│   │   ├── kargo/                     # Multi-stage promotion
+│   │   ├── kargo-crds/                # Kargo CRDs (instalados aparte)
 │   │   ├── prometheus/                # Observability - metrics
 │   │   ├── redis/                     # Shared cache
-│   │   └── registry/                  # Docker registry local
+│   │   ├── registry/                  # Docker registry local
+│   │   └── sealed-secrets/            # Gestión segura de credenciales
 │   ├── custom-apps/                   # Tus aplicaciones custom (vacío por defecto)
 │   └── instalacion/
 │       ├── kind-config.yaml           # Config cluster Kind
-│       └── root-app.yaml              # Root App (App of Apps pattern)
+│       ├── root-app.yaml              # Root App (App of Apps pattern)
+│       └── migrate-to-gitea.sh        # Script migración a Gitea
 └── gitops-source-code/                # Source code de aplicaciones custom
-    └── app-demo/                      # Ejemplo: Node.js app
+    ├── app-demo/                      # Ejemplo: Node.js app simple
+    └── app-calendar/                  # Ejemplo: API calendario (Express)
 ```
 
 ## 🧹 Limpieza

@@ -26,6 +26,19 @@ spec:
     # Forzar Kustomize para apps-sistema
     kustomize: {}
   
+  # Ignorar diffs generadas por ArgoCD en recursos tipo Application
+  # (tracking-id añadido automáticamente + kustomize:{} eliminado por auto-reconciliación)
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jqPathExpressions:
+        - .metadata.annotations["argocd.argoproj.io/tracking-id"]
+        - .spec.source.kustomize
+    - group: argoproj.io
+      kind: ApplicationSet
+      jqPathExpressions:
+        - .metadata.annotations["argocd.argoproj.io/tracking-id"]
+  
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -38,6 +51,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
