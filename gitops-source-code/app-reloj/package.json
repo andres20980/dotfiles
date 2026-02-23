@@ -1,0 +1,9 @@
+{
+  "name": "app-reloj",
+  "version": "1.0.0",
+  "description": "Reloj visual para GitOps Learning Lab",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1065,10 +1065,15 @@ complete_custom_apps_cicd() {
         log_success "✓ Kustomization actualizado con registry ${registry_ip}:${registry_port}"
     fi
     
-    # Asegurar que deployment.yaml usa imagen base sin registry
+    # Asegurar que deployment.yaml usa imagen base sin registry y imagePullPolicy: Always
     if [ -f "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml" ]; then
         sed -i "s#image:.*app-reloj.*#image: app-reloj:latest#" \
             "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
+        # Añadir imagePullPolicy: Always si no existe
+        if ! grep -q "imagePullPolicy" "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"; then
+            sed -i '/image: app-reloj:latest/a\          imagePullPolicy: Always' \
+                "${SCRIPT_DIR}/gitops-manifests/custom-apps/app-reloj/deployment.yaml"
+        fi
     fi
     
     log_info "Commiteando y pusheando cambios a Gitea..."
@@ -1323,6 +1328,9 @@ verify_deployment() {
     echo -e "  ${GREEN}•${NC} Dashboard:        http://localhost:30090"
     echo -e "  ${GREEN}•${NC} Prometheus:       http://localhost:30081"
     echo -e "  ${GREEN}•${NC} Redis Commander:  http://localhost:30097"
+    echo ""
+    echo -e "${CYAN}Custom Apps desplegadas:${NC}"
+    echo -e "  ${GREEN}•${NC} App Reloj:        http://localhost:30150"
     echo ""
     echo -e "${CYAN}Pipeline CI/CD (para tus custom apps):${NC}"
     echo -e "  ${GREEN}1.${NC} Añade tu app en gitops-source-code/<app-name>/ con Dockerfile"
@@ -1645,7 +1653,7 @@ main() {
     deploy_gitea
     initialize_gitea_repos
     bootstrap_gitops
-    # complete_custom_apps_cicd  # Deshabilitado - custom-apps vacías
+    complete_custom_apps_cicd
     apply_post_bootstrap_patches
     verify_deployment
     output_endpoints_summary

@@ -26,7 +26,7 @@ Una plataforma GitOps **100% funcional** que se instala automáticamente y te pe
 ```
 
 **Resultado en 5-10 minutos:**
-- ✅ 13 aplicaciones GitOps desplegadas
+- ✅ 14 aplicaciones GitOps desplegadas (13 infraestructura + 1 custom app)
 - ✅ Todas Synced & Healthy
 - ✅ Accesibles vía localhost (NodePort)
 - ✅ Credenciales mostradas claramente
@@ -131,7 +131,8 @@ El script:
 5. ✅ Despliega Gitea
 6. ✅ Inicializa repositorios
 7. ✅ Bootstrap GitOps (root-app)
-8. ✅ Verifica estado (13/13 Synced & Healthy)
+8. ✅ Construye y despliega custom apps (app-reloj)
+9. ✅ Verifica estado (14/14 Synced & Healthy)
 
 ### Paso 3: Acceder a las UIs
 
@@ -207,6 +208,76 @@ open http://localhost:30082
 # Usuario: admin / Password: gitops
 ```
 
+## 🕰️ Custom App: App Reloj
+
+La plataforma incluye **app-reloj**, una aplicación demo que demuestra el ciclo GitOps completo:
+
+### ¿Qué es?
+
+Una web app Node.js ligera que muestra un reloj en tiempo real con:
+- **Página principal** (`http://localhost:30150`): Reloj visual con tema oscuro
+- **Health endpoint** (`/health`): JSON con estado, versión y uptime
+- **API endpoint** (`/api/time`): JSON con hora, fecha e ISO timestamp
+
+### Arquitectura GitOps
+
+```
+gitops-source-code/app-reloj/     →  Docker Build  →  Registry (localhost:30100)
+                                                              ↓
+gitops-manifests/custom-apps/app-reloj/  →  Gitea  →  ArgoCD  →  Kubernetes
+```
+
+1. **Source code** en `gitops-source-code/app-reloj/` (server.js + Dockerfile)
+2. `install.sh` construye la imagen y la sube al **registry local**
+3. **Manifests K8s** en `gitops-manifests/custom-apps/app-reloj/` se pushean a **Gitea**
+4. El **ApplicationSet** `custom-apps` detecta el directorio automáticamente
+5. **ArgoCD** crea la Application y sincroniza los manifests al cluster
+
+### Ejercicio: Modifica la app y observa GitOps en acción
+
+```bash
+# 1. Clona el repo de manifests desde Gitea
+cd /tmp && git clone http://gitops:gitops@localhost:30083/gitops/gitops-manifests.git
+cd gitops-manifests
+
+# 2. Cambia las réplicas de 1 a 2
+sed -i 's/replicas: 1/replicas: 2/' custom-apps/app-reloj/deployment.yaml
+
+# 3. Commit y push a Gitea (source of truth)
+git add . && git commit -m "scale: app-reloj to 2 replicas" && git push
+
+# 4. Observa en ArgoCD cómo sincroniza automáticamente
+open http://localhost:30080  # Click en app-reloj → ver 2 pods
+
+# 5. Verifica
+kubectl get pods -n app-reloj
+# Deberías ver 2 pods Running
+```
+
+### Añadir tu propia custom app
+
+```bash
+# 1. Crea source code con Dockerfile
+mkdir -p gitops-source-code/mi-app
+cat > gitops-source-code/mi-app/Dockerfile <<'EOF'
+FROM node:20-alpine
+WORKDIR /app
+COPY . .
+CMD ["node", "index.js"]
+EXPOSE 8080
+EOF
+
+# 2. Build y push al registry
+docker build -t localhost:30100/mi-app:v1.0.0 gitops-source-code/mi-app/
+docker push localhost:30100/mi-app:v1.0.0
+
+# 3. Crea manifests K8s (kustomization.yaml + deployment + service)
+mkdir -p gitops-manifests/custom-apps/mi-app
+# (Usa app-reloj como plantilla)
+
+# 4. Push a Gitea → ArgoCD detecta y despliega automáticamente
+```
+
 ## 🔧 Troubleshooting
 
 ### Cluster no arranca
@@ -261,7 +332,7 @@ argocd app get <app-name>
 ## 🎯 Estructura del Proyecto
 
 ```
-dotfiles/
+gitops-poc/
 ├── install.sh                          # Script instalación automatizada
 ├── README.md                           # Esta documentación
 ├── LICENSE                             # Licencia MIT
@@ -283,14 +354,20 @@ dotfiles/
 │   │   ├── redis/                     # Shared cache
 │   │   ├── registry/                  # Docker registry local
 │   │   └── sealed-secrets/            # Gestión segura de credenciales
-│   ├── custom-apps/                   # Tus aplicaciones custom (vacío por defecto)
+│   ├── custom-apps/                   # Custom apps desplegadas vía GitOps
+│   │   └── app-reloj/                 # 🕰️ App demo: reloj en tiempo real
+│   │       ├── deployment.yaml
+│   │       ├── service.yaml
+│   │       └── kustomization.yaml
 │   └── instalacion/
 │       ├── kind-config.yaml           # Config cluster Kind
 │       ├── root-app.yaml              # Root App (App of Apps pattern)
 │       └── migrate-to-gitea.sh        # Script migración a Gitea
 └── gitops-source-code/                # Source code de aplicaciones custom
-    ├── app-demo/                      # Ejemplo: Node.js app simple
-    └── app-calendar/                  # Ejemplo: API calendario (Express)
+    └── app-reloj/                     # 🕰️ Node.js clock app (demo GitOps)
+        ├── server.js                  # Servidor HTTP con reloj visual
+        ├── package.json
+        └── Dockerfile
 ```
 
 ## 🧹 Limpieza
