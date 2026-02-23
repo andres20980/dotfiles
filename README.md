@@ -113,8 +113,8 @@ El script instala automáticamente si faltan:
 ### Paso 1: Clonar repositorio
 
 ```bash
-git clone https://github.com/andres20980/dotfiles.git
-cd dotfiles
+git clone https://github.com/andres20980/gitops-poc.git
+cd gitops-poc
 ```
 
 ### Paso 2: Ejecutar instalación
@@ -364,6 +364,6 @@ Basado en documentación oficial de:
 
 ---
 
-**¿Preguntas?** Abre un [issue](https://github.com/andres20980/dotfiles/issues) 
+**¿Preguntas?** Abre un [issue](https://github.com/andres20980/gitops-poc/issues) 
 
 **¿Funciona?** Dale una ⭐ al repo!
